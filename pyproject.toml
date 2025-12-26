@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "course-hoanganhduc"
+version = "0.1.0"
+description = "Course management utilities for roster, grading, and LMS workflows."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+  "canvasapi",
+  "google-api-python-client",
+  "google-auth",
+  "google-auth-oauthlib",
+  "numpy",
+  "opencv-python",
+  "openpyxl",
+  "paddleocr",
+  "pandas",
+  "pdf2image",
+  "pillow",
+  "PyPDF2",
+  "pytesseract",
+  "requests",
+  "scikit-learn",
+  "tqdm",
+]
+
+[project.scripts]
+course = "course_hoanganhduc.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["course_hoanganhduc*"]

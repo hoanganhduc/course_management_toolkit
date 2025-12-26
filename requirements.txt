@@ -1,0 +1,16 @@
+﻿canvasapi
+google-api-python-client
+google-auth
+google-auth-oauthlib
+numpy
+opencv-python
+openpyxl
+paddleocr
+pandas
+pdf2image
+pillow
+PyPDF2
+pytesseract
+requests
+scikit-learn
+tqdm
