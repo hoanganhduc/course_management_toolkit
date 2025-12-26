@@ -192,7 +192,6 @@ def send_final_evaluations_via_canvas(
         greeting += "Vui lòng kiểm tra kỹ nội dung bên dưới. Nếu có thắc mắc, sai sót về thông tin hoặc điểm số, bạn hãy phản hồi trực tiếp cho giảng viên càng sớm càng tốt.\n"
         greeting += "Chúc bạn một học kỳ tốt và kết quả học tập tiến bộ.\n"
 
-        subject = f"Kết quả đánh giá học phần của sinh viên {student_name} ({sid})" if student_name else f"Kết quả đánh giá học phần (MSSV: {sid})"
         body = (
             f"{greeting}\n\n"
             f"{content}\n\n"
@@ -1466,6 +1465,7 @@ def compare_texts_from_pdfs_in_folder(
     simple_text=False,
     refine=DEFAULT_AI_METHOD,
     similarity_threshold=0.85,
+    db_path=None,
     api_url=CANVAS_LMS_API_URL,
     api_key=CANVAS_LMS_API_KEY,
     course_id=CANVAS_LMS_COURSE_ID,
@@ -1497,6 +1497,140 @@ def compare_texts_from_pdfs_in_folder(
         List of tuples: [(pdf1, pdf2, similarity), ...] for pairs above threshold.
     """
 
+    assignment_name_guess = os.path.basename(folder_path).replace("_", " ").strip()
+    image_phash_threshold = 0.95
+    image_ssim_threshold = 0.9
+    layout_threshold = 0.9
+    shingle_threshold = 0.6
+    embedding_threshold = 0.8
+
+    def _extract_metadata_from_filename(filename):
+        # Expected pattern: <name>_<canvas_id>_<assignment_id>_<time>_<status>.pdf
+        base = os.path.basename(filename)
+        meta = {
+            "file": base,
+            "student_name": None,
+            "canvas_id": None,
+            "assignment_id": None,
+            "submitted_at": None,
+            "status": None,
+        }
+        match = re.match(r"^(?P<name>.+)_(?P<canvas_id>\\d+)_(?P<assignment_id>\\d+)_(?P<submitted>[^_]+)_(?P<status>[^_]+)\\.pdf$", base)
+        if match:
+            meta["student_name"] = match.group("name").replace("_", " ").strip()
+            meta["canvas_id"] = match.group("canvas_id")
+            meta["assignment_id"] = match.group("assignment_id")
+            meta["submitted_at"] = match.group("submitted")
+            meta["status"] = match.group("status")
+            return meta
+        # Fallback: try to infer a canvas id from numeric tokens
+        parts = base.replace(".pdf", "").split("_")
+        numeric = [p for p in parts if p.isdigit()]
+        if numeric:
+            meta["canvas_id"] = numeric[0]
+        meta["student_name"] = parts[0].replace("_", " ").strip() if parts else None
+        return meta
+
+    def _file_md5(path, block_size=1 << 20):
+        digest = hashlib.md5()
+        try:
+            with open(path, "rb") as f:
+                while True:
+                    data = f.read(block_size)
+                    if not data:
+                        break
+                    digest.update(data)
+            return digest.hexdigest()
+        except OSError:
+            return None
+
+    def _phash(gray_image):
+        # Perceptual hash via DCT on a 32x32 grayscale image.
+        resized = cv2.resize(gray_image, (32, 32))
+        dct = cv2.dct(resized.astype(np.float32))
+        dct_low = dct[:8, :8].flatten()
+        if len(dct_low) <= 1:
+            return None
+        median = np.median(dct_low[1:])
+        bits = dct_low > median
+        return "".join("1" if b else "0" for b in bits)
+
+    def _phash_similarity(h1, h2):
+        if not h1 or not h2 or len(h1) != len(h2):
+            return None
+        dist = sum(c1 != c2 for c1, c2 in zip(h1, h2))
+        return 1.0 - (dist / float(len(h1)))
+
+    def _ssim(img1, img2):
+        # Basic SSIM on full-image statistics (fast, no sliding window).
+        img1 = img1.astype(np.float64)
+        img2 = img2.astype(np.float64)
+        c1 = (0.01 * 255) ** 2
+        c2 = (0.03 * 255) ** 2
+        mu1 = img1.mean()
+        mu2 = img2.mean()
+        sigma1 = img1.var()
+        sigma2 = img2.var()
+        sigma12 = ((img1 - mu1) * (img2 - mu2)).mean()
+        numerator = (2 * mu1 * mu2 + c1) * (2 * sigma12 + c2)
+        denominator = (mu1 ** 2 + mu2 ** 2 + c1) * (sigma1 + sigma2 + c2)
+        if denominator == 0:
+            return 0.0
+        return float(numerator / denominator)
+
+    def _psnr(img1, img2):
+        try:
+            return float(cv2.PSNR(img1, img2))
+        except Exception:
+            mse = np.mean((img1.astype(np.float64) - img2.astype(np.float64)) ** 2)
+            if mse == 0:
+                return float("inf")
+            return 20 * math.log10(255.0 / math.sqrt(mse))
+
+    def _layout_signature(pil_image, grid_size=4):
+        # Layout signature based on OCR bounding boxes bucketed into a grid.
+        try:
+            data = pytesseract.image_to_data(pil_image, output_type=pytesseract.Output.DICT)
+        except Exception:
+            return None
+        w, h = pil_image.size
+        if not w or not h:
+            return None
+        grid = np.zeros((grid_size, grid_size), dtype=np.float64)
+        for left, top, width, height, text in zip(
+            data.get("left", []),
+            data.get("top", []),
+            data.get("width", []),
+            data.get("height", []),
+            data.get("text", []),
+        ):
+            if not text or not str(text).strip():
+                continue
+            cx = left + width / 2.0
+            cy = top + height / 2.0
+            gx = min(grid_size - 1, max(0, int((cx / w) * grid_size)))
+            gy = min(grid_size - 1, max(0, int((cy / h) * grid_size)))
+            grid[gy, gx] += 1.0
+        vec = grid.flatten()
+        norm = np.linalg.norm(vec)
+        if norm == 0:
+            return None
+        return vec / norm
+
+    def _cosine_similarity_vector(vec1, vec2):
+        if vec1 is None or vec2 is None:
+            return None
+        denom = (np.linalg.norm(vec1) * np.linalg.norm(vec2))
+        if denom == 0:
+            return None
+        return float(np.dot(vec1, vec2) / denom)
+
+    def _make_shingles(text, size=5):
+        tokens = [t for t in text.split() if t]
+        if len(tokens) < size:
+            return set()
+        return {" ".join(tokens[i:i + size]) for i in range(len(tokens) - size + 1)}
+
     pdf_files = sorted([
         os.path.join(folder_path, f)
         for f in os.listdir(folder_path)
@@ -1509,9 +1643,22 @@ def compare_texts_from_pdfs_in_folder(
             print("No PDF files found in the folder.")
         return []
 
-    # Extract texts for all PDFs
+    # Collect file metadata and extract texts for all PDFs
+    file_metadata = {}
     extracted_texts = {}
     for pdf_path in tqdm(pdf_files, desc="Extracting texts from PDFs"):
+        meta = _extract_metadata_from_filename(pdf_path)
+        meta["size_bytes"] = os.path.getsize(pdf_path) if os.path.exists(pdf_path) else None
+        meta["md5"] = _file_md5(pdf_path)
+        try:
+            reader = PyPDF2.PdfReader(pdf_path)
+            meta["page_count"] = len(reader.pages)
+            info = getattr(reader, "metadata", None) or {}
+            meta["producer"] = info.get("/Producer") or info.get("Producer")
+            meta["creator"] = info.get("/Creator") or info.get("Creator")
+        except Exception:
+            meta.setdefault("page_count", None)
+        file_metadata[pdf_path] = meta
         base = os.path.splitext(pdf_path)[0]
         txt_path = base + f"_text_{ocr_service}.txt"
         if not os.path.exists(txt_path):
@@ -1533,17 +1680,52 @@ def compare_texts_from_pdfs_in_folder(
         else:
             extracted_texts[pdf_path] = ""
 
+    # Prepare image-based features and layout signatures (first page only)
+    image_features = {}
+    for pdf_path in tqdm(pdf_files, desc="Extracting image features"):
+        features = {}
+        try:
+            images = convert_from_path(pdf_path, first_page=1, last_page=1, dpi=100)
+            if images:
+                pil_image = images[0]
+                gray = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2GRAY)
+                resized = cv2.resize(gray, (256, 256))
+                features["phash"] = _phash(gray)
+                features["layout"] = _layout_signature(pil_image)
+                features["image"] = resized
+        except Exception:
+            features = {}
+        image_features[pdf_path] = features
+
+    # Build shingle sets for text similarity
+    shingle_sets = {pdf_path: _make_shingles(text) for pdf_path, text in extracted_texts.items()}
+
     # Compare all pairs using multiple similarity metrics for better accuracy
 
     similar_pairs = []
     all_pairs = []
     pdf_list = list(extracted_texts.keys())
     similarity_matrix = {}  # (pdf1, pdf2) -> ratio
+    all_pairs_detail = []
 
     # Prepare TF-IDF vectors for all texts
     texts = [extracted_texts[p] for p in pdf_list]
-    tfidf_vectorizer = TfidfVectorizer().fit(texts)
-    tfidf_matrix = tfidf_vectorizer.transform(texts)
+    tfidf_matrix = None
+    if any(texts):
+        tfidf_vectorizer = TfidfVectorizer().fit(texts)
+        tfidf_matrix = tfidf_vectorizer.transform(texts)
+
+    # Optional sentence-embedding similarity (if sentence-transformers is installed)
+    embedding_vectors = None
+    embedding_method = None
+    try:
+        from sentence_transformers import SentenceTransformer
+
+        model = SentenceTransformer("all-MiniLM-L6-v2")
+        embedding_vectors = model.encode(texts, convert_to_numpy=True, normalize_embeddings=True)
+        embedding_method = "sentence_transformers/all-MiniLM-L6-v2"
+    except Exception:
+        embedding_vectors = None
 
     # Helper to compute Jaccard similarity
     def jaccard_similarity(a, b):
@@ -1563,33 +1745,121 @@ def compare_texts_from_pdfs_in_folder(
             pdf2 = pdf_list[j]
             text1 = extracted_texts[pdf1]
             text2 = extracted_texts[pdf2]
-            if not text1 or not text2:
-                continue
+
+            meta1 = file_metadata.get(pdf1, {})
+            meta2 = file_metadata.get(pdf2, {})
+            exact_hash = meta1.get("md5") and meta1.get("md5") == meta2.get("md5")
 
             # Cosine similarity (TF-IDF)
-            cos_sim = cosine_similarity(tfidf_matrix[i], tfidf_matrix[j])[0, 0]
+            if tfidf_matrix is not None:
+                cos_sim = cosine_similarity(tfidf_matrix[i], tfidf_matrix[j])[0, 0]
+                euc_sim = euclidean_similarity(tfidf_matrix[i].toarray(), tfidf_matrix[j].toarray())
+            else:
+                cos_sim = 0.0
+                euc_sim = 0.0
 
             # Jaccard similarity
-            jac_sim = jaccard_similarity(text1, text2)
+            jac_sim = jaccard_similarity(text1, text2) if text1 and text2 else 0.0
 
             # SequenceMatcher similarity
-            seq_sim = difflib.SequenceMatcher(None, text1, text2).ratio()
-
-            # Euclidean similarity
-            euc_sim = euclidean_similarity(tfidf_matrix[i].toarray(), tfidf_matrix[j].toarray())
+            seq_sim = difflib.SequenceMatcher(None, text1, text2).ratio() if text1 and text2 else 0.0
 
             # Weighted average (can adjust weights as needed)
             ratio = (0.4 * cos_sim) + (0.25 * jac_sim) + (0.2 * seq_sim) + (0.15 * euc_sim)
+            if exact_hash:
+                ratio = 1.0
+
+            # Image-based similarity (first page)
+            img1 = image_features.get(pdf1, {}).get("image")
+            img2 = image_features.get(pdf2, {}).get("image")
+            phash_sim = _phash_similarity(
+                image_features.get(pdf1, {}).get("phash"),
+                image_features.get(pdf2, {}).get("phash")
+            )
+            ssim_value = _ssim(img1, img2) if img1 is not None and img2 is not None else None
+            psnr_value = _psnr(img1, img2) if img1 is not None and img2 is not None else None
+
+            # Layout-aware similarity
+            layout_sim = _cosine_similarity_vector(
+                image_features.get(pdf1, {}).get("layout"),
+                image_features.get(pdf2, {}).get("layout")
+            )
+
+            # N-gram shingle similarity
+            shingle_sim = 0.0
+            shingles1 = shingle_sets.get(pdf1, set())
+            shingles2 = shingle_sets.get(pdf2, set())
+            if shingles1 and shingles2:
+                shingle_sim = len(shingles1 & shingles2) / float(len(shingles1 | shingles2))
+
+            # Embedding similarity (optional)
+            embed_sim = None
+            if embedding_vectors is not None:
+                embed_sim = float(np.dot(embedding_vectors[i], embedding_vectors[j]))
+
+            # Metadata match (does not trigger by itself)
+            meta_match = False
+            if meta1.get("producer") and meta2.get("producer") and meta1.get("producer") == meta2.get("producer"):
+                if meta1.get("creator") == meta2.get("creator") and meta1.get("page_count") == meta2.get("page_count"):
+                    meta_match = True
 
             all_pairs.append((os.path.basename(pdf1), os.path.basename(pdf2), ratio))
             similarity_matrix[(pdf1, pdf2)] = ratio
             similarity_matrix[(pdf2, pdf1)] = ratio
-            if ratio >= similarity_threshold:
+            text_flag = ratio >= similarity_threshold
+            image_phash_flag = phash_sim is not None and phash_sim >= image_phash_threshold
+            image_ssim_flag = ssim_value is not None and ssim_value >= image_ssim_threshold
+            layout_flag = layout_sim is not None and layout_sim >= layout_threshold
+            shingle_flag = shingle_sim >= shingle_threshold
+            embedding_flag = embed_sim is not None and embed_sim >= embedding_threshold
+
+            # Balanced rule: exact hash OR (text similarity + at least one image/layout signal).
+            flagged = exact_hash or (text_flag and (image_phash_flag or image_ssim_flag or layout_flag))
+
+            reasons = []
+            if flagged:
+                if exact_hash:
+                    reasons.append("exact_hash")
+                if text_flag:
+                    reasons.append("text_similarity")
+                if image_phash_flag:
+                    reasons.append("image_phash")
+                if image_ssim_flag:
+                    reasons.append("image_ssim")
+                if layout_flag:
+                    reasons.append("layout_similarity")
+                if shingle_flag:
+                    reasons.append("ngram_shingles")
+                if embedding_flag:
+                    reasons.append("embedding_similarity")
+                if meta_match:
+                    reasons.append("metadata_match")
                 similar_pairs.append((os.path.basename(pdf1), os.path.basename(pdf2), ratio))
+            all_pairs_detail.append({
+                "pdf1": os.path.basename(pdf1),
+                "pdf2": os.path.basename(pdf2),
+                "ratio": ratio,
+                "metrics": {
+                    "cosine": cos_sim,
+                    "jaccard": jac_sim,
+                    "sequence": seq_sim,
+                    "euclidean": euc_sim,
+                    "phash_similarity": phash_sim,
+                    "ssim": ssim_value,
+                    "psnr": psnr_value,
+                    "layout_similarity": layout_sim,
+                    "shingle_jaccard": shingle_sim,
+                    "embedding_cosine": embed_sim,
+                },
+                "exact_hash": bool(exact_hash),
+                "metadata_match": meta_match,
+                "reasons": reasons,
+            })
 
     # Save results to file in the same folder
     result_path = os.path.join(folder_path, "pdf_similarity_results.txt")
     status_path = os.path.join(folder_path, "pdf_similarity_status.json")
+    report_path = os.path.join(folder_path, "pdf_similarity_report.json")
 
     # Load previous status if exists
     sent_status = {}
@@ -1628,6 +1898,70 @@ def compare_texts_from_pdfs_in_folder(
     else:
         print(f"Comparison results saved to {result_path}")
 
+    pair_details_by_key = {
+        pair_key(p["pdf1"], p["pdf2"]): p for p in all_pairs_detail
+    }
+
+    # Cluster detection for groups of similar submissions
+    def _build_clusters(details):
+        parent = {}
+
+        def find(x):
+            parent.setdefault(x, x)
+            if parent[x] != x:
+                parent[x] = find(parent[x])
+            return parent[x]
+
+        def union(a, b):
+            ra, rb = find(a), find(b)
+            if ra != rb:
+                parent[rb] = ra
+
+        for detail in details:
+            if detail.get("reasons"):
+                union(detail["pdf1"], detail["pdf2"])
+
+        clusters = {}
+        for detail in details:
+            for f in (detail["pdf1"], detail["pdf2"]):
+                root = find(f)
+                clusters.setdefault(root, set()).add(f)
+        return [sorted(list(members)) for members in clusters.values() if len(members) > 1]
+
+    clusters = _build_clusters(all_pairs_detail)
+
+    # Save a structured report for downstream processing
+    try:
+        report_payload = {
+            "generated_at": datetime.now().isoformat(),
+            "threshold": similarity_threshold,
+            "assignment_name": assignment_name_guess,
+            "methods": {
+                "text_similarity_threshold": similarity_threshold,
+                "image_phash_threshold": image_phash_threshold,
+                "image_ssim_threshold": image_ssim_threshold,
+                "layout_threshold": layout_threshold,
+                "shingle_threshold": shingle_threshold,
+                "embedding_threshold": embedding_threshold,
+                "embedding_method": embedding_method,
+                "flag_rule": "exact_hash OR (text_similarity AND (image_phash OR image_ssim OR layout_similarity))",
+            },
+            "files": {os.path.basename(k): v for k, v in file_metadata.items()},
+            "pairs": all_pairs_detail,
+            "high_similarity": [
+                p for p in all_pairs_detail
+                if p["reasons"]
+            ],
+            "clusters": clusters,
+        }
+        with open(report_path, "w", encoding="utf-8") as f:
+            json.dump(report_payload, f, ensure_ascii=False, indent=2)
+        if verbose:
+            print(f"[PDFSimilarity] Report saved to {report_path}")
+    except Exception as e:
+        if verbose:
+            print(f"[PDFSimilarity] Failed to save report JSON: {e}")
+
     if similar_pairs:
         if verbose:
             print("[PDFSimilarity] PDF pairs with high similarity:")
@@ -1642,6 +1976,83 @@ def compare_texts_from_pdfs_in_folder(
             print("[PDFSimilarity] No highly similar PDF pairs found.")
         else:
             print("No highly similar PDF pairs found.")
+
+    # Update local database with similarity flags if possible
+    if db_path is None:
+        db_path = get_default_db_path()
+    if db_path and os.path.exists(db_path) and similar_pairs:
+        try:
+            students = load_database(db_path, verbose=verbose)
+            sid_map = {}
+            name_map = {}
+
+            def _norm_name(value):
+                return re.sub(r"\\s+", " ", str(value or "")).strip().lower()
+
+            for s in students:
+                canvas_id = getattr(s, "Canvas ID", None)
+                if canvas_id is not None:
+                    sid_map[str(canvas_id)] = s
+                name = getattr(s, "Name", None)
+                if name:
+                    name_map[_norm_name(name)] = s
+
+            def _resolve_student(meta):
+                sid = str(meta.get("canvas_id") or "")
+                if sid and sid in sid_map:
+                    return sid_map[sid]
+                name_key = _norm_name(meta.get("student_name"))
+                return name_map.get(name_key)
+
+            def _pair_key(a, b):
+                return "||".join(sorted([a, b]))
+
+            for pdf1, pdf2, ratio in similar_pairs:
+                meta1 = file_metadata.get(os.path.join(folder_path, pdf1), file_metadata.get(pdf1, {}))
+                meta2 = file_metadata.get(os.path.join(folder_path, pdf2), file_metadata.get(pdf2, {}))
+                student1 = _resolve_student(meta1)
+                student2 = _resolve_student(meta2)
+                if not student1 and not student2:
+                    continue
+                pair_key = _pair_key(pdf1, pdf2)
+                detail = pair_details_by_key.get(pair_key, {})
+                reasons = detail.get("reasons", [])
+
+                entry = {
+                    "pair_key": pair_key,
+                    "other_file": pdf2,
+                    "similarity": round(ratio, 4),
+                    "reasons": reasons,
+                    "report_path": report_path,
+                    "assignment_id": meta1.get("assignment_id") or meta2.get("assignment_id"),
+                    "assignment_name": assignment_name_guess,
+                }
+                entry_other = {
+                    "pair_key": pair_key,
+                    "other_file": pdf1,
+                    "similarity": round(ratio, 4),
+                    "reasons": reasons,
+                    "report_path": report_path,
+                    "assignment_id": meta1.get("assignment_id") or meta2.get("assignment_id"),
+                    "assignment_name": assignment_name_guess,
+                }
+
+                for student, payload in ((student1, entry), (student2, entry_other)):
+                    if not student:
+                        continue
+                    existing = getattr(student, "Plagiarism Matches", [])
+                    if not isinstance(existing, list):
+                        existing = []
+                    if not any(item.get("pair_key") == pair_key for item in existing if isinstance(item, dict)):
+                        existing.append(payload)
+                        setattr(student, "Plagiarism Matches", existing)
+
+            save_database(students, db_path, verbose=verbose)
+            if verbose:
+                print(f"[PDFSimilarity] Saved plagiarism flags to database: {db_path}")
+        except Exception as e:
+            if verbose:
+                print(f"[PDFSimilarity] Failed to update database: {e}")
 
     # Only send messages for pairs that have not been sent before
     pairs_to_notify = []
@@ -1735,8 +2146,38 @@ def compare_texts_from_pdfs_in_folder(
                 sent_status[pair_key(pdf1, pdf2)] = "FAILED"
                 continue
 
+            detail = pair_details_by_key.get(pair_key(pdf1, pdf2), {})
+            reasons = detail.get("reasons", [])
+            metrics = detail.get("metrics", {})
+
+            method_descriptions = {
+                "exact_hash": "Exact file hash match",
+                "text_similarity": "Text similarity (TF-IDF/sequence)",
+                "image_phash": "Perceptual image hash match",
+                "image_ssim": "Image structural similarity",
+                "layout_similarity": "Layout similarity from OCR bounding boxes",
+                "ngram_shingles": "N-gram shingle overlap",
+                "embedding_similarity": "Embedding similarity (if available)",
+                "metadata_match": "PDF metadata match (producer/creator/pages)",
+            }
+            methods_used = [method_descriptions.get(r, r) for r in reasons]
+            if not methods_used:
+                methods_used = ["Text similarity (TF-IDF/sequence)"]
+            method_block = "
+".join([f"- {m}" for m in methods_used])
+
             # Generate message for this pair
             similarity_results = f"{pdf1} <-> {pdf2}: similarity = {ratio:.2f}"
+            metrics_summary = (
+                f"TF-IDF cosine: {metrics.get('cosine')}, "
+                f"Jaccard: {metrics.get('jaccard')}, "
+                f"Sequence: {metrics.get('sequence')}, "
+                f"Image pHash: {metrics.get('phash_similarity')}, "
+                f"SSIM: {metrics.get('ssim')}, "
+                f"Layout: {metrics.get('layout_similarity')}, "
+                f"Shingles: {metrics.get('shingle_jaccard')}, "
+                f"Embedding: {metrics.get('embedding_cosine')}"
+            )
             if refine in ALL_AI_METHODS:
                 if verbose:
                     print(f"[PDFSimilarity] Generating message using AI service: {refine} for pair {pdf1} <-> {pdf2} ...")
@@ -1744,28 +2185,63 @@ def compare_texts_from_pdfs_in_folder(
                     print(f"Generating message using AI service: {refine} for pair {pdf1} <-> {pdf2} ...")
                 prompt = (
                     "You are an expert assistant. Compose a clear, formal, and professional message in Vietnamese to notify students "
-                    "about the high similarity detected in their submissions by the system. The message should include the following points:\n\n"
-                    "1. Provide the similarity results, listing the pair of submissions with their similarity score. Mention that the score is between 0 and 1 and the closer to 1 the more similar the submissions are.\n"
-                    "2. Clearly state that this level of similarity is considered cheating and is strictly prohibited in the class.\n"
-                    "3. Warn the students that if no changes are made to their submissions, all involved students will receive a score of 0 for the assignment.\n"
-                    "4. At the end of your response, mention that this message was generated and sent automatically. Also mention that the detection can be wrong due to various factors such as differences in writing style, errors in extracting text from PDF via OCR, and so on.\n\n"
-                    "Ensure the message is complete, concise, and does not require any additional edits or replacements. "
-                    "Do not include any extra content beyond the specified points. Do not add any extra message or sign message. Do not use \"em\" for calling a student in Vietnamese, instead use \"bạn\" or \"các bạn\" for plural. \n\n"
-                    "Similarity result:\n{text}"
+                    "about potential similarity detected in their submissions by the system. The message should include the following points:
+
+"
+                    "1. Provide the similarity results, listing the pair of submissions with their similarity score.
+"
+                    "2. Explain the methods used (text similarity, image similarity, layout similarity, n-gram overlap, metadata match, optional embedding similarity).
+"
+                    "3. Emphasize that automated detection can produce false positives and the case will be reviewed by lecturers and TAs before any final decision.
+"
+                    "4. Ask students to wait for review or respond if they believe the detection is incorrect.
+
+"
+                    "Ensure the message is complete, concise, and does not require any additional edits or replacements. 
+
+"
+                    "Similarity result:
+{text}
+"
+                    "Methods:
+{methods}
+"
+                    "Metrics:
+{metrics}"
                 )
-                message = refine_text_with_ai(similarity_results, method=refine, user_prompt=prompt)
+                message = refine_text_with_ai(
+                    similarity_results,
+                    method=refine,
+                    user_prompt=prompt.format(text=similarity_results, methods=method_block, metrics=metrics_summary)
+                )
             else:
                 message = (
-                    "Phát hiện sự tương tự cao trong bài nộp của các sinh viên sau:\n"
+                    "Potential similarity detected by automated checks for the following submissions:
+"
                     + similarity_results +
-                    "\n\nĐây được coi là hành vi gian lận và không được phép trong lớp học. Nếu không có thay đổi nào trong bài nộp, "
-                    "tất cả sinh viên liên quan sẽ nhận điểm 0 cho bài tập này.\n\n"
-                    "Lưu ý: Phát hiện này có thể không hoàn toàn chính xác do nhiều yếu tố như sự khác biệt về cách trình bày, "
-                    "phong cách viết, hoặc lỗi khi trích xuất nội dung từ file PDF bằng OCR, v.v.\n\n"
-                    "Thông báo này được tạo bởi AI agent Gemini 2.5-flash và được gửi tự động sau khi phát hiện sự tương tự cao."
+                    "
+
+Assignment: "
+                    + assignment_name_guess +
+                    "
+
+Methods used:
+"
+                    + method_block +
+                    "
+
+Metrics:
+"
+                    + metrics_summary +
+                    "
+
+Note: Automated detection can produce false positives (OCR errors, formatting differences, or similar templates). "
+                    "This case will be reviewed by the lecturers and TAs before any final decision. "
+                    "If you believe this detection is incorrect, you may respond with clarification."
                 )
 
-            subject = "Thông báo về sự tương tự cao trong bài nộp"
+            subject = "Notice: Potential similarity detected in submissions"
+
             if verbose:
                 print(f"[PDFSimilarity] Subject:\n{subject}")
                 print(f"[PDFSimilarity] Message for {pdf1} <-> {pdf2}:\n{message}")
@@ -1806,13 +2282,17 @@ def compare_texts_from_pdfs_in_folder(
                             message = refine_text_with_ai(similarity_results, method=refine, user_prompt=prompt)
                         else:
                             message = (
-                                "Phát hiện sự tương tự cao trong bài nộp của các sinh viên sau:\n"
+                                "Potential similarity detected by automated checks for the following submissions:\n"
                                 + similarity_results +
-                                "\n\nĐây được coi là hành vi gian lận và không được phép trong lớp học. Nếu không có thay đổi nào trong bài nộp, "
-                                "tất cả sinh viên liên quan sẽ nhận điểm 0 cho bài tập này.\n\n"
-                                "Lưu ý: Phát hiện này có thể không hoàn toàn chính xác do nhiều yếu tố như sự khác biệt về cách trình bày, "
-                                "phong cách viết, hoặc lỗi khi trích xuất nội dung từ file PDF bằng OCR, v.v.\n\n"
-                                "Thông báo này được tạo bởi AI agent Gemini 2.5-flash và được gửi tự động sau khi phát hiện sự tương tự cao."
+                                "\n\nAssignment: "
+                                + assignment_name_guess +
+                                "\n\nMethods used:\n"
+                                + method_block +
+                                "\n\nMetrics:\n"
+                                + metrics_summary +
+                                "\n\nNote: Automated detection can produce false positives (OCR errors, formatting differences, or similar templates). "
+                                "This case will be reviewed by the lecturers and TAs before any final decision. "
+                                "If you believe this detection is incorrect, you may respond with clarification."
                             )
                         if verbose:
                             print(f"[PDFSimilarity] Regenerated Message:\n{message}")
@@ -2139,7 +2619,6 @@ def detect_meaningful_level_and_notify_students(
                         print(f"Could not extract Canvas ID from {filename}")
                     continue
                 message = generate_low_quality_message(filename, score, text, refine)
-                subject = "Yêu cầu định dạng lại và nộp lại bài tập"
                 if verbose:
                     print(f"\n[Meaningfulness] Subject: {subject}")
                     print(f"[Meaningfulness] Message to {filename}:")
@@ -3317,7 +3796,6 @@ def send_canvas_message_to_students(
 
         # Prompt for subject if not provided
         while not subject:
-            subject = get_input_with_timeout("Enter message subject (or 'q' to quit): ", timeout=60, default="q").strip()
             if subject.lower() in ("q", "quit"):
                 if verbose:
                     print("[CanvasMessage] Quitting.")
@@ -3694,7 +4172,6 @@ def notify_incomplete_canvas_peer_reviews(
                             print("Skipped sending message to this reviewer.")
                             continue
 
-                subject = f"Nhắc nhở hoàn thành đánh giá (peer review) cho bài tập \"{assignment_title}\""
                 try:
                     canvas.create_conversation(
                         recipients=[str(reviewer_id)],
@@ -5841,7 +6318,6 @@ def download_and_check_student_submissions(
                 "Nếu có thắc mắc, hãy liên hệ với giảng viên. \n"
                 "Thông báo này được gửi tự động từ hệ thống."
             )
-            subject = "Cảnh báo: Nộp các file rất giống nhau cho nhiều bài tập"
 
             # Print message and ask user if want to send/refine/quit
             print("\n--- Prepared warning message to send ---")

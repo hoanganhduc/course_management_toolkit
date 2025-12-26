@@ -12,3 +12,4 @@
 - Added override_grades.xlsx support to override CC/CK/GK with reasons in final evaluation output.
 - Moved sample files into `sample/` with documentation in `sample/index.md`.
 - Added `sample/credentials.sample.json` as a Google service account template.
+- Enhanced PDF similarity checks with image/layout/shingle/embedding methods, JSON reports, clustering, and database flags.
