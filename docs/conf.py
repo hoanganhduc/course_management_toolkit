@@ -25,5 +25,7 @@ autodoc_typehints = 'description'
 
 html_theme = 'alabaster'
 html_static_path = ['_static']
+today_fmt = '%Y-%m-%d'
+html_last_updated_fmt = '%Y-%m-%d'
 
 copyright = f"{datetime.now().year}, {author}"

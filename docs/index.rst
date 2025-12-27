@@ -2,6 +2,8 @@ Course Management Toolkit
 =========================
 
 Utilities for managing course rosters, grading, OCR extraction, and Canvas/Google Classroom workflows.
+Work in progress, mainly designed for personal use but open-sourced for others to adapt. Code with the help of GitHub Copilot and ChatGPT Codex.
+Last updated: |today|
 
 Package information
 -------------------
