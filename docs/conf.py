@@ -5,7 +5,7 @@ from datetime import datetime
 sys.path.insert(0, os.path.abspath('..'))
 
 project = 'Course Management Toolkit'
-author = 'Hoang Anh Duc'
+author = 'Duc A. Hoang'
 version = '0.1.0'
 release = version
 
