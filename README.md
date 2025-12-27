@@ -217,9 +217,10 @@ Local LLM settings (defaults to Ollama):
 - `LOCAL_LLM_COMMAND` (default: `ollama`)
 - `LOCAL_LLM_MODEL` (default: `llama3.2:3b`)
 - `LOCAL_LLM_ARGS` (optional extra CLI args)
-Runtime overrides: `--local-llm-command`, `--local-llm-model`, `--local-llm-args`.
-You can override these at runtime with `--local-llm-command`, `--local-llm-model`, and `--local-llm-args`.
+- `LOCAL_LLM_GGUF_DIR` (default: `C:\llm`, scanned recursively for `.gguf` files)
+Runtime overrides: `--local-llm-command`, `--local-llm-model`, `--local-llm-args`, `--local-llm-gguf-dir`.
 To verify AI connectivity, run `course --test-ai` (or choose the menu entry) and check the status for each model. Use `--test-ai-model` to test a specific model name, or `--test-ai-gemini-model`/`--test-ai-huggingface-model` when testing `--test-ai all`. For local models, run `course --test-ai local`.
+To detect locally installed models (Ollama or llama.cpp compatible), run `course --detect-local-ai`.
 To list available Gemini models for your API key, run `course --list-ai-models gemini` (or choose the menu entry). Hugging Face lists the top public text-generation models (up to 50).
 When an AI call is rate-limited, the tool retries and may switch to a different available model with similar capabilities.
 Submission quality checks (meaningfulness) can be tuned via config keys: `QUALITY_MIN_CHARS`, `QUALITY_UNIQUE_CHAR_RATIO_MIN`, `QUALITY_REPEAT_CHAR_RATIO_MAX`, `QUALITY_VN_CHAR_RATIO_MIN`, `QUALITY_ALNUM_RATIO_MIN`, `QUALITY_SYMBOL_RATIO_MAX`, `QUALITY_EMPTY_LINE_RATIO_MAX`, `QUALITY_MATH_DENSITY_THRESHOLD`, `QUALITY_LENGTH_RATIO_LOW`, `QUALITY_LENGTH_RATIO_MEDIUM`, `QUALITY_LENGTH_RATIO_HIGH`.

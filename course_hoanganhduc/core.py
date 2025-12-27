@@ -112,6 +112,7 @@ def _build_menu_sections():
             ("Load config from JSON file and save to default location", "36"),
             ("Test AI services (Gemini/HuggingFace)", "52"),
             ("List AI models for provider", "53"),
+            ("Detect local AI models (Ollama)", "64"),
             ("Sync students with Google Classroom", "49"),
             ("Backup config.json", "57"),
             ("Restore config.json", "58"),
@@ -403,6 +404,12 @@ def main():
     config_group.add_argument('--local-llm-args', type=str,
                               help="Extra args for local LLM command",
                               dest="local_llm_args", metavar="ARGS")
+    config_group.add_argument('--local-llm-gguf-dir', type=str,
+                              help="Directory to scan for .gguf models (llama.cpp)",
+                              dest="local_llm_gguf_dir", metavar="DIR")
+    config_group.add_argument('--detect-local-ai', action='store_true',
+                              help="Detect locally installed AI models (Ollama-compatible)",
+                              dest="detect_local_ai")
 
     db_group = parser.add_argument_group("Student Database")
     db_group.add_argument('--db', '-db', '-D', type=str, help="Database file name (default: students.db, saved in script folder)", dest="db", metavar="DB")
@@ -759,6 +766,8 @@ def main():
         _apply_config_overrides({"LOCAL_LLM_MODEL": args.local_llm_model})
     if args.local_llm_args:
         _apply_config_overrides({"LOCAL_LLM_ARGS": args.local_llm_args})
+    if args.local_llm_gguf_dir:
+        _apply_config_overrides({"LOCAL_LLM_GGUF_DIR": args.local_llm_gguf_dir})
     if "local" not in (ALL_AI_METHODS or []):
         if isinstance(ALL_AI_METHODS, (list, tuple)):
             updated_methods = list(ALL_AI_METHODS)
@@ -968,6 +977,18 @@ def main():
                     print("[AIModels] Output truncated to 50 models.")
             if rate_limit:
                 print(f"[AIModels] {method} rate limit headers: {rate_limit}")
+
+    if args.detect_local_ai:
+        result = detect_local_ai_models(verbose=args.verbose)
+        status = "OK" if result.get("ok") else "FAIL"
+        command = result.get("command", "")
+        message = result.get("message", "")
+        models = result.get("models", [])
+        print(f"[LocalAI] {status}. {message}")
+        if command:
+            print(f"[LocalAI] Command: {command}")
+        if models:
+            print(f"[LocalAI] Models: {', '.join(models)}")
 
     if args.search:
         results = search_students(students, args.search, db_path=db_path, verbose=args.verbose)
@@ -1905,6 +1926,17 @@ def main():
                             print("[AIModels] Output truncated to 50 models.")
                     if rate_limit:
                         print(f"[AIModels] {m} rate limit headers: {rate_limit}")
+            elif choice == '64':
+                result = detect_local_ai_models(verbose=args.verbose)
+                status = "OK" if result.get("ok") else "FAIL"
+                command = result.get("command", "")
+                message = result.get("message", "")
+                models = result.get("models", [])
+                print(f"[LocalAI] {status}. {message}")
+                if command:
+                    print(f"[LocalAI] Command: {command}")
+                if models:
+                    print(f"[LocalAI] Models: {', '.join(models)}")
             elif choice == '9':
                 export_path = input_with_completion("Enter export TXT file path (or 'q' to quit): ").strip()
                 if export_path.lower() in ('q', 'quit'):

@@ -265,7 +265,8 @@ Local LLM settings (defaults to Ollama):
 - ``LOCAL_LLM_COMMAND`` (default: ``ollama``)
 - ``LOCAL_LLM_MODEL`` (default: ``llama3.2:3b``)
 - ``LOCAL_LLM_ARGS`` (optional extra CLI args)
-Runtime overrides: ``--local-llm-command``, ``--local-llm-model``, ``--local-llm-args``.
+- ``LOCAL_LLM_GGUF_DIR`` (default: ``C:\llm``, scanned recursively for ``.gguf`` files)
+Runtime overrides: ``--local-llm-command``, ``--local-llm-model``, ``--local-llm-args``, ``--local-llm-gguf-dir``.
 
 
 AI model verification and listing
@@ -282,6 +283,12 @@ Verify the local model:
 .. code-block:: bash
 
    course --test-ai local
+
+Detect locally installed models (Ollama or llama.cpp compatible):
+
+.. code-block:: bash
+
+   course --detect-local-ai
 
 Test a specific model name:
 

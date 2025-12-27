@@ -370,6 +370,7 @@ def load_config(config_path=None, verbose=False):
         "LOCAL_LLM_MODEL",
         "LOCAL_LLM_ARGS",
         "LOCAL_LLM_TIMEOUT",
+        "LOCAL_LLM_GGUF_DIR",
         "DRY_RUN",
         "LOG_DIR",
         "LOG_LEVEL",

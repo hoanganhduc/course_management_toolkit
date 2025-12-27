@@ -1360,6 +1360,115 @@ def list_ai_models(methods=None, verbose=False):
 
     return results
 
+
+def detect_local_ai_models(verbose=False):
+    """
+    Detect locally installed AI models (Ollama or llama.cpp compatible).
+    Returns a dict with command, models, and status.
+    """
+    cmd_parts = shlex.split(LOCAL_LLM_COMMAND) if LOCAL_LLM_COMMAND else []
+    if not cmd_parts:
+        return {
+            "ok": False,
+            "message": "Missing LOCAL_LLM_COMMAND.",
+            "command": LOCAL_LLM_COMMAND,
+            "models": [],
+        }
+    command_base = os.path.basename(cmd_parts[0]).lower()
+    if "ollama" in command_base:
+        if "list" not in cmd_parts:
+            cmd_parts.append("list")
+        try:
+            resp = subprocess.run(
+                cmd_parts,
+                capture_output=True,
+                text=True,
+                timeout=LOCAL_LLM_TIMEOUT,
+                encoding="utf-8",
+                errors="replace",
+            )
+            if resp.returncode != 0:
+                message = resp.stderr.strip() or f"Command failed ({resp.returncode})."
+                return {
+                    "ok": False,
+                    "message": message,
+                    "command": " ".join(cmd_parts),
+                    "models": [],
+                }
+            models = []
+            for idx, line in enumerate(resp.stdout.splitlines()):
+                if idx == 0 and "NAME" in line.upper():
+                    continue
+                parts = line.strip().split()
+                if not parts:
+                    continue
+                models.append(parts[0])
+            return {
+                "ok": True,
+                "message": "OK",
+                "command": " ".join(cmd_parts),
+                "models": models,
+            }
+        except Exception as e:
+            if verbose:
+                print(f"[LocalDetect] Error: {e}")
+            return {
+                "ok": False,
+                "message": f"Error: {e}",
+                "command": " ".join(cmd_parts),
+                "models": [],
+            }
+    if "llama" in command_base:
+        help_cmd = cmd_parts + ["--help"]
+        try:
+            resp = subprocess.run(
+                help_cmd,
+                capture_output=True,
+                text=True,
+                timeout=LOCAL_LLM_TIMEOUT,
+                encoding="utf-8",
+                errors="replace",
+            )
+            if resp.returncode != 0:
+                message = resp.stderr.strip() or f"Command failed ({resp.returncode})."
+                return {
+                    "ok": False,
+                    "message": message,
+                    "command": " ".join(help_cmd),
+                    "models": [],
+                }
+            gguf_dir = LOCAL_LLM_GGUF_DIR
+            gguf_models = []
+            if gguf_dir and os.path.isdir(gguf_dir):
+                for root, _, files in os.walk(gguf_dir):
+                    for filename in files:
+                        if filename.lower().endswith(".gguf"):
+                            gguf_models.append(os.path.join(root, filename))
+            message = "OK (llama.cpp detected; provide a .gguf model path in LOCAL_LLM_MODEL)."
+            if gguf_models:
+                message = f"OK (llama.cpp detected; found {len(gguf_models)} .gguf model(s))."
+            return {
+                "ok": True,
+                "message": message,
+                "command": " ".join(help_cmd),
+                "models": gguf_models,
+            }
+        except Exception as e:
+            if verbose:
+                print(f"[LocalDetect] Error: {e}")
+            return {
+                "ok": False,
+                "message": f"Error: {e}",
+                "command": " ".join(help_cmd),
+                "models": [],
+            }
+    return {
+        "ok": False,
+        "message": "Unknown local LLM command (expected ollama or llama.cpp).",
+        "command": " ".join(cmd_parts),
+        "models": [],
+    }
+
 def calculate_cc_ck_gk(student, gradebook_csv_path="canvas_gradebook.csv", override_file="override_grades.xlsx", verbose=False):
     """
     Calculate CC (Chuyên cần), CK (Cuối kỳ), GK (Giữa kỳ) for a student object using Canvas gradebook CSV.

@@ -16,4 +16,5 @@
 - Weekly workflow now clones the toolkit, archives reports with DB backups, and tags evidence by assignment.
 - Weekly automation can auto-detect closed assignments not yet in weekly reports.
 - Added local LLM support (Ollama-compatible) for AI refinement and message generation, with CLI overrides.
+- Added local model detection via `--detect-local-ai` (Ollama or llama.cpp) and optional `.gguf` scan.
 - Updated docs and samples; added GPL-3.0-only license.
