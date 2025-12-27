@@ -12,7 +12,7 @@
 	</a>
 </div>
 
-![Version](https://img.shields.io/github/v/release/hoanganhduc/course_management_toolkit?label=version) ![Pre-release](https://img.shields.io/github/v/tag/hoanganhduc/course_management_toolkit?label=pre-release&sort=semver) ![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python) ![GitHub](https://img.shields.io/badge/GitHub-Repo-black?logo=github) ![Status](https://img.shields.io/badge/status-work--in--progress-yellow) ![License](https://img.shields.io/github/license/hoanganhduc/course_management_toolkit)
+![Version](https://img.shields.io/github/v/release/hoanganhduc/course_management_toolkit?label=version) ![Pre-release](https://img.shields.io/github/v/tag/hoanganhduc/course_management_toolkit?label=pre-release&sort=semver) ![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python) ![GitHub](https://img.shields.io/badge/GitHub-Repo-black?logo=github) ![Docker](https://img.shields.io/badge/Docker-ready-blue?logo=docker) ![GitHub](https://img.shields.io/badge/GitHub-Repo-black?logo=github) ![Status](https://img.shields.io/badge/status-work--in--progress-yellow) ![License](https://img.shields.io/github/license/hoanganhduc/course_management_toolkit)
 
 Utilities for managing course rosters, grading, OCR extraction, and Canvas/Google Classroom workflows. **Work in progress**, mainly designed for **personal use** but open-sourced for others to adapt. Code with the help of [GitHub Copilot](https://github.com/features/copilot/) and [ChatGPT Codex](https://openai.com/).
 
@@ -32,6 +32,7 @@ Utilities for managing course rosters, grading, OCR extraction, and Canvas/Googl
   - [Troubleshooting OCR](#troubleshooting-ocr)
   - [Documentation](#documentation)
   - [Samples](#samples)
+  - [License](#license)
 
 ## Install (editable)
 
