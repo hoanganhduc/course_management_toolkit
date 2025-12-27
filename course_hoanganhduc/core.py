@@ -42,6 +42,7 @@ def _build_menu_sections():
     return [
         ("Student Database", [
             ("Import students from Excel or CSV file", "1"),
+            ("Preview import from Excel/CSV (no write)", "59"),
             ("Save current students to database", "2"),
             ("Load students from database", "3"),
             ("Search for students by keyword (name, student id, email, etc.)", "6"),
@@ -49,6 +50,9 @@ def _build_menu_sections():
             ("Show details of all students", "8"),
             ("Interactively modify the student database", "14"),
             ("Load override grades into database", "51"),
+            ("Backup students database", "54"),
+            ("Restore students database", "55"),
+            ("Validate student data and export report", "56"),
         ]),
         ("Student Exports", [
             ("Export student list to Excel file", "4"),
@@ -56,6 +60,7 @@ def _build_menu_sections():
             ("Export all student details to TXT file", "9"),
             ("Export student names and emails to TXT file", "46"),
             ("Export student roster to CSV file", "48"),
+            ("Export anonymized roster to CSV file", "60"),
             ("Update MAT*.xlsx files with grades from database", "37"),
             ("Export final grade distribution", "43"),
         ]),
@@ -108,6 +113,8 @@ def _build_menu_sections():
             ("Test AI services (Gemini/HuggingFace)", "52"),
             ("List AI models for provider", "53"),
             ("Sync students with Google Classroom", "49"),
+            ("Backup config.json", "57"),
+            ("Restore config.json", "58"),
         ]),
     ]
 
@@ -290,6 +297,21 @@ def main():
 
     general_group = parser.add_argument_group("General")
     general_group.add_argument('--verbose', '-v', action='store_true', help="Enable verbose output", dest="verbose")
+    general_group.add_argument('--dry-run', action='store_true',
+                               help="Preview actions without writing files or databases",
+                               dest="dry_run")
+    general_group.add_argument('--log-dir', type=str,
+                               help="Directory for log files (default: config folder)",
+                               dest="log_dir", metavar="LOG_DIR")
+    general_group.add_argument('--log-level', type=str, choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+                               help="Logging level (default: INFO)",
+                               dest="log_level", metavar="LEVEL")
+    general_group.add_argument('--log-max-bytes', type=int,
+                               help="Max size in bytes for rotating logs",
+                               dest="log_max_bytes", metavar="BYTES")
+    general_group.add_argument('--log-backups', type=int,
+                               help="Number of rotated log files to keep",
+                               dest="log_backups", metavar="COUNT")
 
     config_group = parser.add_argument_group("Configuration")
     config_group.add_argument('--config', '-cfg', '-c', type=str, help="Load config from JSON file and save to default location", dest="config", metavar="CONFIG")
@@ -300,6 +322,15 @@ def main():
     config_group.add_argument('--clear-credentials', '-ccred', action='store_true',
                               help="Delete stored credentials.json and token.pickle from the default location",
                               dest="clear_credentials")
+    config_group.add_argument('--backup-config', nargs='?', const=True,
+                              help="Back up config.json to a timestamped file (optional: backup dir)",
+                              dest="backup_config", metavar="BACKUP_DIR")
+    config_group.add_argument('--restore-config', nargs='?', const="latest",
+                              help="Restore config.json from a backup (default: latest)",
+                              dest="restore_config", metavar="BACKUP_PATH")
+    config_group.add_argument('--config-backup-keep', type=int,
+                              help="Number of config backups to retain (default from config)",
+                              dest="config_backup_keep", metavar="COUNT")
     config_group.add_argument('--test-ai', '-tai', nargs='?', const="all",
                               choices=["gemini", "huggingface", "all"],
                               help="Test AI services ('gemini', 'huggingface', or 'all')",
@@ -321,6 +352,12 @@ def main():
     db_group = parser.add_argument_group("Student Database")
     db_group.add_argument('--db', '-db', '-D', type=str, help="Database file name (default: students.db, saved in script folder)", dest="db", metavar="DB")
     db_group.add_argument('--add-file', '-a', type=str, help="Import students from Excel or CSV file into the database", dest="add_file", metavar="FILE")
+    db_group.add_argument('--preview-import', type=str,
+                          help="Preview Excel/CSV import (no write)",
+                          dest="preview_import", metavar="FILE")
+    db_group.add_argument('--preview-rows', type=int, default=5,
+                          help="Number of rows to show with --preview-import (default: 5)",
+                          dest="preview_rows", metavar="COUNT")
     db_group.add_argument('--save', '-s', action='store_true', help="Save current students to database file", dest="save")
     db_group.add_argument('--load', '-l', action='store_true', help="Load students from database file", dest="load")
     db_group.add_argument('--search', '-S', type=str, help="Search for students by keyword (name, student id, email, etc.)", dest="search", metavar="QUERY")
@@ -339,12 +376,30 @@ def main():
     db_group.add_argument('--load-override-grades', '-log', nargs='?', const="override_grades.xlsx",
                           help="Load override_grades.xlsx and persist overrides to the database (default: override_grades.xlsx).",
                           dest='load_override_grades', metavar="OVERRIDE_XLSX")
+    db_group.add_argument('--backup-db', nargs='?', const=True,
+                          help="Back up students.db to a timestamped file (optional: backup dir)",
+                          dest="backup_db", metavar="BACKUP_DIR")
+    db_group.add_argument('--restore-db', nargs='?', const="latest",
+                          help="Restore students.db from a backup (default: latest)",
+                          dest="restore_db", metavar="BACKUP_PATH")
+    db_group.add_argument('--db-backup-keep', type=int,
+                          help="Number of database backups to retain (default from config)",
+                          dest="db_backup_keep", metavar="COUNT")
+    db_group.add_argument('--validate-data', nargs='?', const=True,
+                          help="Validate student data and write a report (optional: output path)",
+                          dest="validate_data", metavar="REPORT_PATH")
     db_group.add_argument('--update-mat-excel', '-ume', type=str, nargs='+',
                           help="Update MAT*.xlsx file(s) with grades from database (provide one or more file paths)",
                           dest="update_mat_excel", metavar="MAT_XLSX")
+    db_group.add_argument('--export-grade-diff', nargs='?', const=True,
+                          help="Export grade updates to CSV when updating MAT files (optional: output path)",
+                          dest="export_grade_diff", metavar="CSV")
     db_group.add_argument('--export-roster', '-ero', nargs='?', const='classroom_roster.csv',
                           help="Export classroom roster to CSV file (default: classroom_roster.csv)",
                           dest="export_roster", metavar="CSV_FILE")
+    db_group.add_argument('--export-anonymized', '-ean', nargs='?', const=True,
+                          help="Export anonymized roster to CSV (optional: output path)",
+                          dest="export_anonymized", metavar="CSV_FILE")
 
     ocr_group = parser.add_argument_group("OCR and PDFs")
     ocr_group.add_argument('--add-blackboard-counts', '-b', type=str,
@@ -562,14 +617,55 @@ def main():
     if config:
         _apply_config_overrides(config)
 
+    if args.dry_run:
+        _apply_config_overrides({"DRY_RUN": True})
+    if args.log_dir:
+        _apply_config_overrides({"LOG_DIR": args.log_dir})
+    if args.log_level:
+        _apply_config_overrides({"LOG_LEVEL": args.log_level})
+    if args.log_max_bytes:
+        _apply_config_overrides({"LOG_MAX_BYTES": args.log_max_bytes})
+    if args.log_backups:
+        _apply_config_overrides({"LOG_BACKUP_COUNT": args.log_backups})
+
+    log_dir = args.log_dir or LOG_DIR or os.path.dirname(default_config_path)
+    setup_logging(
+        log_dir=log_dir,
+        log_level=args.log_level or LOG_LEVEL,
+        max_bytes=args.log_max_bytes or LOG_MAX_BYTES,
+        backup_count=args.log_backups or LOG_BACKUP_COUNT,
+        verbose=args.verbose,
+    )
+
     if getattr(args, "no_restricted", False):
         DEFAULT_RESTRICTED = False
     else:
         DEFAULT_RESTRICTED = True
 
+    if args.backup_config:
+        backup_dir = args.backup_config if isinstance(args.backup_config, str) else None
+        backup_config(
+            backup_dir=backup_dir,
+            keep=args.config_backup_keep,
+            course_code=args.course_code,
+            verbose=args.verbose,
+        )
+    if args.restore_config:
+        restore_config(
+            backup_path=args.restore_config,
+            course_code=args.course_code,
+            verbose=args.verbose,
+        )
+
     # Database files are resolved from the current working directory.
     db_filename = args.db if args.db else "students.db"
     db_path = os.path.join(os.getcwd(), db_filename)
+
+    if args.restore_db:
+        restore_database(db_path=db_path, backup_path=args.restore_db, verbose=args.verbose)
+    if args.backup_db:
+        backup_dir = args.backup_db if isinstance(args.backup_db, str) else None
+        backup_database(db_path=db_path, backup_dir=backup_dir, keep=args.db_backup_keep, verbose=args.verbose)
 
     students = []
     if os.path.exists(db_path):
@@ -577,13 +673,22 @@ def main():
     if args.load:
         print(f"Loaded {len(students)} students from database.")
 
+    if args.preview_import:
+        read_students_from_excel_csv(
+            args.preview_import,
+            db_path=None,
+            verbose=args.verbose,
+            preview_only=True,
+            preview_rows=args.preview_rows,
+        )
+
     if args.add_file:
         new_students = read_students_from_excel_csv(args.add_file, db_path=db_path, verbose=args.verbose)
         students = load_database(db_path, verbose=args.verbose)
         print(f"Current number of students in database: {len(students)}.")
 
     if args.save:
-        save_database(students, db_path=db_path, verbose=args.verbose)
+        save_database(students, db_path=db_path, verbose=args.verbose, audit_source="manual-save")
         print("Database saved.")
 
     if args.export_excel:
@@ -599,6 +704,10 @@ def main():
         override_path = args.load_override_grades if isinstance(args.load_override_grades, str) else "override_grades.xlsx"
         load_override_grades_to_database(override_file=override_path, db_path=db_path, verbose=args.verbose)
         students = load_database(db_path, verbose=args.verbose)
+
+    if args.validate_data:
+        report_path = args.validate_data if isinstance(args.validate_data, str) else None
+        generate_data_validation_report(students, db_path=db_path, output_path=report_path, verbose=args.verbose)
 
     # AI tests/listing can run without any other actions.
     if args.test_ai:
@@ -986,13 +1095,28 @@ def main():
         mat_files = args.update_mat_excel
         if not isinstance(mat_files, list):
             mat_files = [mat_files]
+        if isinstance(args.export_grade_diff, str):
+            diff_path = args.export_grade_diff
+        elif args.export_grade_diff:
+            diff_path = os.path.join(os.getcwd(), "grade_diff.csv")
+        else:
+            diff_path = None
         for mat_file in mat_files:
             if not os.path.exists(mat_file):
                 print(f"File not found: {mat_file}")
                 continue
             print(f"Updating MAT Excel file: {mat_file}")
-            updated_path = update_mat_excel_grades(mat_file, students, output_path=None, verbose=args.verbose)
-            print(f"Updated MAT Excel file saved to: {updated_path}")
+            updated_path = update_mat_excel_grades(
+                mat_file,
+                students,
+                output_path=None,
+                diff_output_path=diff_path,
+                verbose=args.verbose,
+            )
+            if DRY_RUN:
+                print(f"Dry run: MAT Excel file would be saved to: {updated_path}")
+            else:
+                print(f"Updated MAT Excel file saved to: {updated_path}")
 
     # New: Sync multichoice exam evaluations to Canvas assignment
     if getattr(args, "sync_multichoice_evaluations", None) is not None:
@@ -1322,6 +1446,10 @@ def main():
                 
     if args.export_roster:
         export_roster_to_csv(students, file_path=args.export_roster, verbose=args.verbose)
+
+    if args.export_anonymized:
+        export_path = args.export_anonymized if isinstance(args.export_anonymized, str) else None
+        export_anonymized_roster(students, file_path=export_path, db_path=db_path, verbose=args.verbose)
         
     if args.sync_google_classroom:
         course_id = args.google_course_id if hasattr(args, "google_course_id") and args.google_course_id else None
@@ -1404,8 +1532,21 @@ def main():
                 read_students_from_excel_csv(file_path, db_path=db_path, verbose=args.verbose)
                 students = load_database(db_path, verbose=args.verbose)
                 print(f"Current number of students in database: {len(students)}.")
+            elif choice == '59':
+                file_path = input_with_completion("Enter Excel/CSV file path for preview (or 'q' to quit): ").strip()
+                if file_path.lower() in ('q', 'quit', ''):
+                    continue
+                rows_raw = input("Number of preview rows [5]: ").strip()
+                preview_rows = int(rows_raw) if rows_raw.isdigit() else 5
+                read_students_from_excel_csv(
+                    file_path,
+                    db_path=None,
+                    verbose=args.verbose,
+                    preview_only=True,
+                    preview_rows=preview_rows,
+                )
             elif choice == '2':
-                save_database(students, db_path=db_path, verbose=args.verbose)
+                save_database(students, db_path=db_path, verbose=args.verbose, audit_source="manual-save")
                 print("Database saved.")
             elif choice == '3':
                 students = load_database(db_path, verbose=args.verbose)
@@ -1448,6 +1589,60 @@ def main():
                     override_path = "override_grades.xlsx"
                 load_override_grades_to_database(override_file=override_path, db_path=db_path, verbose=args.verbose)
                 students = load_database(db_path, verbose=args.verbose)
+            elif choice == '54':
+                backup_dir = input_with_completion("Enter backup directory (leave blank for default, or 'q' to quit): ").strip()
+                if backup_dir.lower() in ('q', 'quit'):
+                    continue
+                keep_raw = input("Backup retention count (leave blank for default): ").strip()
+                keep = int(keep_raw) if keep_raw.isdigit() else None
+                backup_database(
+                    db_path=db_path,
+                    backup_dir=backup_dir or None,
+                    keep=keep,
+                    verbose=args.verbose,
+                )
+            elif choice == '55':
+                backup_path = input_with_completion("Enter backup file path (leave blank for latest, or 'q' to quit): ").strip()
+                if backup_path.lower() in ('q', 'quit'):
+                    continue
+                restore_database(
+                    db_path=db_path,
+                    backup_path=backup_path or "latest",
+                    verbose=args.verbose,
+                )
+                if os.path.exists(db_path):
+                    students = load_database(db_path, verbose=args.verbose)
+            elif choice == '56':
+                report_path = input_with_completion("Enter report output path (leave blank for default, or 'q' to quit): ").strip()
+                if report_path.lower() in ('q', 'quit'):
+                    continue
+                generate_data_validation_report(
+                    students,
+                    db_path=db_path,
+                    output_path=report_path or None,
+                    verbose=args.verbose,
+                )
+            elif choice == '57':
+                backup_dir = input_with_completion("Enter backup directory (leave blank for default, or 'q' to quit): ").strip()
+                if backup_dir.lower() in ('q', 'quit'):
+                    continue
+                keep_raw = input("Backup retention count (leave blank for default): ").strip()
+                keep = int(keep_raw) if keep_raw.isdigit() else None
+                backup_config(
+                    backup_dir=backup_dir or None,
+                    keep=keep,
+                    course_code=args.course_code,
+                    verbose=args.verbose,
+                )
+            elif choice == '58':
+                backup_path = input_with_completion("Enter backup file path (leave blank for latest, or 'q' to quit): ").strip()
+                if backup_path.lower() in ('q', 'quit'):
+                    continue
+                restore_config(
+                    backup_path=backup_path or "latest",
+                    course_code=args.course_code,
+                    verbose=args.verbose,
+                )
             elif choice == '52':
                 method = input("Test AI service (all/gemini/huggingface) [all] (or 'q' to quit): ").strip().lower()
                 if method in ('q', 'quit'):
@@ -1999,14 +2194,27 @@ def main():
                 mat_files = input_with_completion("Enter MAT*.xlsx file path(s), separated by commas (or 'q' to quit): ").strip()
                 if mat_files.lower() in ('q', 'quit', ''):
                     continue
+                diff_path = input_with_completion("Enter grade diff CSV output path (leave blank to skip, or 'q' to quit): ").strip()
+                if diff_path.lower() in ('q', 'quit'):
+                    continue
+                diff_path = diff_path or None
                 mat_file_list = [f.strip() for f in mat_files.split(",") if f.strip()]
                 for mat_file in mat_file_list:
                     if not os.path.exists(mat_file):
                         print(f"File not found: {mat_file}")
                         continue
                     print(f"Updating MAT Excel file: {mat_file}")
-                    updated_path = update_mat_excel_grades(mat_file, students, output_path=None, verbose=args.verbose)
-                    print(f"Updated MAT Excel file saved to: {updated_path}")
+                    updated_path = update_mat_excel_grades(
+                        mat_file,
+                        students,
+                        output_path=None,
+                        diff_output_path=diff_path,
+                        verbose=args.verbose,
+                    )
+                    if DRY_RUN:
+                        print(f"Dry run: MAT Excel file would be saved to: {updated_path}")
+                    else:
+                        print(f"Updated MAT Excel file saved to: {updated_path}")
             elif choice == '38':
                 exam_type = input("Enter exam type (midterm/final, default: midterm): ").strip().lower()
                 if not exam_type:
@@ -2343,6 +2551,13 @@ def main():
                 if not export_path: 
                     export_path = os.path.join(os.getcwd(), "classroom_roster.csv")
                 export_roster_to_csv(students, file_path=export_path, verbose=args.verbose)
+            elif choice == '60':
+                export_path = input_with_completion("Enter anonymized export file path (CSV, leave blank for default, or 'q' to quit): ").strip()
+                if export_path.lower() in ('q', 'quit'):
+                    continue
+                if not export_path:
+                    export_path = os.path.join(os.getcwd(), "students_anonymized.csv")
+                export_anonymized_roster(students, file_path=export_path, db_path=db_path, verbose=args.verbose)
             elif choice == '49':
                 # Sync students with Google Classroom
                 course_id = input("Enter Google Classroom course ID (leave blank to select interactively, or 'q' to quit): ").strip()

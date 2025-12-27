@@ -30,6 +30,7 @@ import unicodedata
 import numpy as np
 from paddleocr import PaddleOCR
 import json
+import logging
 import shutil
 from canvasapi import Canvas
 from datetime import datetime, timedelta, timezone
@@ -49,11 +50,13 @@ import hashlib
 import math
 import statistics
 from collections import Counter, OrderedDict
+from logging.handlers import RotatingFileHandler
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from types import SimpleNamespace
+from datetime import datetime
 
 from tqdm import tqdm  # <-- Add tqdm for progress bars
 
@@ -282,3 +285,58 @@ def multiline_input(prompt):
             break
         lines.append(line)
     return "\n".join(lines)
+
+
+def setup_logging(log_dir=None, log_level="INFO", max_bytes=5_000_000, backup_count=3, verbose=False):
+    """
+    Configure rotating file logging for the CLI. Returns the logger instance.
+    """
+    logger = logging.getLogger("course")
+    if any(isinstance(handler, RotatingFileHandler) for handler in logger.handlers):
+        return logger
+    level = getattr(logging, str(log_level).upper(), logging.INFO)
+    logger.setLevel(level)
+    log_dir = log_dir or os.getcwd()
+    try:
+        os.makedirs(log_dir, exist_ok=True)
+    except Exception as e:
+        if verbose:
+            print(f"[Logging] Failed to create log dir {log_dir}: {e}")
+        log_dir = os.getcwd()
+    log_path = os.path.join(log_dir, "course.log")
+    handler = RotatingFileHandler(log_path, maxBytes=max_bytes, backupCount=backup_count, encoding="utf-8")
+    formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+    if verbose:
+        print(f"[Logging] Writing logs to {log_path}")
+    return logger
+
+
+def append_run_report(action, details=None, outputs=None, verbose=False):
+    """
+    Append a one-line summary of a completed action to run_report.txt.
+    """
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    outputs_list = []
+    if outputs:
+        if isinstance(outputs, (list, tuple, set)):
+            outputs_list = [str(x) for x in outputs if x]
+        else:
+            outputs_list = [str(outputs)]
+    line = f"{timestamp} | {action}"
+    if details:
+        line += f" | {details}"
+    if outputs_list:
+        line += f" | outputs: {', '.join(outputs_list)}"
+    if DRY_RUN:
+        if verbose:
+            print(f"[RunReport] Dry run: would append: {line}")
+        return
+    report_path = os.path.join(os.getcwd(), "run_report.txt")
+    try:
+        with open(report_path, "a", encoding="utf-8") as f:
+            f.write(line + "\n")
+    except Exception as e:
+        if verbose:
+            print(f"[RunReport] Failed to write report: {e}")

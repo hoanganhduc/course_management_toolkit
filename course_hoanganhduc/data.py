@@ -1458,7 +1458,39 @@ def calculate_cc_ck_gk(student, gradebook_csv_path="canvas_gradebook.csv", overr
         "override_fields": override_fields,
     }
 
-def update_mat_excel_grades(file_path, students, output_path=None, verbose=False):
+def export_grade_diff_csv(rows, output_path, verbose=False):
+    if not rows:
+        if verbose:
+            print("[GradeDiff] No changes to export.")
+        return None
+    if not output_path:
+        output_path = os.path.join(os.getcwd(), "grade_diff.csv")
+    if DRY_RUN:
+        print(f"[GradeDiff] Dry run: would write diff CSV to {output_path}")
+        return output_path
+    os.makedirs(os.path.dirname(os.path.abspath(output_path)) or ".", exist_ok=True)
+    with open(output_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(
+            f,
+            fieldnames=["Student ID", "Name", "Field", "Old", "New", "Source", "Match Type"],
+        )
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+    if verbose:
+        print(f"[GradeDiff] Wrote grade diff CSV to {output_path}")
+    else:
+        print(f"Grade diff CSV saved to {output_path}")
+    append_run_report(
+        "export-grade-diff",
+        details=f"rows={len(rows)}",
+        outputs=output_path,
+        verbose=verbose,
+    )
+    return output_path
+
+
+def update_mat_excel_grades(file_path, students, output_path=None, diff_output_path=None, verbose=False):
     """
     Update the columns CC, CK, GK (Attendance, Final, Midterm) in a MAT*.xlsx file.
     - Create a temp copy, unmerge all merged cells, detect header and end rows.
@@ -1503,10 +1535,15 @@ def update_mat_excel_grades(file_path, students, output_path=None, verbose=False
     elif verbose:
         print(f"[OverrideGrades] No override file found at: {override_path}")
 
+    dry_run = DRY_RUN
     # Step 1: Create temp copy and unmerge all merged cells
-    temp_path = file_path + "_temp.xlsx"
-    shutil.copy2(file_path, temp_path)
-    wb_temp = openpyxl.load_workbook(temp_path)
+    temp_path = None
+    if dry_run:
+        wb_temp = openpyxl.load_workbook(file_path)
+    else:
+        temp_path = file_path + "_temp.xlsx"
+        shutil.copy2(file_path, temp_path)
+        wb_temp = openpyxl.load_workbook(temp_path)
     ws_temp = wb_temp.active
 
     merged_ranges = list(ws_temp.merged_cells.ranges)
@@ -1608,7 +1645,8 @@ def update_mat_excel_grades(file_path, students, output_path=None, verbose=False
     # Step 5: Calculate CC, CK, GK for each student using the helper function
     sid_to_values = {}
     results_dir = os.path.join(os.getcwd(), "final_evaluations")
-    os.makedirs(results_dir, exist_ok=True)
+    if not dry_run:
+        os.makedirs(results_dir, exist_ok=True)
 
     for s in students:
         sid = _normalize_student_id(getattr(s, "Student ID", ""))
@@ -1638,11 +1676,13 @@ def update_mat_excel_grades(file_path, students, output_path=None, verbose=False
         
         if cell_info:
             sid_to_values[sid] = {
-                "CC": CC, 
-                "CK": CK, 
+                "CC": CC,
+                "CK": CK,
                 "GK": GK,
                 "cell_info": cell_info,
-                "match_type": match_type
+                "match_type": match_type,
+                "name": name,
+                "override_fields": override_fields,
             }
             if verbose:
                 print(f"[update_mat_excel_grades] Matched student {name} ({sid}) by {match_type}")
@@ -1687,28 +1727,38 @@ def update_mat_excel_grades(file_path, students, output_path=None, verbose=False
             report_text += f"\nDefault model (M\u00f4 h\u00ecnh m\u1eb7c \u0111\u1ecbnh): {default_model}"
 
         result_filename = f"{sid}_{name_display}_results.txt"
-        result_path = os.path.join(results_dir, result_filename)
-        with open(result_path, "w", encoding="utf-8") as f:
-            f.write(report_text)
+        if not dry_run:
+            result_path = os.path.join(results_dir, result_filename)
+            with open(result_path, "w", encoding="utf-8") as f:
+                f.write(report_text)
 
     if verbose:
         print(f"[update_mat_excel_grades] Calculated CC, CK, GK values for {len(sid_to_values)} students from Canvas assignment scores.")
-        print(f"[update_mat_excel_grades] Saved individual results to {results_dir}")
+        if not dry_run:
+            print(f"[update_mat_excel_grades] Saved individual results to {results_dir}")
+        else:
+            print("[update_mat_excel_grades] Dry run: skipped writing individual results.")
 
     # Step 6: Create a new copy in the current folder with the same layout as the original
     if not output_path:
         base = os.path.splitext(os.path.basename(file_path))[0]
         ext = os.path.splitext(file_path)[1]
         output_path = os.path.join(os.getcwd(), f"{base}_updated{ext}")
-    shutil.copy2(file_path, output_path)
-    wb_out = openpyxl.load_workbook(output_path)
-    ws_out = wb_out.active
+    if dry_run:
+        ws_out = ws_temp
+    else:
+        shutil.copy2(file_path, output_path)
+        wb_out = openpyxl.load_workbook(output_path)
+        ws_out = wb_out.active
 
     # Step 7: Fill the corresponding cells in the new copy
     updated_count = 0
+    diff_rows = []
     for sid, value_info in sid_to_values.items():
         cell_info = value_info["cell_info"]
         match_type = value_info["match_type"]
+        name = value_info.get("name", "")
+        override_fields = set(value_info.get("override_fields") or [])
         
         for field in ["CC", "CK", "GK"]:
             if field in cell_info and field in value_info:
@@ -1718,23 +1768,49 @@ def update_mat_excel_grades(file_path, students, output_path=None, verbose=False
                 new_val = value_info[field]
                 if new_val is None:
                     new_val = 0.0
-                cell.value = new_val
+                if not dry_run:
+                    cell.value = new_val
                 updated_count += 1
+                diff_rows.append({
+                    "Student ID": sid,
+                    "Name": name,
+                    "Field": field,
+                    "Old": old_val,
+                    "New": new_val,
+                    "Source": "override" if field in override_fields else "computed",
+                    "Match Type": match_type,
+                })
                 if verbose:
                     print(f"[update_mat_excel_grades] Student ID {sid} (matched by {match_type}), {field}: {old_val} -> {new_val}, cell: {cell_addr}")
 
-    wb_out.save(output_path)
-    os.remove(temp_path)
+    if not dry_run:
+        wb_out.save(output_path)
+    if temp_path and os.path.exists(temp_path):
+        os.remove(temp_path)
     # Restore global cache to avoid side effects on other operations.
     _override_grades_cache = override_cache_backup
     _override_grades_cache_path = override_cache_path_backup
+    if diff_output_path:
+        export_grade_diff_csv(diff_rows, diff_output_path, verbose=verbose)
     if verbose:
-        print(f"[update_mat_excel_grades] Updated {updated_count} cells in {output_path}")
+        if dry_run:
+            print(f"[update_mat_excel_grades] Dry run: would update {updated_count} cells in {output_path}")
+        else:
+            print(f"[update_mat_excel_grades] Updated {updated_count} cells in {output_path}")
     else:
-        print(f"Updated {updated_count} cells in {output_path}")
+        if dry_run:
+            print(f"Dry run: would update {updated_count} cells in {output_path}")
+        else:
+            print(f"Updated {updated_count} cells in {output_path}")
+    append_run_report(
+        "update-mat-excel",
+        details=f"cells={updated_count}",
+        outputs=[output_path, diff_output_path] if diff_output_path else output_path,
+        verbose=verbose,
+    )
     return output_path
 
-def read_students_from_excel_csv(file_path, db_path=None, verbose=False):
+def read_students_from_excel_csv(file_path, db_path=None, verbose=False, preview_only=False, preview_rows=5):
     """
     Read students from Excel or CSV file, detect and normalize header row, deduplicate, and update database if db_path is given.
     Ignores metadata rows (e.g., rows containing 'ĐẠI HỌC QUỐC GIA HÀ NỘI', 'TRƯỜNG ĐẠI HỌC KHOA HỌC TỰ NHIÊN', etc.).
@@ -1942,6 +2018,35 @@ def read_students_from_excel_csv(file_path, db_path=None, verbose=False):
 
     df = normalize_columns(df, verbose=verbose)
 
+    def render_import_preview():
+        columns = list(df.columns)
+        missing = [col for col in ["Name", "Student ID"] if col not in columns]
+        display_cols = columns[:8]
+        extra_cols = len(columns) - len(display_cols)
+        print("Import preview")
+        print("-" * 14)
+        print(f"Columns detected: {', '.join(display_cols)}" + (f" (+{extra_cols} more)" if extra_cols > 0 else ""))
+        if missing:
+            print(f"Missing required columns: {', '.join(missing)}")
+        print(f"Total rows (post-cleaning): {len(df)}")
+        sample = df.head(preview_rows)
+        if not sample.empty:
+            print("Sample rows:")
+            for _, row in sample.iterrows():
+                row_data = {col: row.get(col, "") for col in display_cols}
+                print(f"  {row_data}")
+        else:
+            print("No rows found after cleaning.")
+        return {
+            "columns": columns,
+            "missing_required": missing,
+            "total_rows": len(df),
+            "sample_rows": sample.to_dict(orient="records"),
+        }
+
+    if preview_only:
+        return render_import_preview()
+
     # Check for section/class ID columns
     section_columns = []
     section_column_names = ["Section ID", "Canvas Section", "Registration ID", "Class ID", "Registered Class ID"]
@@ -2148,7 +2253,13 @@ def read_students_from_excel_csv(file_path, db_path=None, verbose=False):
         print(f"{github_count} students with GitHub username information.")
 
     if db_path:
-        save_database(unique_students, db_path)
+        save_database(unique_students, db_path, audit_source="import-excel-csv")
+        append_run_report(
+            "import-students",
+            details=f"source={file_path} before={before_count} after={after_count}",
+            outputs=db_path,
+            verbose=verbose,
+        )
     return unique_students
 
 def read_students_from_pdf(pdf_path, db_path=None, lang="auto", service=DEFAULT_OCR_METHOD, refine=DEFAULT_AI_METHOD, verbose=False):
@@ -2460,34 +2571,199 @@ def refine_database(students, verbose=False):
     refined_sorted = sorted(refined, key=vn_sort_key)
     return refined_sorted
 
-def save_database(students, db_path, verbose=False):
-    # Backup old database if it exists
-    if os.path.exists(db_path):
-        backup_dir = os.path.dirname(db_path) or "."
-        base = os.path.splitext(os.path.basename(db_path))[0]
-        ext = os.path.splitext(db_path)[1]
-        now_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup_path = os.path.join(backup_dir, f"{base}_backup_{now_str}{ext}")
+def _silent_load_database(db_path):
+    try:
+        class _LegacyStudentUnpickler(pickle.Unpickler):
+            def find_class(self, module, name):
+                if module == "__main__" and name == "Student":
+                    from .models import Student
+                    return Student
+                return super().find_class(module, name)
+
+        with open(db_path, "rb") as f:
+            return _LegacyStudentUnpickler(f).load()
+    except Exception:
+        return []
+
+
+def _values_equal(old_value, new_value):
+    if old_value is None and new_value is None:
+        return True
+    if isinstance(old_value, str) and not old_value.strip() and new_value is None:
+        return True
+    if isinstance(new_value, str) and not new_value.strip() and old_value is None:
+        return True
+    try:
+        old_num = float(str(old_value).replace(",", ".")) if old_value is not None else None
+        new_num = float(str(new_value).replace(",", ".")) if new_value is not None else None
+        if old_num is not None and new_num is not None:
+            return abs(old_num - new_num) < 1e-6
+    except Exception:
+        pass
+    return str(old_value).strip() == str(new_value).strip()
+
+
+def _append_grade_audit(students, db_path, audit_source=None, verbose=False):
+    if not GRADE_AUDIT_ENABLED:
+        return
+    if not os.path.exists(db_path):
+        return
+    previous_students = _silent_load_database(db_path)
+    if not previous_students:
+        return
+    prev_by_id = {}
+    prev_by_name = {}
+    for s in previous_students:
+        sid = _normalize_student_id(getattr(s, "Student ID", ""))
+        name = _normalize_vietnamese_name(getattr(s, "Name", ""))
+        if sid:
+            prev_by_id[sid] = s
+        if name:
+            prev_by_name[name] = s
+    source = audit_source or "unknown"
+    timestamp = datetime.now().isoformat(timespec="seconds")
+    updates = 0
+    for student in students:
+        sid = _normalize_student_id(getattr(student, "Student ID", ""))
+        name = _normalize_vietnamese_name(getattr(student, "Name", ""))
+        previous = prev_by_id.get(sid) or prev_by_name.get(name)
+        if not previous:
+            continue
+        for field in GRADE_AUDIT_FIELDS:
+            old_val = getattr(previous, field, None)
+            new_val = getattr(student, field, None)
+            if _values_equal(old_val, new_val):
+                continue
+            audit_list = getattr(student, "Grade Audit", None)
+            if not isinstance(audit_list, list):
+                audit_list = []
+            audit_list.append({
+                "timestamp": timestamp,
+                "field": field,
+                "old": old_val,
+                "new": new_val,
+                "source": source,
+            })
+            setattr(student, "Grade Audit", audit_list)
+            updates += 1
+    if verbose and updates:
+        print(f"[GradeAudit] Recorded {updates} grade change(s).")
+
+
+def _list_db_backups(backup_dir, base_name, ext):
+    pattern = os.path.join(backup_dir, f"{base_name}_backup_*{ext}")
+    return sorted(glob.glob(pattern), key=lambda p: os.path.getmtime(p))
+
+
+def _cleanup_db_backups(backup_dir, base_name, ext, keep=5, verbose=False):
+    if keep is None:
+        return []
+    try:
+        keep = int(keep)
+    except (TypeError, ValueError):
+        return []
+    backups = _list_db_backups(backup_dir, base_name, ext)
+    if keep < 0 or len(backups) <= keep:
+        return []
+    to_remove = backups[:len(backups) - keep]
+    removed = []
+    for path in to_remove:
         try:
-            shutil.copy2(db_path, backup_path)
+            os.remove(path)
+            removed.append(path)
+        except OSError as e:
             if verbose:
-                print(f"[SaveDatabase] Backed up old database to {backup_path}")
-            else:
-                print(f"Notice: Backed up old database to {backup_path}")
-        except Exception as e:
-            if verbose:
-                print(f"[SaveDatabase] Warning: Could not backup old database: {e}")
-            else:
-                print(f"Warning: Could not backup old database: {e}")
+                print(f"[DBBackup] Failed to remove old backup {path}: {e}")
+    return removed
+
+
+def backup_database(db_path=None, backup_dir=None, keep=None, verbose=False):
+    if not db_path:
+        db_path = get_default_db_path()
+    if not os.path.exists(db_path):
+        if verbose:
+            print(f"[DBBackup] Database not found at {db_path}")
+        else:
+            print(f"Database not found at {db_path}")
+        return None
+    backup_dir = backup_dir or os.path.dirname(db_path) or "."
+    os.makedirs(backup_dir, exist_ok=True)
+    base = os.path.splitext(os.path.basename(db_path))[0]
+    ext = os.path.splitext(db_path)[1]
+    now_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_path = os.path.join(backup_dir, f"{base}_backup_{now_str}{ext}")
+    if DRY_RUN:
+        print(f"[DBBackup] Dry run: would back up database to {backup_path}")
+        return backup_path
+    try:
+        shutil.copy2(db_path, backup_path)
+        if verbose:
+            print(f"[DBBackup] Backed up database to {backup_path}")
+        else:
+            print(f"Database backup created at {backup_path}")
+        append_run_report("backup-db", outputs=backup_path, verbose=verbose)
+    except OSError as e:
+        print(f"[DBBackup] Failed to back up database: {e}")
+        return None
+    _cleanup_db_backups(backup_dir, base, ext, keep=keep if keep is not None else DB_BACKUP_KEEP, verbose=verbose)
+    return backup_path
+
+
+def restore_database(db_path=None, backup_path=None, verbose=False):
+    if not db_path:
+        db_path = get_default_db_path()
+    backup_dir = os.path.dirname(db_path) or "."
+    base = os.path.splitext(os.path.basename(db_path))[0]
+    ext = os.path.splitext(db_path)[1]
+    if not backup_path or backup_path == "latest":
+        backups = _list_db_backups(backup_dir, base, ext)
+        if not backups:
+            print("No database backups found.")
+            return None
+        backup_path = backups[-1]
+    if not os.path.exists(backup_path):
+        print(f"Database backup not found: {backup_path}")
+        return None
+    if DRY_RUN:
+        print(f"[DBBackup] Dry run: would restore database from {backup_path}")
+        return backup_path
+    os.makedirs(os.path.dirname(db_path) or ".", exist_ok=True)
+    try:
+        shutil.copy2(backup_path, db_path)
+    except OSError as e:
+        print(f"[DBBackup] Failed to restore database: {e}")
+        return None
+    if verbose:
+        print(f"[DBBackup] Restored database from {backup_path}")
+    else:
+        print(f"Database restored from {backup_path}")
+    append_run_report("restore-db", outputs=backup_path, verbose=verbose)
+    return backup_path
+
+
+def save_database(students, db_path, verbose=False, audit_source=None):
+    # Backup old database if it exists
+    if DRY_RUN:
+        print(f"[SaveDatabase] Dry run: would save database to {db_path}")
+        return
+    if os.path.exists(db_path):
+        backup_database(db_path, verbose=verbose)
 
     if verbose:
         print(f"[SaveDatabase] Saving database to {db_path}...")
     else:
         print(f"Saving database to {db_path}...")
     # Refine database before saving
+    _append_grade_audit(students, db_path, audit_source=audit_source, verbose=verbose)
     students_refined = refine_database(students, verbose=verbose)
     with open(db_path, 'wb') as f:
         pickle.dump(students_refined, f)
+    append_run_report(
+        "save-database",
+        details=f"students={len(students_refined)}",
+        outputs=db_path,
+        verbose=verbose,
+    )
 
 def load_database(db_path, verbose=False):
     if not os.path.exists(db_path):
@@ -2509,6 +2785,158 @@ def load_database(db_path, verbose=False):
 
     with open(db_path, 'rb') as f:
         return _LegacyStudentUnpickler(f).load()
+
+
+def generate_data_validation_report(students=None, db_path=None, output_path=None, verbose=False):
+    """
+    Validate student data for missing IDs, duplicate IDs/names, invalid dates, and out-of-range grades.
+    Returns a dict report and optionally writes a text report to disk.
+    """
+    if db_path:
+        students = load_database(db_path, verbose=verbose)
+    students = students or []
+    if not students:
+        if verbose:
+            print("[ValidateData] No students available for validation.")
+        else:
+            print("No students available for validation.")
+        return {}
+
+    missing_ids = []
+    ids_to_names = {}
+    names_to_ids = {}
+    invalid_dobs = []
+    out_of_range = []
+
+    grade_fields = ["CC", "GK", "CK", "Attendance", "Midterm", "Final"]
+    dob_fields = ["Dob", "Date of Birth", "Ngày sinh"]
+    date_formats = ["%d/%m/%Y", "%d-%m-%Y", "%Y-%m-%d", "%m/%d/%Y"]
+
+    for student in students:
+        sid_raw = getattr(student, "Student ID", "")
+        name_raw = getattr(student, "Name", "")
+        sid = _normalize_student_id(sid_raw)
+        name = str(name_raw).strip()
+        if not sid:
+            missing_ids.append({"name": name, "student_id": sid_raw})
+        else:
+            ids_to_names.setdefault(sid, set()).add(name or "(missing name)")
+        if name:
+            names_to_ids.setdefault(_normalize_vietnamese_name(name), set()).add(sid or "(missing id)")
+
+        dob_value = None
+        for field in dob_fields:
+            if hasattr(student, field):
+                dob_value = getattr(student, field)
+                if dob_value:
+                    break
+        if dob_value:
+            parsed = False
+            for fmt in date_formats:
+                try:
+                    datetime.strptime(str(dob_value).strip(), fmt)
+                    parsed = True
+                    break
+                except Exception:
+                    continue
+            if not parsed:
+                invalid_dobs.append({"name": name, "student_id": sid, "value": dob_value})
+
+        for field in grade_fields:
+            if not hasattr(student, field):
+                continue
+            value = getattr(student, field)
+            if value is None or (isinstance(value, str) and not value.strip()):
+                continue
+            try:
+                num = float(str(value).replace(",", "."))
+            except Exception:
+                out_of_range.append({"name": name, "student_id": sid, "field": field, "value": value})
+                continue
+            if num < 0 or num > 10:
+                out_of_range.append({"name": name, "student_id": sid, "field": field, "value": value})
+
+    duplicate_ids = {sid: sorted(list(names)) for sid, names in ids_to_names.items() if len(names) > 1}
+    duplicate_names = {name: sorted(list(ids)) for name, ids in names_to_ids.items() if len(ids) > 1}
+
+    report = {
+        "total_students": len(students),
+        "missing_ids": missing_ids,
+        "duplicate_ids": duplicate_ids,
+        "duplicate_names": duplicate_names,
+        "invalid_dobs": invalid_dobs,
+        "out_of_range_grades": out_of_range,
+    }
+
+    lines = []
+    lines.append("Data validation report")
+    lines.append("-" * 24)
+    lines.append(f"Total students: {len(students)}")
+    lines.append(f"Missing IDs: {len(missing_ids)}")
+    lines.append(f"Duplicate IDs: {len(duplicate_ids)}")
+    lines.append(f"Duplicate names: {len(duplicate_names)}")
+    lines.append(f"Invalid DOBs: {len(invalid_dobs)}")
+    lines.append(f"Out-of-range grades: {len(out_of_range)}")
+    lines.append("")
+
+    if missing_ids:
+        lines.append("Missing Student IDs:")
+        for item in missing_ids if verbose else missing_ids[:10]:
+            lines.append(f"  - {item.get('name') or '(missing name)'} | {item.get('student_id')}")
+        if not verbose and len(missing_ids) > 10:
+            lines.append(f"  ... ({len(missing_ids) - 10} more)")
+        lines.append("")
+
+    if duplicate_ids:
+        lines.append("Duplicate Student IDs:")
+        for sid, names in duplicate_ids.items():
+            lines.append(f"  - {sid}: {', '.join(names)}")
+        lines.append("")
+
+    if duplicate_names:
+        lines.append("Duplicate Names:")
+        for name_key, ids in duplicate_names.items():
+            lines.append(f"  - {name_key}: {', '.join(ids)}")
+        lines.append("")
+
+    if invalid_dobs:
+        lines.append("Invalid DOBs:")
+        for item in invalid_dobs if verbose else invalid_dobs[:10]:
+            lines.append(f"  - {item.get('name') or '(missing name)'} ({item.get('student_id')}) -> {item.get('value')}")
+        if not verbose and len(invalid_dobs) > 10:
+            lines.append(f"  ... ({len(invalid_dobs) - 10} more)")
+        lines.append("")
+
+    if out_of_range:
+        lines.append("Out-of-range grades:")
+        for item in out_of_range if verbose else out_of_range[:10]:
+            lines.append(f"  - {item.get('name') or '(missing name)'} ({item.get('student_id')}): {item.get('field')}={item.get('value')}")
+        if not verbose and len(out_of_range) > 10:
+            lines.append(f"  ... ({len(out_of_range) - 10} more)")
+        lines.append("")
+
+    report_text = "\n".join(lines)
+    print(report_text)
+    if output_path is None:
+        output_path = os.path.join(os.getcwd(), "data_validation_report.txt")
+    if DRY_RUN:
+        print(f"[ValidateData] Dry run: would write report to {output_path}")
+        return report
+    try:
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write(report_text)
+        if verbose:
+            print(f"[ValidateData] Report saved to {output_path}")
+    except Exception as e:
+        print(f"[ValidateData] Failed to write report: {e}")
+        return report
+    append_run_report(
+        "validate-data",
+        details=f"students={len(students)}",
+        outputs=output_path,
+        verbose=verbose,
+    )
+    return report
 
 def print_student_details(students, identifier, db_path=None, verbose=False):
     """
@@ -2659,6 +3087,9 @@ def export_to_excel(students, file_path=None, db_path=None, verbose=False):
         return
     if not file_path:
         file_path = os.path.join(os.getcwd(), "students_export.xlsx")
+    if DRY_RUN:
+        print(f"[ExportExcel] Dry run: would export to {file_path}")
+        return
     if verbose:
         print(f"[ExportExcel] Exporting {len(students)} students to Excel file: {file_path}")
     else:
@@ -2726,6 +3157,68 @@ def export_to_excel(students, file_path=None, db_path=None, verbose=False):
         print(f"[ExportExcel] Exported {len(students)} students to {file_path}")
     else:
         print(f"Exported {len(students)} students to {file_path}")
+    append_run_report(
+        "export-excel",
+        details=f"students={len(students)}",
+        outputs=file_path,
+        verbose=verbose,
+    )
+
+
+def _anonymize_student(name, student_id):
+    seed = f"{str(name).strip()}|{str(student_id).strip()}"
+    digest = hashlib.sha256(seed.encode("utf-8")).hexdigest()
+    anon_name = f"Student-{digest[:6]}"
+    anon_id = f"ID-{digest[6:14]}"
+    return anon_name, anon_id
+
+
+def export_anonymized_roster(students, file_path=None, db_path=None, verbose=False):
+    if db_path:
+        students = load_database(db_path)
+    if not students:
+        if verbose:
+            print("[ExportAnon] No students to export.")
+        else:
+            print("No students to export.")
+        return
+    if not file_path:
+        file_path = os.path.join(os.getcwd(), "students_anonymized.csv")
+    if DRY_RUN:
+        print(f"[ExportAnon] Dry run: would export anonymized roster to {file_path}")
+        return
+
+    columns = set()
+    for s in students:
+        columns.update(s.__dict__.keys())
+    ordered_columns = []
+    for key in ["Name", "Student ID"]:
+        if key in columns:
+            ordered_columns.append(key)
+    ordered_columns.extend(sorted([c for c in columns if c not in ordered_columns]))
+
+    rows = []
+    for s in students:
+        row = {col: getattr(s, col, "") for col in ordered_columns}
+        anon_name, anon_id = _anonymize_student(row.get("Name", ""), row.get("Student ID", ""))
+        if "Name" in row:
+            row["Name"] = anon_name
+        if "Student ID" in row:
+            row["Student ID"] = anon_id
+        rows.append(row)
+
+    df = pd.DataFrame(rows, columns=ordered_columns)
+    df.to_csv(file_path, index=False)
+    if verbose:
+        print(f"[ExportAnon] Exported {len(students)} students to {file_path}")
+    else:
+        print(f"Exported {len(students)} students to {file_path}")
+    append_run_report(
+        "export-anonymized",
+        details=f"students={len(students)}",
+        outputs=file_path,
+        verbose=verbose,
+    )
 
 def search_students(students, query, db_path=None, verbose=False):
     """
@@ -2758,6 +3251,10 @@ def export_emails_to_txt(students, file_path, db_path=None, verbose=False):
     # If db_path is provided, load students from database
     if db_path:
         students = load_database(db_path)
+
+    if DRY_RUN:
+        print(f"[ExportEmails] Dry run: would export emails to {file_path}")
+        return
 
     # Gather all previously exported emails from emails_*.txt files
     prev_emails = set()
@@ -2807,6 +3304,12 @@ def export_emails_to_txt(students, file_path, db_path=None, verbose=False):
             print(f"[ExportEmails] Exported {len(emails)} new emails to {out_path}")
         else:
             print(f"Exported {len(emails)} new emails to {out_path}")
+    append_run_report(
+        "export-emails",
+        details=f"emails={len(emails)}",
+        outputs=out_path,
+        verbose=verbose,
+    )
 
 def export_emails_and_names_to_txt(students, file_path=None, db_path=None, verbose=False):
     """
@@ -2818,6 +3321,10 @@ def export_emails_and_names_to_txt(students, file_path=None, db_path=None, verbo
     # If db_path is provided, load students from database
     if db_path:
         students = load_database(db_path)
+
+    if DRY_RUN:
+        print(f"[ExportEmailsNames] Dry run: would export to {file_path}")
+        return
 
     # Gather all previously exported emails from emails_*.txt files
     prev_emails = set()
@@ -2880,6 +3387,12 @@ def export_emails_and_names_to_txt(students, file_path=None, db_path=None, verbo
         print(f"[ExportEmailsNames] Exported {len(tuples)} new name,email,role,section 4-tuples to {out_path}")
     else:
         print(f"Exported {len(tuples)} new name,email,role,section 4-tuples to {out_path}")
+    append_run_report(
+        "export-emails-names",
+        details=f"rows={len(tuples)}",
+        outputs=out_path,
+        verbose=verbose,
+    )
 
 def export_all_details_to_txt(students, file_path=None, db_path=None, verbose=False):
     # If db_path is provided, load students from database
@@ -2893,6 +3406,9 @@ def export_all_details_to_txt(students, file_path=None, db_path=None, verbose=Fa
         return
     if not file_path:
         file_path = os.path.join(os.getcwd(), "students_details.txt")
+    if DRY_RUN:
+        print(f"[ExportAllDetails] Dry run: would export details to {file_path}")
+        return
     with open(file_path, 'w', encoding='utf-8') as f:
         f.write(f"Tổng số sinh viên: {len(students)}\n")
         f.write('-' * 40 + '\n')
@@ -2906,6 +3422,12 @@ def export_all_details_to_txt(students, file_path=None, db_path=None, verbose=Fa
         print(f"[ExportAllDetails] Exported all student details to {file_path}")
     else:
         print(f"Exported all student details to {file_path}")
+    append_run_report(
+        "export-all-details",
+        details=f"students={len(students)}",
+        outputs=file_path,
+        verbose=verbose,
+    )
 
 def extract_text_from_scanned_pdf_ocrspace(pdf_path, txt_output_path=None, lang="auto", simple_text=False, refine=DEFAULT_AI_METHOD, verbose=False):
     """
@@ -5787,6 +6309,9 @@ def export_roster_to_csv(students, file_path=None, verbose=False):
     dir_path = os.path.dirname(file_path)
     if dir_path:
         os.makedirs(dir_path, exist_ok=True)
+    if DRY_RUN:
+        print(f"[RosterExport] Dry run: would export roster to {file_path}")
+        return
 
     with open(file_path, 'w', newline='', encoding='utf-8') as csvfile:
         writer = csv.writer(csvfile)
@@ -5802,6 +6327,11 @@ def export_roster_to_csv(students, file_path=None, verbose=False):
 
     if verbose:
         print(f"Roster exported to {file_path}")
+    append_run_report(
+        "export-roster",
+        outputs=file_path,
+        verbose=verbose,
+    )
 _override_grades_cache = None
 _override_grades_cache_path = None
 
@@ -6059,7 +6589,7 @@ def load_override_grades_to_database(override_file="override_grades.xlsx", db_pa
         if student:
             apply_entry(student, entry)
 
-    save_database(students, db_path, verbose=verbose)
+    save_database(students, db_path, verbose=verbose, audit_source="override-grades")
     if verbose:
         print(f"[OverrideGrades] Applied overrides to {updated} student(s).")
     else:

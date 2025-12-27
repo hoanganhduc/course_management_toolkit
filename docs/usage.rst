@@ -149,6 +149,61 @@ Export a roster to CSV:
 
    course --export-roster
 
+Preview an import (no write):
+
+.. code-block:: bash
+
+   course --preview-import students.xlsx
+
+Export an anonymized roster:
+
+.. code-block:: bash
+
+   course --export-anonymized
+
+Backup and restore
+------------------
+
+.. code-block:: bash
+
+   course --backup-db
+   course --restore-db
+   course --backup-config
+   course --restore-config
+
+Data validation report
+----------------------
+
+.. code-block:: bash
+
+   course --validate-data
+
+Dry-run mode
+------------
+
+Preview changes without writing files:
+
+.. code-block:: bash
+
+   course --update-mat-excel MAT3500-3-Toan-roi-rac-4TC.xlsx --dry-run --export-grade-diff
+
+Logging
+-------
+
+Rotating logs are written to the config folder by default. Configure:
+
+- ``LOG_DIR``
+- ``LOG_LEVEL``
+- ``LOG_MAX_BYTES``
+- ``LOG_BACKUP_COUNT``
+
+Backup retention is controlled by:
+
+- ``DB_BACKUP_KEEP``
+- ``CONFIG_BACKUP_KEEP``
+
+A brief per-run summary is appended to ``run_report.txt`` in the working directory.
+
 Override grades
 ----------------
 

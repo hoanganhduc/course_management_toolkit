@@ -9,4 +9,6 @@
 - Added override grades (flexible headers/aliases) with clearer reporting in MAT exports.
 - Added AI model testing/listing, rate-limit fallback, and model details in reports.
 - Expanded submission quality checks with configurable thresholds and richer diagnostics.
+- Added backup/restore commands, dry-run mode, validation reports, grade audit history, and grade diff exports.
+- Added import previews, anonymized exports, and per-run summaries in `run_report.txt`.
 - Updated docs and samples; added GPL-3.0-only license.

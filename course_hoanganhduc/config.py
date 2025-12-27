@@ -1,14 +1,18 @@
 """Configuration helpers."""
 
 import base64
+import glob
 import json
 import os
 import platform
+import shutil
 import sys
 import threading
+from datetime import datetime
 from pathlib import Path
 
 from .settings import *
+from .utils import append_run_report
 
 
 def _normalize_course_code(value):
@@ -170,6 +174,97 @@ def clear_credentials(credentials_path=None, token_path=None, course_code=None, 
     }
 
 
+def _list_backups(backup_dir, base_name, ext):
+    pattern = os.path.join(backup_dir, f"{base_name}_backup_*{ext}")
+    return sorted(glob.glob(pattern), key=lambda p: os.path.getmtime(p))
+
+
+def _cleanup_backups(backup_dir, base_name, ext, keep=5, verbose=False):
+    if keep is None:
+        return []
+    try:
+        keep = int(keep)
+    except (TypeError, ValueError):
+        return []
+    backups = _list_backups(backup_dir, base_name, ext)
+    if keep < 0 or len(backups) <= keep:
+        return []
+    to_remove = backups[:len(backups) - keep]
+    removed = []
+    for path in to_remove:
+        try:
+            os.remove(path)
+            removed.append(path)
+        except OSError as e:
+            if verbose:
+                print(f"[ConfigBackup] Failed to remove old backup {path}: {e}")
+    return removed
+
+
+def backup_config(config_path=None, backup_dir=None, keep=None, course_code=None, verbose=False):
+    if not config_path:
+        config_path = get_default_config_path(course_code=course_code, verbose=verbose)
+    if not os.path.exists(config_path):
+        if verbose:
+            print(f"[ConfigBackup] Config not found at {config_path}")
+        else:
+            print(f"Config not found at {config_path}")
+        return None
+    backup_dir = backup_dir or os.path.dirname(config_path) or "."
+    os.makedirs(backup_dir, exist_ok=True)
+    base = os.path.splitext(os.path.basename(config_path))[0]
+    ext = os.path.splitext(config_path)[1]
+    now_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_path = os.path.join(backup_dir, f"{base}_backup_{now_str}{ext}")
+    if DRY_RUN:
+        print(f"[ConfigBackup] Dry run: would back up config to {backup_path}")
+        return backup_path
+    try:
+        shutil.copy2(config_path, backup_path)
+        if verbose:
+            print(f"[ConfigBackup] Backed up config to {backup_path}")
+        else:
+            print(f"Config backup created at {backup_path}")
+        append_run_report("backup-config", outputs=backup_path, verbose=verbose)
+    except OSError as e:
+        print(f"[ConfigBackup] Failed to back up config: {e}")
+        return None
+    _cleanup_backups(backup_dir, base, ext, keep=keep if keep is not None else CONFIG_BACKUP_KEEP, verbose=verbose)
+    return backup_path
+
+
+def restore_config(config_path=None, backup_path=None, course_code=None, verbose=False):
+    if not config_path:
+        config_path = get_default_config_path(course_code=course_code, verbose=verbose)
+    backup_dir = os.path.dirname(config_path) or "."
+    base = os.path.splitext(os.path.basename(config_path))[0]
+    ext = os.path.splitext(config_path)[1]
+    if not backup_path or backup_path == "latest":
+        backups = _list_backups(backup_dir, base, ext)
+        if not backups:
+            print("No config backups found.")
+            return None
+        backup_path = backups[-1]
+    if not os.path.exists(backup_path):
+        print(f"Config backup not found: {backup_path}")
+        return None
+    if DRY_RUN:
+        print(f"[ConfigBackup] Dry run: would restore config from {backup_path}")
+        return backup_path
+    os.makedirs(os.path.dirname(config_path) or ".", exist_ok=True)
+    try:
+        shutil.copy2(backup_path, config_path)
+    except OSError as e:
+        print(f"[ConfigBackup] Failed to restore config: {e}")
+        return None
+    if verbose:
+        print(f"[ConfigBackup] Restored config from {backup_path}")
+    else:
+        print(f"Config restored from {backup_path}")
+    append_run_report("restore-config", outputs=backup_path, verbose=verbose)
+    return backup_path
+
+
 def load_config(config_path=None, verbose=False):
     """
     Load configuration from a JSON or base64-encoded JSON file at the default location and return config values as a dict.
@@ -266,6 +361,16 @@ def load_config(config_path=None, verbose=False):
         "GEMINI_API_KEY",
         "HUGGINGFACE_API_KEY",
         "GEMINI_DEFAULT_MODEL",
+        "REPORT_REFINE_METHOD",
+        "DRY_RUN",
+        "LOG_DIR",
+        "LOG_LEVEL",
+        "LOG_MAX_BYTES",
+        "LOG_BACKUP_COUNT",
+        "DB_BACKUP_KEEP",
+        "CONFIG_BACKUP_KEEP",
+        "GRADE_AUDIT_ENABLED",
+        "GRADE_AUDIT_FIELDS",
         "DEFAULT_OCR_METHOD",
         "ALL_OCR_METHODS",
         "OCRSPACE_API_KEY",

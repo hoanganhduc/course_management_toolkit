@@ -92,11 +92,44 @@ Export a roster to CSV:
 course --export-roster
 ```
 
+Preview an import without writing to the database:
+
+```bash
+course --preview-import students.xlsx
+```
+
+Export an anonymized roster:
+
+```bash
+course --export-anonymized
+```
+
 Clear stored configuration or credentials:
 
 ```bash
 course --clear-config
 course --clear-credentials
+```
+
+Backup or restore the database/config:
+
+```bash
+course --backup-db
+course --restore-db
+course --backup-config
+course --restore-config
+```
+
+Validate student data and export a report:
+
+```bash
+course --validate-data
+```
+
+Preview updates without writing files:
+
+```bash
+course --update-mat-excel MAT3500-3-Toan-roi-rac-4TC.xlsx --dry-run --export-grade-diff
 ```
 
 ## Configuration
@@ -116,6 +149,11 @@ Credential and token files live in the same folder by default:
 You can override paths via `CREDENTIALS_PATH` and `TOKEN_PATH`.
 To remove stored settings or tokens, use `--clear-config` and `--clear-credentials`.
 
+Optional settings:
+- `LOG_DIR`, `LOG_LEVEL`, `LOG_MAX_BYTES`, `LOG_BACKUP_COUNT` for rotating logs.
+- `DB_BACKUP_KEEP`, `CONFIG_BACKUP_KEEP` for backup retention.
+- `GRADE_AUDIT_ENABLED`, `GRADE_AUDIT_FIELDS` to control grade audit history stored in the database.
+
 ## Override grades
 
 Place `override_grades.xlsx` in the working directory (see `sample/override_grades.xlsx` for the format).
@@ -127,6 +165,8 @@ To verify AI credentials and connectivity, run `course --test-ai` (or choose the
 To list available Gemini models for your API key, run `course --list-ai-models gemini` (or choose the menu entry). Hugging Face lists the top public text-generation models (up to 50).
 When an AI call is rate-limited, the tool retries and may switch to a different available model with similar capabilities.
 Submission quality checks (meaningfulness) can be tuned via config keys: `QUALITY_MIN_CHARS`, `QUALITY_UNIQUE_CHAR_RATIO_MIN`, `QUALITY_REPEAT_CHAR_RATIO_MAX`, `QUALITY_VN_CHAR_RATIO_MIN`, `QUALITY_ALNUM_RATIO_MIN`, `QUALITY_SYMBOL_RATIO_MAX`, `QUALITY_EMPTY_LINE_RATIO_MAX`, `QUALITY_MATH_DENSITY_THRESHOLD`, `QUALITY_LENGTH_RATIO_LOW`, `QUALITY_LENGTH_RATIO_MEDIUM`, `QUALITY_LENGTH_RATIO_HIGH`.
+When updating MAT Excel files, use `--export-grade-diff` to save a CSV of old vs new values; database grade changes are tracked in `Grade Audit` when enabled.
+A brief per-run summary is appended to `run_report.txt` in the working directory.
 
 ## Notes
 
