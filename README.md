@@ -14,23 +14,24 @@
 
 ![Version](https://img.shields.io/github/v/release/hoanganhduc/course_management_toolkit?label=version) ![Pre-release](https://img.shields.io/github/v/tag/hoanganhduc/course_management_toolkit?label=pre-release&sort=semver) ![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python) ![GitHub](https://img.shields.io/badge/GitHub-Repo-black?logo=github) ![Status](https://img.shields.io/badge/status-work--in--progress-yellow) ![License](https://img.shields.io/github/license/hoanganhduc/course_management_toolkit)
 
-
-Utilities for managing course rosters, grading, OCR extraction, and Canvas/Google Classroom workflows.
+Utilities for managing course rosters, grading, OCR extraction, and Canvas/Google Classroom workflows. **Work in progress**, mainly designed for **personal use** but open-sourced for others to adapt. Code with the help of [GitHub Copilot](https://github.com/features/copilot/) and [ChatGPT Codex](https://openai.com/).
 
 ## Table of contents
 
-- [Install (editable)](#install-editable)
-- [Install into per-user venv](#install-into-per-user-venv)
-- [Run](#run)
-- [Common workflows](#common-workflows)
-- [Configuration](#configuration)
-- [Override grades](#override-grades)
-- [Notes](#notes)
-- [External tools (optional)](#external-tools-optional)
-- [Troubleshooting](#troubleshooting)
-- [Troubleshooting OCR](#troubleshooting-ocr)
-- [Documentation](#documentation)
-- [Samples](#samples)
+- [Course Management Toolkit](#course-management-toolkit)
+  - [Table of contents](#table-of-contents)
+  - [Install (editable)](#install-editable)
+  - [Install into per-user venv](#install-into-per-user-venv)
+  - [Run](#run)
+  - [Common workflows](#common-workflows)
+  - [Configuration](#configuration)
+  - [Override grades](#override-grades)
+  - [Notes](#notes)
+  - [External tools (optional)](#external-tools-optional)
+  - [Troubleshooting](#troubleshooting)
+  - [Troubleshooting OCR](#troubleshooting-ocr)
+  - [Documentation](#documentation)
+  - [Samples](#samples)
 
 ## Install (editable)
 
@@ -220,3 +221,7 @@ See `sample/index.md` for anonymized input examples:
 - `sample/override_grades.xlsx`
 - `sample/config.sample.json`
 - `sample/credentials.sample.json`
+
+## License
+
+GPL-3.0-only. See `LICENSE`.

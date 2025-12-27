@@ -9,6 +9,7 @@
 - Added `--clear-config` and `--clear-credentials` helpers.
 - Rebuilt the no-args menu with sections, arrow-key navigation, and numeric quick-jump.
 - Improved Windows/Linux compatibility (optional readline, Windows editor fallback).
+- Added GPL-3.0-only license and metadata.
 - Canvas/Google Classroom sync now resolves duplicates by priority and prompts on conflicts.
 - Canvas grading sync now processes all assignments/quizzes and stores final scores only.
 - Fixed CK/GK column detection to avoid attendance/quiz/assignment columns.
