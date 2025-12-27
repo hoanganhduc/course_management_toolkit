@@ -1461,6 +1461,127 @@ def download_canvas_assignment_submissions(
         else:
             print(f"Error downloading submissions: {e}")
 
+def download_canvas_assignment_submissions_auto(
+    assignment_id,
+    dest_dir=None,
+    api_url=CANVAS_LMS_API_URL,
+    api_key=CANVAS_LMS_API_KEY,
+    course_id=CANVAS_LMS_COURSE_ID,
+    verbose=False
+):
+    """
+    Download latest submissions for a single Canvas assignment without prompts.
+    Returns (output_dir, downloaded_files).
+    """
+    canvas = Canvas(api_url, api_key)
+    course = canvas.get_course(course_id)
+    assignment = course.get_assignment(assignment_id)
+    lock_at = getattr(assignment, "lock_at", None)
+    if lock_at:
+        try:
+            lock_dt = datetime.strptime(lock_at, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+            if lock_dt > datetime.now(timezone.utc):
+                if verbose:
+                    print(f"[WeeklyAuto] Warning: assignment {assignment_id} is not locked yet (lock_at={lock_at}).")
+        except Exception:
+            pass
+    assignment_name = assignment.name.replace("/", "_").replace("\\", "_")
+    group_name = "UnknownGroup"
+    try:
+        group_id = assignment.assignment_group_id
+        for ag in course.get_assignment_groups():
+            if ag.id == group_id:
+                group_name = ag.name.replace("/", "_").replace("\\", "_")
+                break
+    except Exception:
+        pass
+    folder_name = f"{group_name}_{assignment_name}".replace(" ", "_")
+    if dest_dir:
+        out_dir = os.path.join(dest_dir, folder_name)
+    else:
+        out_dir = os.path.join(DEFAULT_DOWNLOAD_FOLDER, folder_name)
+    os.makedirs(out_dir, exist_ok=True)
+    if verbose:
+        print(f"[DownloadCanvasAuto] Downloading submissions to: {out_dir}")
+    else:
+        print(f"Downloading submissions to: {out_dir}")
+
+    submissions = list(assignment.get_submissions(include=["user", "attachments"]))
+    due_at = getattr(assignment, "due_at", None)
+    due_dt = None
+    if due_at:
+        try:
+            due_dt = datetime.strptime(due_at, "%Y-%m-%dT%H:%M:%SZ")
+        except Exception:
+            due_dt = None
+
+    latest_submissions = {}
+    for sub in submissions:
+        user = getattr(sub, "user", {})
+        canvas_id = user.get("id", "unknown")
+        submitted_at = getattr(sub, "submitted_at", None)
+        if not submitted_at:
+            continue
+        try:
+            sub_dt = datetime.strptime(submitted_at, "%Y-%m-%dT%H:%M:%SZ")
+        except Exception:
+            sub_dt = None
+        if canvas_id not in latest_submissions or (sub_dt and latest_submissions[canvas_id]["sub_dt"] and sub_dt > latest_submissions[canvas_id]["sub_dt"]):
+            latest_submissions[canvas_id] = {
+                "submission": sub,
+                "sub_dt": sub_dt,
+                "submitted_at": submitted_at
+            }
+
+    downloaded_files = []
+    for canvas_id, info in tqdm(latest_submissions.items(), desc=f"Downloading latest submissions for {assignment_name}"):
+        sub = info["submission"]
+        user = getattr(sub, "user", {})
+        student_name = user.get("name", "UnknownStudent").replace("/", "_").replace("\\", "_").replace(" ", "_")
+        submitted_at = info["submitted_at"]
+        if submitted_at:
+            try:
+                dt = datetime.strptime(submitted_at, "%Y-%m-%dT%H:%M:%SZ")
+                dt_str = dt.strftime("%Y%m%d_%H%M%S")
+            except Exception:
+                dt_str = "no_time"
+        else:
+            dt_str = "no_time"
+        status = "on_time"
+        if due_dt and submitted_at:
+            try:
+                sub_dt = datetime.strptime(submitted_at, "%Y-%m-%dT%H:%M:%SZ")
+                status = "on_time" if sub_dt <= due_dt else "late"
+            except Exception:
+                status = "on_time"
+        elif getattr(sub, "late", False):
+            status = "late"
+        attachments = getattr(sub, "attachments", [])
+        if not attachments:
+            continue
+        for att in attachments:
+            url = getattr(att, "url", None)
+            filename = getattr(att, "filename", "file")
+            ext = os.path.splitext(filename)[1]
+            new_filename = f"{student_name}_{canvas_id}_{assignment_id}_{dt_str}_{status}{ext}"
+            out_path = os.path.join(out_dir, new_filename)
+            if os.path.exists(out_path) and os.path.getsize(out_path) > 0:
+                downloaded_files.append(out_path)
+                continue
+            try:
+                resp = requests.get(url, headers={"Authorization": f"Bearer {api_key}"}, stream=False, timeout=60)
+                resp.raise_for_status()
+                with open(out_path, "wb") as f:
+                    f.write(resp.content)
+                downloaded_files.append(out_path)
+            except Exception as e:
+                if verbose:
+                    print(f"[DownloadCanvasAuto] Failed to download {filename} for {student_name}: {e}")
+                else:
+                    print(f"Failed to download {filename} for {student_name}: {e}")
+
+    return out_dir, downloaded_files
+
 def compare_texts_from_pdfs_in_folder(
     folder_path,
     ocr_service=DEFAULT_OCR_METHOD,
@@ -1472,6 +1593,7 @@ def compare_texts_from_pdfs_in_folder(
     api_url=CANVAS_LMS_API_URL,
     api_key=CANVAS_LMS_API_KEY,
     course_id=CANVAS_LMS_COURSE_ID,
+    auto_send=False,
     verbose=False
 ):
     """
@@ -2082,7 +2204,7 @@ def compare_texts_from_pdfs_in_folder(
             return None
 
         # Ask user if they want to refine the message via AI if refine is None
-        if refine is None:
+        if refine is None and not auto_send:
             def get_input_with_timeout(prompt, timeout=60, default=None):
                 # Use signal.SIGALRM only if available (not on Windows)
                 if hasattr(signal, "SIGALRM"):
@@ -2132,6 +2254,8 @@ def compare_texts_from_pdfs_in_folder(
                 else:
                     print("No response after 60 seconds. Using default 'none'.")
                 refine = None
+        if refine is None and auto_send:
+            refine = None
 
         for pdf1, pdf2, ratio in pairs_to_notify:
             canvas_id1 = extract_canvas_id_from_filename(pdf1)
@@ -2225,67 +2349,66 @@ def compare_texts_from_pdfs_in_folder(
             else:
                 print(f"Prepared message for {pdf1} <-> {pdf2}.")
 
-            while True:
-                try:
-                    # Only use SIGALRM if available (not on Windows)
-                    if hasattr(signal, "SIGALRM"):
-                        signal.signal(signal.SIGALRM, timeout_handler)
-                        signal.alarm(60)  # 60 second timeout
-                        
-                        confirm = input(f"\nDo you want to send this message for {pdf1} <-> {pdf2}? (y/n, or 'r' to regenerate, default 'y' in 60s): ").strip().lower()
-                        
-                        signal.alarm(0)  # Cancel the alarm
-                    else:
-                        # Fallback for Windows (no timeout)
-                        confirm = input(f"\nDo you want to send this message for {pdf1} <-> {pdf2}? (y/n, or 'r' to regenerate): ").strip().lower()
-                        if not confirm:
-                            confirm = "y"  # Default value
-                    
-                    if confirm == "y" or confirm == "":
-                        break
-                    elif confirm == "n":
+            if not auto_send:
+                while True:
+                    try:
+                        # Only use SIGALRM if available (not on Windows)
+                        if hasattr(signal, "SIGALRM"):
+                            signal.signal(signal.SIGALRM, timeout_handler)
+                            signal.alarm(60)  # 60 second timeout
+                            confirm = input(f"\nDo you want to send this message for {pdf1} <-> {pdf2}? (y/n, or 'r' to regenerate, default 'y' in 60s): ").strip().lower()
+                            signal.alarm(0)  # Cancel the alarm
+                        else:
+                            # Fallback for Windows (no timeout)
+                            confirm = input(f"\nDo you want to send this message for {pdf1} <-> {pdf2}? (y/n, or 'r' to regenerate): ").strip().lower()
+                            if not confirm:
+                                confirm = "y"  # Default value
+
+                        if confirm == "y" or confirm == "":
+                            break
+                        elif confirm == "n":
+                            if verbose:
+                                print(f"[PDFSimilarity] Message sending canceled for this pair.")
+                            else:
+                                print("Message sending canceled for this pair.")
+                            sent_status[pair_key(pdf1, pdf2)] = "SKIPPED"
+                            break
+                        elif confirm == "r":
+                            if verbose:
+                                print(f"[PDFSimilarity] Regenerating message...")
+                            else:
+                                print("Regenerating message...")
+                            if refine in ALL_AI_METHODS:
+                                message = refine_text_with_ai(similarity_results, method=refine, user_prompt=prompt)
+                            else:
+                                message = (
+                                    "Potential similarity detected by automated checks for the following submissions:\n"
+                                    + similarity_results +
+                                    "\n\nAssignment: "
+                                    + assignment_name_guess +
+                                    "\n\nMethods used:\n"
+                                    + method_block +
+                                    "\n\nMetrics:\n"
+                                    + metrics_summary +
+                                    "\n\nNote: Automated detection can produce false positives (OCR errors, formatting differences, or similar templates). "
+                                    "This case will be reviewed by the lecturers and TAs before any final decision. "
+                                    "If you believe this detection is incorrect, you may respond with clarification."
+                                )
+                            if verbose:
+                                print(f"[PDFSimilarity] Regenerated Message:\n{message}")
+                            else:
+                                print("Regenerated message.")
+                        else:
+                            if verbose:
+                                print("[PDFSimilarity] Invalid input. Please enter 'y', 'n', or 'r'.")
+                            else:
+                                print("Invalid input. Please enter 'y', 'n', or 'r'.")
+                    except TimeoutError:
                         if verbose:
-                            print(f"[PDFSimilarity] Message sending canceled for this pair.")
+                            print("[PDFSimilarity] No response after 60 seconds, using default 'y'.")
                         else:
-                            print("Message sending canceled for this pair.")
-                        sent_status[pair_key(pdf1, pdf2)] = "SKIPPED"
-                        break
-                    elif confirm == "r":
-                        if verbose:
-                            print(f"[PDFSimilarity] Regenerating message...")
-                        else:
-                            print("Regenerating message...")
-                        if refine in ALL_AI_METHODS:
-                            message = refine_text_with_ai(similarity_results, method=refine, user_prompt=prompt)
-                        else:
-                            message = (
-                                "Potential similarity detected by automated checks for the following submissions:\n"
-                                + similarity_results +
-                                "\n\nAssignment: "
-                                + assignment_name_guess +
-                                "\n\nMethods used:\n"
-                                + method_block +
-                                "\n\nMetrics:\n"
-                                + metrics_summary +
-                                "\n\nNote: Automated detection can produce false positives (OCR errors, formatting differences, or similar templates). "
-                                "This case will be reviewed by the lecturers and TAs before any final decision. "
-                                "If you believe this detection is incorrect, you may respond with clarification."
-                            )
-                        if verbose:
-                            print(f"[PDFSimilarity] Regenerated Message:\n{message}")
-                        else:
-                            print("Regenerated message.")
-                    else:
-                        if verbose:
-                            print("[PDFSimilarity] Invalid input. Please enter 'y', 'n', or 'r'.")
-                        else:
-                            print("Invalid input. Please enter 'y', 'n', or 'r'.")
-                except TimeoutError:
-                    if verbose:
-                        print("[PDFSimilarity] No response after 60 seconds, using default 'y'.")
-                    else:
-                        print("No response after 60 seconds, using default 'y'.")
-                    break  # Use default 'y' option and break the loop
+                            print("No response after 60 seconds, using default 'y'.")
+                        break  # Use default 'y' option and break the loop
 
             if sent_status.get(pair_key(pdf1, pdf2)) == "SKIPPED":
                 continue
@@ -2347,6 +2470,7 @@ def detect_meaningful_level_and_notify_students(
     api_url=CANVAS_LMS_API_URL,
     api_key=CANVAS_LMS_API_KEY,
     course_id=CANVAS_LMS_COURSE_ID,
+    auto_send=False,
     verbose=False
 ):
     """
@@ -2441,7 +2565,7 @@ def detect_meaningful_level_and_notify_students(
     else:
         sent_status = {}
 
-    if refine is None:
+    if refine is None and not auto_send:
         refine = get_input_with_timeout_default(
             "Which AI model do you want to use for meaningfulness analysis? (gemini/huggingface, default 'gemini' in 60s): ",
             timeout=60,
@@ -2449,6 +2573,8 @@ def detect_meaningful_level_and_notify_students(
         ).strip().lower()
         if refine not in ALL_AI_METHODS:
             refine = "gemini"
+    elif refine is None and auto_send:
+        refine = DEFAULT_AI_METHOD or None
 
     results = {}
     low_quality_files = []
@@ -2598,23 +2724,24 @@ def detect_meaningful_level_and_notify_students(
         else:
             print(f"Found {len(low_quality_files)} low quality submissions (not yet notified).")
         
-        send_messages = get_input_with_timeout_default(
-            "\nDo you want to send messages to students with low quality submissions? (y/n, or 'q' to quit, default 'y' in 60s): ",
-            timeout=60,
-            default="y"
-        ).strip().lower()
-        if send_messages in ("q", "quit"):
-            with open(status_path, "w", encoding="utf-8") as f:
-                json.dump(sent_status, f, ensure_ascii=False, indent=2)
-            return results
-        if send_messages not in ("y", "yes", ""):
-            if verbose:
-                print("[Meaningfulness] Messages not sent.")
-            else:
-                print("Messages not sent.")
-            with open(status_path, "w", encoding="utf-8") as f:
-                json.dump(sent_status, f, ensure_ascii=False, indent=2)
-            return results
+        if not auto_send:
+            send_messages = get_input_with_timeout_default(
+                "\nDo you want to send messages to students with low quality submissions? (y/n, or 'q' to quit, default 'y' in 60s): ",
+                timeout=60,
+                default="y"
+            ).strip().lower()
+            if send_messages in ("q", "quit"):
+                with open(status_path, "w", encoding="utf-8") as f:
+                    json.dump(sent_status, f, ensure_ascii=False, indent=2)
+                return results
+            if send_messages not in ("y", "yes", ""):
+                if verbose:
+                    print("[Meaningfulness] Messages not sent.")
+                else:
+                    print("Messages not sent.")
+                with open(status_path, "w", encoding="utf-8") as f:
+                    json.dump(sent_status, f, ensure_ascii=False, indent=2)
+                return results
         
         try:
             canvas = Canvas(api_url, api_key)
@@ -2636,40 +2763,41 @@ def detect_meaningful_level_and_notify_students(
                     print("-" * 50)
                 else:
                     print(f"\nPrepared message for {filename}.")
-                while True:
-                    action = get_input_with_timeout_default(
-                        "\nWhat would you like to do? (s)end, (r)egenerate, or (q)uit [default: s in 60s]: ",
-                        timeout=60,
-                        default="s"
-                    ).strip().lower()
-                    if action in ('q', 'quit'):
-                        if verbose:
-                            print("[Meaningfulness] Quitting message sending.")
+                if not auto_send:
+                    while True:
+                        action = get_input_with_timeout_default(
+                            "\nWhat would you like to do? (s)end, (r)egenerate, or (q)uit [default: s in 60s]: ",
+                            timeout=60,
+                            default="s"
+                        ).strip().lower()
+                        if action in ('q', 'quit'):
+                            if verbose:
+                                print("[Meaningfulness] Quitting message sending.")
+                            else:
+                                print("Quitting message sending.")
+                            with open(status_path, "w", encoding="utf-8") as f:
+                                json.dump(sent_status, f, ensure_ascii=False, indent=2)
+                            return results
+                        elif action in ('s', 'send', ''):
+                            break
+                        elif action in ('r', 'regenerate'):
+                            if verbose:
+                                print("[Meaningfulness] Regenerating message...")
+                            else:
+                                print("Regenerating message...")
+                            message = generate_low_quality_message(filename, score, text, refine)
+                            if verbose:
+                                print(f"\n[Meaningfulness] Regenerated message:")
+                                print("-" * 50)
+                                print(message)
+                                print("-" * 50)
+                            else:
+                                print("Regenerated message.")
                         else:
-                            print("Quitting message sending.")
-                        with open(status_path, "w", encoding="utf-8") as f:
-                            json.dump(sent_status, f, ensure_ascii=False, indent=2)
-                        return results
-                    elif action in ('s', 'send', ''):
-                        break
-                    elif action in ('r', 'regenerate'):
-                        if verbose:
-                            print("[Meaningfulness] Regenerating message...")
-                        else:
-                            print("Regenerating message...")
-                        message = generate_low_quality_message(filename, score, text, refine)
-                        if verbose:
-                            print(f"\n[Meaningfulness] Regenerated message:")
-                            print("-" * 50)
-                            print(message)
-                            print("-" * 50)
-                        else:
-                            print("Regenerated message.")
-                    else:
-                        if verbose:
-                            print("[Meaningfulness] Please enter 's' to send, 'r' to regenerate, or 'q' to quit.")
-                        else:
-                            print("Please enter 's' to send, 'r' to regenerate, or 'q' to quit.")
+                            if verbose:
+                                print("[Meaningfulness] Please enter 's' to send, 'r' to regenerate, or 'q' to quit.")
+                            else:
+                                print("Please enter 's' to send, 'r' to regenerate, or 'q' to quit.")
                 try:
                     canvas.create_conversation(
                         recipients=[str(canvas_id)],
@@ -2730,6 +2858,382 @@ def extract_canvas_id_from_filename(filename):
         if part.isdigit():
             return int(part)
     return None
+
+
+def notify_missing_submissions_after_due(
+    assignment_ids=None,
+    api_url=CANVAS_LMS_API_URL,
+    api_key=CANVAS_LMS_API_KEY,
+    course_id=CANVAS_LMS_COURSE_ID,
+    category=CANVAS_DEFAULT_ASSIGNMENT_CATEGORY,
+    refine=None,
+    auto_send=True,
+    verbose=False
+):
+    """
+    Notify students who have not submitted for assignments whose due date has passed but are not locked.
+    Returns a summary dict mapping assignment_id to missing student info.
+    """
+    canvas = Canvas(api_url, api_key)
+    course = canvas.get_course(course_id)
+    now = datetime.now(timezone.utc)
+
+    people = list_canvas_people(api_url, api_key, course_id, verbose=verbose)
+    active_students = people.get("active_students", []) if isinstance(people, dict) else []
+    active_map = {str(s["canvas_id"]): s for s in active_students if s.get("canvas_id")}
+
+    assignments = []
+    group_map = {}
+    try:
+        groups = list(course.get_assignment_groups(include=["assignments"]))
+        for g in groups:
+            group_map[g.id] = g.name
+            for a in g.assignments:
+                assignments.append(a)
+    except Exception:
+        assignments = list(course.get_assignments())
+
+    selected_assignments = []
+    if assignment_ids:
+        if isinstance(assignment_ids, (str, int)):
+            assignment_ids = [assignment_ids]
+        for a in assignments:
+            if str(a.get("id") if isinstance(a, dict) else getattr(a, "id", "")) in {str(x) for x in assignment_ids}:
+                selected_assignments.append(a)
+    else:
+        for a in assignments:
+            group_name = group_map.get(a.get("assignment_group_id")) if isinstance(a, dict) else group_map.get(getattr(a, "assignment_group_id", None))
+            if category and group_name and group_name.lower() != category.lower():
+                continue
+            selected_assignments.append(a)
+
+    results = {}
+    for assignment in selected_assignments:
+        aid = assignment.get("id") if isinstance(assignment, dict) else getattr(assignment, "id", None)
+        name = assignment.get("name") if isinstance(assignment, dict) else getattr(assignment, "name", "")
+        due_at = assignment.get("due_at") if isinstance(assignment, dict) else getattr(assignment, "due_at", None)
+        lock_at = assignment.get("lock_at") if isinstance(assignment, dict) else getattr(assignment, "lock_at", None)
+        if not due_at:
+            continue
+        try:
+            due_dt = datetime.strptime(due_at, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        except Exception:
+            continue
+        if due_dt > now:
+            continue
+        if lock_at:
+            try:
+                lock_dt = datetime.strptime(lock_at, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+                if lock_dt <= now:
+                    continue
+            except Exception:
+                pass
+
+        assignment_obj = course.get_assignment(aid)
+        submissions = list(assignment_obj.get_submissions(include=["user"]))
+        submitted_ids = set()
+        for sub in submissions:
+            submitted_at = getattr(sub, "submitted_at", None)
+            if submitted_at:
+                user = getattr(sub, "user", {})
+                canvas_id = user.get("id")
+                if canvas_id:
+                    submitted_ids.add(str(canvas_id))
+
+        missing = []
+        for canvas_id, info in active_map.items():
+            if canvas_id not in submitted_ids:
+                missing.append(info)
+
+        if not missing:
+            continue
+
+        results[str(aid)] = {
+            "assignment_name": name,
+            "missing": missing,
+        }
+
+        for student in missing:
+            canvas_id = student.get("canvas_id")
+            student_name = student.get("name", "")
+            if not canvas_id:
+                continue
+            message = (
+                f"Chào {student_name},\n\n"
+                f"Hệ thống ghi nhận bạn chưa nộp bài cho \"{name}\" mặc dù đã quá hạn nộp. "
+                "Vui lòng nộp bài sớm nhất có thể hoặc liên hệ giảng viên nếu gặp khó khăn.\n\n"
+                "Thông báo này được gửi tự động từ hệ thống."
+            )
+            if refine in ALL_AI_METHODS:
+                prompt = (
+                    "Bạn là trợ giảng. Hãy viết lại thông báo sau bằng tiếng Việt, lịch sự, rõ ràng, "
+                    "nhắc sinh viên chưa nộp bài sau hạn nhưng chưa bị khóa. Trả về nội dung hoàn chỉnh.\n\n"
+                    "Thông báo:\n{text}"
+                )
+                message = refine_text_with_ai(message, method=refine, user_prompt=prompt)
+            if not auto_send:
+                print(message)
+                continue
+            try:
+                canvas.create_conversation(
+                    recipients=[str(canvas_id)],
+                    subject="Nhắc nhở: Chưa nộp bài quá hạn",
+                    body=message,
+                    force_new=True
+                )
+            except Exception as e:
+                if verbose:
+                    print(f"[MissingSubmissions] Failed to notify {student_name} ({canvas_id}): {e}")
+
+    return results
+
+
+def run_weekly_canvas_automation(
+    assignment_id,
+    dest_dir=None,
+    api_url=CANVAS_LMS_API_URL,
+    api_key=CANVAS_LMS_API_KEY,
+    course_id=CANVAS_LMS_COURSE_ID,
+    teacher_canvas_id=None,
+    category=CANVAS_DEFAULT_ASSIGNMENT_CATEGORY,
+    ocr_service=DEFAULT_OCR_METHOD,
+    lang="auto",
+    refine=None,
+    similarity_threshold=0.85,
+    meaningfulness_threshold=0.4,
+    auto_grade_score=10,
+    notify_missing=True,
+    verbose=False
+):
+    """
+    Run weekly automation for a closed assignment:
+    - Download submissions
+    - Check meaningfulness + similarity and notify students
+    - Assign score to clean submissions
+    - Notify missing submissions for overdue assignments
+    - Send summary to teacher
+    """
+    if not assignment_id:
+        raise ValueError("assignment_id is required")
+
+    out_dir, files = download_canvas_assignment_submissions_auto(
+        assignment_id=assignment_id,
+        dest_dir=dest_dir,
+        api_url=api_url,
+        api_key=api_key,
+        course_id=course_id,
+        verbose=verbose,
+    )
+
+    meaningful_results = {}
+    similarity_pairs = []
+    if files:
+        meaningful_results = detect_meaningful_level_and_notify_students(
+            out_dir,
+            assignment_id=assignment_id,
+            ocr_service=ocr_service,
+            lang=lang,
+            refine=refine,
+            meaningfulness_threshold=meaningfulness_threshold,
+            api_url=api_url,
+            api_key=api_key,
+            course_id=course_id,
+            auto_send=True,
+            verbose=verbose,
+        )
+        similarity_pairs = compare_texts_from_pdfs_in_folder(
+            out_dir,
+            ocr_service=ocr_service,
+            lang=lang,
+            refine=refine,
+            similarity_threshold=similarity_threshold,
+            api_url=api_url,
+            api_key=api_key,
+            course_id=course_id,
+            auto_send=True,
+            verbose=verbose,
+        )
+
+    flagged_ids = set()
+    for filename, result in (meaningful_results or {}).items():
+        if result.get("meaningful_score", 1.0) < meaningfulness_threshold:
+            cid = extract_canvas_id_from_filename(filename)
+            if cid:
+                flagged_ids.add(str(cid))
+    for pdf1, pdf2, _ in (similarity_pairs or []):
+        for fname in (pdf1, pdf2):
+            cid = extract_canvas_id_from_filename(fname)
+            if cid:
+                flagged_ids.add(str(cid))
+
+    canvas = Canvas(api_url, api_key)
+    course = canvas.get_course(course_id)
+    assignment = course.get_assignment(assignment_id)
+    assignment_name = getattr(assignment, "name", "") or f"assignment_{assignment_id}"
+    safe_assignment = re.sub(r"[^A-Za-z0-9._-]+", "_", assignment_name)
+
+    evidence_dir = None
+    if flagged_ids and out_dir and os.path.isdir(out_dir):
+        evidence_dir = os.path.join(
+            os.getcwd(),
+            f"flagged_submissions_{safe_assignment}_{assignment_id}"
+        )
+        os.makedirs(evidence_dir, exist_ok=True)
+        for entry in os.listdir(out_dir):
+            src_path = os.path.join(out_dir, entry)
+            if not os.path.isfile(src_path):
+                continue
+            cid = extract_canvas_id_from_filename(entry)
+            if cid and str(cid) in flagged_ids:
+                try:
+                    shutil.copy2(src_path, os.path.join(evidence_dir, entry))
+                except Exception as e:
+                    if verbose:
+                        print(f"[WeeklyAuto] Failed to save evidence for {entry}: {e}")
+    submissions = list(assignment.get_submissions(include=["user"]))
+    graded = []
+    skipped = []
+    for sub in submissions:
+        user = getattr(sub, "user", {})
+        canvas_id = user.get("id")
+        submitted_at = getattr(sub, "submitted_at", None)
+        if not submitted_at:
+            continue
+        if canvas_id and str(canvas_id) in flagged_ids:
+            skipped.append(str(canvas_id))
+            continue
+        current_score = getattr(sub, "score", None)
+        if current_score is None or current_score < auto_grade_score:
+            try:
+                sub.edit(submission={"posted_grade": auto_grade_score})
+                graded.append(str(canvas_id))
+            except Exception as e:
+                if verbose:
+                    print(f"[WeeklyAuto] Failed to grade {canvas_id}: {e}")
+
+    missing_summary = {}
+    if notify_missing:
+        missing_summary = notify_missing_submissions_after_due(
+            assignment_ids=None,
+            api_url=api_url,
+            api_key=api_key,
+            course_id=course_id,
+            category=category,
+            refine=refine,
+            auto_send=True,
+            verbose=verbose,
+        )
+
+    summary_lines = []
+    summary_lines.append(f"Weekly automation summary for assignment {assignment_id}")
+    summary_lines.append(f"Downloaded files: {len(files)}")
+    summary_lines.append(f"Flagged (issues): {len(flagged_ids)}")
+    summary_lines.append(f"Graded with {auto_grade_score}: {len(graded)}")
+    summary_lines.append(f"Skipped (issues): {len(skipped)}")
+    if similarity_pairs:
+        summary_lines.append(f"Similarity pairs: {len(similarity_pairs)}")
+    low_quality = [f for f, r in (meaningful_results or {}).items() if r.get("meaningful_score", 1.0) < meaningfulness_threshold]
+    if low_quality:
+        summary_lines.append(f"Low quality submissions: {len(low_quality)}")
+    if missing_summary:
+        summary_lines.append(f"Assignments with missing submissions: {len(missing_summary)}")
+
+    summary_text = "\n".join(summary_lines)
+    if teacher_canvas_id:
+        try:
+            canvas.create_conversation(
+                recipients=[str(teacher_canvas_id)],
+                subject="Weekly submission checks summary",
+                body=summary_text,
+                force_new=True,
+            )
+        except Exception as e:
+            if verbose:
+                print(f"[WeeklyAuto] Failed to send summary: {e}")
+
+    summary_payload = {
+        "assignment_id": str(assignment_id),
+        "assignment_name": assignment_name,
+        "generated_at": datetime.now().isoformat(),
+        "flagged_count": len(flagged_ids),
+        "graded_count": len(graded),
+        "skipped_count": len(skipped),
+    }
+    try:
+        with open("weekly_automation_summary.json", "w", encoding="utf-8") as f:
+            json.dump(summary_payload, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        if verbose:
+            print(f"[WeeklyAuto] Failed to write weekly summary: {e}")
+
+    return {
+        "out_dir": out_dir,
+        "flagged_ids": sorted(flagged_ids),
+        "graded": graded,
+        "skipped": skipped,
+        "missing_summary": missing_summary,
+        "similarity_pairs": similarity_pairs,
+        "low_quality_files": low_quality,
+        "summary": summary_text,
+        "evidence_dir": evidence_dir,
+    }
+
+
+def list_closed_assignments_for_weekly_automation(
+    api_url=CANVAS_LMS_API_URL,
+    api_key=CANVAS_LMS_API_KEY,
+    course_id=CANVAS_LMS_COURSE_ID,
+    category=None,
+    require_submissions=True,
+    verbose=False,
+):
+    """
+    List assignments whose lock date has passed (closed) for weekly automation.
+    """
+    canvas = Canvas(api_url, api_key)
+    course = canvas.get_course(course_id)
+    try:
+        groups = list(course.get_assignment_groups(include=["assignments"]))
+    except Exception as e:
+        if verbose:
+            print(f"[WeeklyAuto] Failed to list assignments: {e}")
+        return []
+
+    group_map = {}
+    for g in groups:
+        group_map[g.id] = getattr(g, "name", "")
+
+    now = datetime.now(timezone.utc)
+    closed = []
+    for g in groups:
+        if category and getattr(g, "name", "").lower() != category.lower():
+            continue
+        for assignment in g.assignments:
+            lock_at = assignment.get("lock_at")
+            if not lock_at:
+                continue
+            lock_at_clean = lock_at[:-1] if lock_at.endswith("Z") else lock_at
+            try:
+                lock_dt = datetime.fromisoformat(lock_at_clean)
+            except Exception:
+                continue
+            if lock_at.endswith("Z"):
+                lock_dt = lock_dt.replace(tzinfo=timezone.utc)
+            if lock_dt.tzinfo is None:
+                lock_dt = lock_dt.replace(tzinfo=timezone.utc)
+            if lock_dt > now:
+                continue
+            if require_submissions and not assignment.get("has_submitted_submissions", False):
+                continue
+            closed.append({
+                "id": str(assignment.get("id")),
+                "name": assignment.get("name", ""),
+                "lock_at": lock_at,
+                "group": group_map.get(assignment.get("assignment_group_id")),
+            })
+
+    closed.sort(key=lambda a: a.get("lock_at") or "")
+    return closed
 
 def add_comment_to_canvas_submission(
     assignment_id=None,

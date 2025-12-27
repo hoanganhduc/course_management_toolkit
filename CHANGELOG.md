@@ -11,4 +11,8 @@
 - Expanded submission quality checks with configurable thresholds and richer diagnostics.
 - Added backup/restore commands, dry-run mode, validation reports, grade audit history, and grade diff exports.
 - Added import previews, anonymized exports, and per-run summaries in `run_report.txt`.
+- Added weekly automation workflow generation and non-interactive Canvas checks/reminders.
+- Added local weekly automation with archived reports and flagged-submission evidence.
+- Weekly workflow now clones the toolkit, archives reports with DB backups, and tags evidence by assignment.
+- Weekly automation can auto-detect closed assignments not yet in weekly reports.
 - Updated docs and samples; added GPL-3.0-only license.

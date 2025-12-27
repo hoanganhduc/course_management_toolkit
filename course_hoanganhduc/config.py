@@ -378,6 +378,7 @@ def load_config(config_path=None, verbose=False):
         "CANVAS_LMS_API_URL",
         "CANVAS_LMS_API_KEY",
         "CANVAS_LMS_COURSE_ID",
+        "CANVAS_DEFAULT_ASSIGNMENT_CATEGORY",
         "MIDTERM_DATE",
         "EXAM_TYPE",
         "CANVAS_MIDTERM_ASSIGNMENT_ID",

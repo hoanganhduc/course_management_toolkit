@@ -23,9 +23,10 @@ Utilities for managing course rosters, grading, OCR extraction, and Canvas/Googl
   - [Install (editable)](#install-editable)
   - [Install into per-user venv](#install-into-per-user-venv)
   - [Run](#run)
-  - [Common workflows](#common-workflows)
-  - [Configuration](#configuration)
-  - [Override grades](#override-grades)
+- [Common workflows](#common-workflows)
+- [Configuration](#configuration)
+- [Weekly automation guide](#weekly-automation-guide)
+- [Override grades](#override-grades)
   - [Notes](#notes)
   - [External tools (optional)](#external-tools-optional)
   - [Troubleshooting](#troubleshooting)
@@ -88,6 +89,9 @@ course --sync-google-classroom
 
 Export a roster to CSV:
 
+Course management toolkit for automating student records, grading workflows, PDF/OCR extraction,
+Canvas/Google Classroom operations, AI-assisted checks, and weekly reporting.
+
 ```bash
 course --export-roster
 ```
@@ -103,6 +107,36 @@ Export an anonymized roster:
 ```bash
 course --export-anonymized
 ```
+
+Generate a weekly GitHub Actions workflow template:
+
+```bash
+course --generate-weekly-workflow
+```
+
+Run weekly automation for a closed assignment (downloads, checks, grades, reminders):
+
+```bash
+course --run-weekly-automation --weekly-assignment-id 123456 --weekly-teacher-canvas-id 987654
+```
+
+If you omit ``--weekly-assignment-id``, the tool scans ``weekly_reports/`` for
+previous runs, lists already-processed assignments, then runs on closed Canvas
+assignments that are not yet in the weekly reports.
+
+Run weekly automation locally (no GitHub repo needed). Reports are archived under
+`weekly_reports/<timestamp>` with a `students.db.bak` copy:
+
+```bash
+course --run-weekly-local --weekly-assignment-id 123456 --weekly-local-root "C:\path\to\course-folder"
+```
+
+Weekly report folders include evidence and outputs such as:
+- `run_report.txt`, `data_validation_report.txt`, `grade_diff.csv`
+- `weekly_automation_summary.json`
+- `final_evaluations/`, `student_submissions/`
+- `flagged_submissions_<assignment-name>_<assignment-id>/`
+- `students.db.bak`
 
 Clear stored configuration or credentials:
 
@@ -136,6 +170,24 @@ course --update-mat-excel MAT3500-3-Toan-roi-rac-4TC.xlsx --dry-run --export-gra
 
 The tool reads settings from `config.json` stored in a course-specific folder determined by `.course_code`.
 On first run, you will be prompted for a course code (e.g., MAT3500) and it will be cached in `.course_code`.
+
+## Weekly automation guide
+
+Local weekly run (no GitHub required):
+- Ensure `students.db` is present in the folder you want to use (e.g., a Dropbox folder).
+- Ensure your `config.json` is already set (Canvas API URL/key, course ID, OCR keys if used).
+- Run `course --run-weekly-local --weekly-assignment-id <ID> --weekly-local-root "<folder>"`.
+- Reports and evidence are stored in `weekly_reports/<timestamp>/` under the chosen folder.
+  If the assignment ID is omitted, the tool processes closed assignments not yet listed in
+  `weekly_reports/`.
+
+GitHub Actions weekly run:
+- Store `students.db` in the course repo that hosts the workflow.
+- Add required secrets (`CANVAS_API_URL`, `CANVAS_API_KEY`, optional `OCRSPACE_API_KEY`).
+- Run `course --generate-weekly-workflow` to create `.github/workflows/weekly-course-tasks.yml`.
+- The workflow clones the toolkit repo, runs weekly automation, archives results into
+  `weekly_reports/<timestamp>/`, removes the toolkit clone, and commits the updated
+  `students.db` plus `weekly_reports/`.
 
 Default config locations:
 - Windows: `%APPDATA%\\course\\<course_code>\\config.json`

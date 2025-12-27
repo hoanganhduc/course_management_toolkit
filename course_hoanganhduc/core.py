@@ -116,6 +116,11 @@ def _build_menu_sections():
             ("Backup config.json", "57"),
             ("Restore config.json", "58"),
         ]),
+        ("Weekly Automation", [
+            ("Run weekly automation (Canvas + grading)", "61"),
+            ("Run weekly automation locally and archive reports", "62"),
+            ("Generate weekly GitHub workflow template", "63"),
+        ]),
     ]
 
 
@@ -282,6 +287,47 @@ def _print_menu_fallback(sections):
             continue
         print(f"{entry['code']}. {entry['label']}")
     print("\n0. Exit\n")
+
+
+def _resolve_weekly_assignment_targets(assignment_id, report_root, base_dir, category, verbose):
+    if assignment_id:
+        return [{"id": str(assignment_id), "name": ""}]
+
+    history = load_weekly_automation_history(
+        report_root=report_root,
+        base_dir=base_dir,
+        verbose=verbose,
+    )
+    if history:
+        print("Weekly reports found (already processed):")
+        for entry in sorted(history.values(), key=lambda e: (e.get("assignment_name") or "", e.get("assignment_id") or "")):
+            name = entry.get("assignment_name") or "Unknown assignment"
+            print(f"- {name} (ID: {entry.get('assignment_id')})")
+    else:
+        print("No weekly reports found yet.")
+
+    closed = list_closed_assignments_for_weekly_automation(
+        api_url=CANVAS_LMS_API_URL,
+        api_key=CANVAS_LMS_API_KEY,
+        course_id=CANVAS_LMS_COURSE_ID,
+        category=category,
+        verbose=verbose,
+    )
+    if not closed:
+        print("No closed assignments found for weekly automation.")
+        return []
+
+    pending = [a for a in closed if a.get("id") not in history]
+    if not pending:
+        print("No new closed assignments to process.")
+        return []
+
+    print("Closed assignments not yet processed:")
+    for entry in pending:
+        group = entry.get("group") or "Uncategorized"
+        print(f"- [{group}] {entry.get('name')} (ID: {entry.get('id')})")
+
+    return pending
 
 
 def main():
@@ -555,6 +601,77 @@ def main():
                               help="Path to Google Classroom token pickle file",
                               dest="google_token_path")
 
+    automation_group = parser.add_argument_group("Automation")
+    automation_group.add_argument('--run-weekly-automation', action='store_true',
+                                  help="Run weekly automation for a closed assignment",
+                                  dest="run_weekly_automation")
+    automation_group.add_argument('--weekly-assignment-id', type=str,
+                                  help="Canvas assignment ID for weekly automation",
+                                  dest="weekly_assignment_id", metavar="ASSIGNMENT_ID")
+    automation_group.add_argument('--weekly-dest-dir', type=str,
+                                  help="Output directory for weekly downloads",
+                                  dest="weekly_dest_dir", metavar="DIR")
+    automation_group.add_argument('--weekly-teacher-canvas-id', type=str,
+                                  help="Canvas user ID for summary notifications",
+                                  dest="weekly_teacher_canvas_id", metavar="CANVAS_ID")
+    automation_group.add_argument('--weekly-category', type=str,
+                                  help="Assignment group/category filter for missing-submission reminders",
+                                  dest="weekly_category", metavar="CATEGORY")
+    automation_group.add_argument('--weekly-meaningful-threshold', type=float,
+                                  help="Meaningfulness threshold for weekly automation",
+                                  dest="weekly_meaningful_threshold", metavar="SCORE")
+    automation_group.add_argument('--weekly-similarity-threshold', type=float,
+                                  help="Similarity threshold for weekly automation",
+                                  dest="weekly_similarity_threshold", metavar="SCORE")
+    automation_group.add_argument('--weekly-score', type=float,
+                                  help="Score to assign to clean submissions (default: 10)",
+                                  dest="weekly_score", metavar="SCORE")
+    automation_group.add_argument('--weekly-refine', type=str, choices=['gemini', 'huggingface', 'none'],
+                                  help="AI refinement method for weekly notices",
+                                  dest="weekly_refine", metavar="METHOD")
+    automation_group.add_argument('--weekly-ocr-service', type=str, choices=['ocrspace', 'tesseract', 'paddleocr'],
+                                  help="OCR service for weekly automation",
+                                  dest="weekly_ocr_service", metavar="OCR")
+    automation_group.add_argument('--weekly-ocr-lang', type=str,
+                                  help="OCR language for weekly automation",
+                                  dest="weekly_ocr_lang", metavar="LANG")
+    automation_group.add_argument('--weekly-notify-missing', action='store_true',
+                                  help="Send reminders for missing submissions after due date",
+                                  dest="weekly_notify_missing")
+    automation_group.add_argument('--run-weekly-local', action='store_true',
+                                  help="Run weekly automation locally and archive reports",
+                                  dest="run_weekly_local")
+    automation_group.add_argument('--weekly-local-root', type=str,
+                                  help="Local folder for weekly report archiving (default: cwd)",
+                                  dest="weekly_local_root", metavar="DIR")
+    automation_group.add_argument('--generate-weekly-workflow', nargs='?', const=True,
+                                  help="Generate a sample GitHub Actions workflow for weekly automation",
+                                  dest="generate_weekly_workflow", metavar="OUTPUT")
+    automation_group.add_argument('--workflow-toolkit-repo', type=str,
+                                  help="Repo URL for course toolkit",
+                                  dest="workflow_toolkit_repo", metavar="URL")
+    automation_group.add_argument('--workflow-toolkit-branch', type=str,
+                                  help="Branch for course toolkit repo",
+                                  dest="workflow_toolkit_branch", metavar="BRANCH")
+    automation_group.add_argument('--workflow-students-repo', type=str,
+                                  help="Deprecated alias for --workflow-toolkit-repo",
+                                  dest="workflow_students_repo", metavar="URL")
+    automation_group.add_argument('--workflow-students-branch', type=str,
+                                  help="Deprecated alias for --workflow-toolkit-branch",
+                                  dest="workflow_students_branch", metavar="BRANCH")
+    automation_group.add_argument('--workflow-assignment-id', type=str,
+                                  help="Assignment ID placeholder for workflow",
+                                  dest="workflow_assignment_id", metavar="ASSIGNMENT_ID")
+    automation_group.add_argument('--workflow-course-code', type=str,
+                                  help="Course code placeholder for workflow",
+                                  dest="workflow_course_code", metavar="COURSE_CODE")
+    automation_group.add_argument('--workflow-course-id', type=str,
+                                  help="Course ID placeholder for workflow",
+                                  dest="workflow_course_id", metavar="COURSE_ID")
+    automation_group.add_argument('--workflow-teacher-canvas-id', type=str,
+                                  help="Teacher Canvas ID placeholder for workflow",
+                                  dest="workflow_teacher_canvas_id", metavar="CANVAS_ID")
+
     args = parser.parse_args()
 
     # Persist course code early so config resolution is consistent for this run.
@@ -660,6 +777,84 @@ def main():
     # Database files are resolved from the current working directory.
     db_filename = args.db if args.db else "students.db"
     db_path = os.path.join(os.getcwd(), db_filename)
+
+    if args.generate_weekly_workflow:
+        output_path = args.generate_weekly_workflow if isinstance(args.generate_weekly_workflow, str) else ".github/workflows/weekly-course-tasks.yml"
+        workflow_path = generate_weekly_github_workflow(
+            output_path=output_path,
+            toolkit_repo_url=(
+                args.workflow_toolkit_repo
+                or args.workflow_students_repo
+                or "https://github.com/hoanganhduc/course_management_toolkit.git"
+            ),
+            toolkit_repo_branch=(
+                args.workflow_toolkit_branch
+                or args.workflow_students_branch
+                or "main"
+            ),
+            assignment_id=args.workflow_assignment_id or "ASSIGNMENT_ID",
+            course_code=args.workflow_course_code or (args.course_code or "MAT3500"),
+            course_id=args.workflow_course_id or "COURSE_ID",
+            teacher_canvas_id=args.workflow_teacher_canvas_id or "TEACHER_CANVAS_ID",
+            category=args.weekly_category or "",
+        )
+        print(f"Workflow written to {workflow_path}")
+
+    if args.run_weekly_automation or args.run_weekly_local:
+        weekly_refine = args.weekly_refine
+        if weekly_refine == "none":
+            weekly_refine = None
+        original_cwd = os.getcwd()
+        local_root = original_cwd
+        if args.run_weekly_local and args.weekly_local_root:
+            local_root = os.path.abspath(args.weekly_local_root)
+            os.makedirs(local_root, exist_ok=True)
+        if args.run_weekly_local and local_root != original_cwd:
+            os.chdir(local_root)
+        try:
+            targets = _resolve_weekly_assignment_targets(
+                assignment_id=args.weekly_assignment_id,
+                report_root="weekly_reports",
+                base_dir=local_root,
+                category=args.weekly_category or CANVAS_DEFAULT_ASSIGNMENT_CATEGORY,
+                verbose=args.verbose,
+            )
+            if not targets:
+                summary = {}
+            else:
+                summary = {}
+                for target in targets:
+                    summary = run_weekly_canvas_automation(
+                        assignment_id=target.get("id"),
+                        dest_dir=args.weekly_dest_dir,
+                        api_url=CANVAS_LMS_API_URL,
+                        api_key=CANVAS_LMS_API_KEY,
+                        course_id=CANVAS_LMS_COURSE_ID,
+                        teacher_canvas_id=args.weekly_teacher_canvas_id,
+                        category=args.weekly_category or CANVAS_DEFAULT_ASSIGNMENT_CATEGORY,
+                        ocr_service=args.weekly_ocr_service or DEFAULT_OCR_METHOD,
+                        lang=args.weekly_ocr_lang or "auto",
+                        refine=weekly_refine,
+                        similarity_threshold=args.weekly_similarity_threshold or 0.85,
+                        meaningfulness_threshold=args.weekly_meaningful_threshold or 0.4,
+                        auto_grade_score=args.weekly_score or 10,
+                        notify_missing=True,
+                        verbose=args.verbose,
+                    )
+        finally:
+            if args.run_weekly_local and local_root != original_cwd:
+                os.chdir(original_cwd)
+        if args.run_weekly_local:
+            report_dir = archive_weekly_artifacts_local(
+                report_root="weekly_reports",
+                students_db_path="students.db",
+                base_dir=local_root,
+                verbose=args.verbose,
+            )
+            if args.verbose:
+                print(f"[WeeklyLocal] Archived weekly artifacts to {report_dir}")
+        if args.verbose:
+            print(summary.get("summary", "Weekly automation complete."))
 
     if args.restore_db:
         restore_database(db_path=db_path, backup_path=args.restore_db, verbose=args.verbose)
@@ -2613,5 +2808,140 @@ def main():
                         print(f"[DeleteGroups] Error: {e}")
                     else:
                         print(f"Error deleting empty groups: {e}")
+            elif choice == '61':
+                assignment_id = input("Assignment ID (leave blank to auto-detect, or 'q' to quit): ").strip()
+                if assignment_id.lower() in ('q', 'quit'):
+                    continue
+                teacher_canvas_id = input("Teacher Canvas ID (optional): ").strip() or None
+                dest_dir = input_with_completion("Download folder (optional, blank for default): ").strip() or None
+                category = input("Assignment category filter (optional): ").strip() or None
+                meaningful_raw = input("Meaningfulness threshold [0.4]: ").strip()
+                similarity_raw = input("Similarity threshold [0.85]: ").strip()
+                score_raw = input("Auto-grade score [10]: ").strip()
+                refine_raw = input("Refine method (gemini/huggingface/none) [none]: ").strip().lower()
+                ocr_raw = input(f"OCR service (ocrspace/tesseract/paddleocr) [{DEFAULT_OCR_METHOD}]: ").strip().lower()
+                ocr_lang = input("OCR language [auto]: ").strip() or "auto"
+                notify_raw = input("Notify missing submissions? (y/n) [y]: ").strip().lower()
+                meaningful = float(meaningful_raw) if meaningful_raw else 0.4
+                similarity = float(similarity_raw) if similarity_raw else 0.85
+                score = float(score_raw) if score_raw else 10
+                refine = None if not refine_raw or refine_raw == "none" else refine_raw
+                ocr_service = ocr_raw or DEFAULT_OCR_METHOD
+                notify_missing = notify_raw not in ("n", "no")
+                targets = _resolve_weekly_assignment_targets(
+                    assignment_id=assignment_id or None,
+                    report_root="weekly_reports",
+                    base_dir=os.getcwd(),
+                    category=category or CANVAS_DEFAULT_ASSIGNMENT_CATEGORY,
+                    verbose=args.verbose,
+                )
+                if not targets:
+                    continue
+                for target in targets:
+                    summary = run_weekly_canvas_automation(
+                        assignment_id=target.get("id"),
+                        dest_dir=dest_dir,
+                        api_url=CANVAS_LMS_API_URL,
+                        api_key=CANVAS_LMS_API_KEY,
+                        course_id=CANVAS_LMS_COURSE_ID,
+                        teacher_canvas_id=teacher_canvas_id,
+                        category=category or CANVAS_DEFAULT_ASSIGNMENT_CATEGORY,
+                        ocr_service=ocr_service,
+                        lang=ocr_lang,
+                        refine=refine,
+                        similarity_threshold=similarity,
+                        meaningfulness_threshold=meaningful,
+                        auto_grade_score=score,
+                        notify_missing=notify_missing,
+                        verbose=args.verbose,
+                    )
+                    print(summary.get("summary", "Weekly automation complete."))
+            elif choice == '62':
+                assignment_id = input("Assignment ID (leave blank to auto-detect, or 'q' to quit): ").strip()
+                if assignment_id.lower() in ('q', 'quit'):
+                    continue
+                local_root = input_with_completion("Local root folder (optional, blank for current): ").strip()
+                teacher_canvas_id = input("Teacher Canvas ID (optional): ").strip() or None
+                dest_dir = input_with_completion("Download folder (optional, blank for default): ").strip() or None
+                category = input("Assignment category filter (optional): ").strip() or None
+                meaningful_raw = input("Meaningfulness threshold [0.4]: ").strip()
+                similarity_raw = input("Similarity threshold [0.85]: ").strip()
+                score_raw = input("Auto-grade score [10]: ").strip()
+                refine_raw = input("Refine method (gemini/huggingface/none) [none]: ").strip().lower()
+                ocr_raw = input(f"OCR service (ocrspace/tesseract/paddleocr) [{DEFAULT_OCR_METHOD}]: ").strip().lower()
+                ocr_lang = input("OCR language [auto]: ").strip() or "auto"
+                notify_raw = input("Notify missing submissions? (y/n) [y]: ").strip().lower()
+                meaningful = float(meaningful_raw) if meaningful_raw else 0.4
+                similarity = float(similarity_raw) if similarity_raw else 0.85
+                score = float(score_raw) if score_raw else 10
+                refine = None if not refine_raw or refine_raw == "none" else refine_raw
+                ocr_service = ocr_raw or DEFAULT_OCR_METHOD
+                notify_missing = notify_raw not in ("n", "no")
+                original_cwd = os.getcwd()
+                local_base = local_root or original_cwd
+                targets = _resolve_weekly_assignment_targets(
+                    assignment_id=assignment_id or None,
+                    report_root="weekly_reports",
+                    base_dir=local_base,
+                    category=category or CANVAS_DEFAULT_ASSIGNMENT_CATEGORY,
+                    verbose=args.verbose,
+                )
+                if not targets:
+                    continue
+                if local_root:
+                    os.makedirs(local_root, exist_ok=True)
+                    os.chdir(local_root)
+                try:
+                    for target in targets:
+                        summary = run_weekly_canvas_automation(
+                            assignment_id=target.get("id"),
+                            dest_dir=dest_dir,
+                            api_url=CANVAS_LMS_API_URL,
+                            api_key=CANVAS_LMS_API_KEY,
+                            course_id=CANVAS_LMS_COURSE_ID,
+                            teacher_canvas_id=teacher_canvas_id,
+                            category=category or CANVAS_DEFAULT_ASSIGNMENT_CATEGORY,
+                            ocr_service=ocr_service,
+                            lang=ocr_lang,
+                            refine=refine,
+                            similarity_threshold=similarity,
+                            meaningfulness_threshold=meaningful,
+                            auto_grade_score=score,
+                            notify_missing=notify_missing,
+                            verbose=args.verbose,
+                        )
+                        print(summary.get("summary", "Weekly automation complete."))
+                finally:
+                    if local_root:
+                        os.chdir(original_cwd)
+                report_dir = archive_weekly_artifacts_local(
+                    report_root="weekly_reports",
+                    students_db_path="students.db",
+                    base_dir=local_base,
+                    verbose=args.verbose,
+                )
+                print(f"[WeeklyLocal] Archived weekly artifacts to {report_dir}")
+            elif choice == '63':
+                output_path = input_with_completion(
+                    "Workflow output path [.github/workflows/weekly-course-tasks.yml]: "
+                ).strip() or ".github/workflows/weekly-course-tasks.yml"
+                toolkit_repo = input("Toolkit repo URL [https://github.com/hoanganhduc/course_management_toolkit.git]: ").strip()
+                toolkit_branch = input("Toolkit branch [main]: ").strip()
+                assignment_id = input("Assignment ID placeholder [ASSIGNMENT_ID]: ").strip()
+                course_code = input("Course code placeholder [MAT3500]: ").strip()
+                course_id = input("Course ID placeholder [COURSE_ID]: ").strip()
+                teacher_canvas_id = input("Teacher Canvas ID placeholder [TEACHER_CANVAS_ID]: ").strip()
+                category = input("Assignment category placeholder (optional): ").strip()
+                workflow_path = generate_weekly_github_workflow(
+                    output_path=output_path,
+                    toolkit_repo_url=toolkit_repo or "https://github.com/hoanganhduc/course_management_toolkit.git",
+                    toolkit_repo_branch=toolkit_branch or "main",
+                    assignment_id=assignment_id or "ASSIGNMENT_ID",
+                    course_code=course_code or "MAT3500",
+                    course_id=course_id or "COURSE_ID",
+                    teacher_canvas_id=teacher_canvas_id or "TEACHER_CANVAS_ID",
+                    category=category or "",
+                )
+                print(f"Workflow written to {workflow_path}")
             else:
                 print("Invalid option.")

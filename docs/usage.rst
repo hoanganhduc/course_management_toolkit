@@ -161,6 +161,49 @@ Export an anonymized roster:
 
    course --export-anonymized
 
+Generate a weekly workflow template:
+
+.. code-block:: bash
+
+   course --generate-weekly-workflow
+
+Run weekly automation:
+
+.. code-block:: bash
+
+   course --run-weekly-automation --weekly-assignment-id 123456 --weekly-teacher-canvas-id 987654
+
+If ``--weekly-assignment-id`` is omitted, the tool scans ``weekly_reports/`` to list
+assignments already processed and then runs on closed assignments not yet in the reports.
+
+Run weekly automation locally (no GitHub repo needed):
+
+.. code-block:: bash
+
+   course --run-weekly-local --weekly-assignment-id 123456 --weekly-local-root "C:\\path\\to\\course-folder"
+
+Weekly automation guide
+-----------------------
+
+Local weekly run:
+
+- Ensure ``students.db`` exists in the target folder.
+- Ensure ``config.json`` is configured (Canvas API URL/key, course ID, OCR keys if needed).
+- Run ``course --run-weekly-local`` with ``--weekly-assignment-id`` and an optional
+  ``--weekly-local-root`` to choose where reports are stored.
+- Reports and evidence are stored in ``weekly_reports/<timestamp>/`` with a
+  ``students.db.bak`` backup.
+- If the assignment ID is omitted, the tool processes closed assignments not yet listed
+  in ``weekly_reports/``.
+
+GitHub Actions weekly run:
+
+- Store ``students.db`` in the repo that hosts the workflow.
+- Configure secrets ``CANVAS_API_URL``, ``CANVAS_API_KEY``, and optional OCR keys.
+- Generate the workflow via ``course --generate-weekly-workflow``.
+- The workflow clones the toolkit repo, runs weekly checks, archives artifacts into
+  ``weekly_reports/<timestamp>/``, removes the toolkit clone, and commits updates.
+
 Backup and restore
 ------------------
 
