@@ -424,9 +424,9 @@ jobs:
             fi
           done
           patterns=("pdf_similarity_results.txt" "pdf_similarity_status.json" "pdf_similarity_report.json" "meaningfulness_analysis.txt" "meaningfulness_status.json")
-          for pattern in "${patterns[@]}"; do
+          for pattern in "${{patterns[@]}}"; do
             find . -path "./students_repo/weekly_reports" -prune -o -name "$pattern" -print0 | while IFS= read -r -d '' file; do
-              rel="${file#./}"
+              rel="${{file#./}}"
               dest="$ARCHIVE_DIR/$(dirname "$rel")"
               mkdir -p "$dest"
               mv "$file" "$dest/"

@@ -2236,7 +2236,7 @@ def compare_texts_from_pdfs_in_folder(
 
             try:
                 refine_choice = get_input_with_timeout(
-                    "Do you want to refine the message via AI? (none/gemini/huggingface) [none]: ",
+                    "Do you want to refine the message via AI? (none/gemini/huggingface/local) [none]: ",
                     timeout=60,
                     default="none"
                 ).strip().lower()
@@ -2567,7 +2567,7 @@ def detect_meaningful_level_and_notify_students(
 
     if refine is None and not auto_send:
         refine = get_input_with_timeout_default(
-            "Which AI model do you want to use for meaningfulness analysis? (gemini/huggingface, default 'gemini' in 60s): ",
+            "Which AI model do you want to use for meaningfulness analysis? (gemini/huggingface/local, default 'gemini' in 60s): ",
             timeout=60,
             default="gemini"
         ).strip().lower()
@@ -3252,7 +3252,7 @@ def add_comment_to_canvas_submission(
     If comment_text is None, prompt the user to input the comment (multi-line supported).
     Only list assignments having at least one submission (submitted_at is not None for any student).
     If category is specified, only list assignments in that category.
-    If refine is 'gemini' or 'huggingface', refine the comment via AI before posting.
+    If refine is 'gemini', 'huggingface', or 'local', refine the comment via AI before posting.
     Returns True if successful, False otherwise.
     At every user prompt, allow quitting by entering 'q' or 'quit'.
     If no response after 60 seconds, execute the default option (quit if available).
@@ -5005,7 +5005,7 @@ def fetch_and_reply_canvas_messages(
     Fetches Canvas inbox conversations (messages), prints them, and allows replying.
     If only_unread is True, only fetches unread conversations.
     If reply_text is provided, replies with that text to all selected conversations.
-    If refine is 'gemini' or 'huggingface', refines the reply via AI before sending.
+    If refine is 'gemini', 'huggingface', or 'local', refines the reply via AI before sending.
     Messages are shown in order of latest first.
     max_messages: maximum number of conversations to fetch and display (default: 3)
     Also fetches and prints the full content of each message in the conversation.
@@ -5442,7 +5442,7 @@ def list_and_update_canvas_pages(
             if refine is None:
                 try:
                     refine_choice = get_input_with_timeout(
-                        "Do you want to refine the page content using AI? (none/gemini/huggingface) [none]: ",
+                        "Do you want to refine the page content using AI? (none/gemini/huggingface/local) [none]: ",
                         timeout=60,
                         default="none"
                     ).strip().lower()

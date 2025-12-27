@@ -3,11 +3,15 @@
 ### Constants and Configurations
 # === Global variables and default values (initialized as empty) ===
 DEFAULT_AI_METHOD = ""
-ALL_AI_METHODS = []
+ALL_AI_METHODS = ["gemini", "huggingface", "local"]
 GEMINI_API_KEY = ""
 HUGGINGFACE_API_KEY = ""
 GEMINI_DEFAULT_MODEL = ""
 REPORT_REFINE_METHOD = ""
+LOCAL_LLM_COMMAND = "ollama"
+LOCAL_LLM_MODEL = "llama3.2:3b"
+LOCAL_LLM_ARGS = ""
+LOCAL_LLM_TIMEOUT = 120
 DRY_RUN = False
 LOG_DIR = ""
 LOG_LEVEL = "INFO"

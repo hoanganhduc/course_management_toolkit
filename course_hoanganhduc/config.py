@@ -283,6 +283,10 @@ def load_config(config_path=None, verbose=False):
         ALL_OCR_METHODS
         OCRSPACE_API_KEY
         OCRSPACE_API_URL
+        LOCAL_LLM_COMMAND
+        LOCAL_LLM_MODEL
+        LOCAL_LLM_ARGS
+        LOCAL_LLM_TIMEOUT
         CANVAS_LMS_API_URL
         CANVAS_LMS_API_KEY
         CANVAS_LMS_COURSE_ID
@@ -362,6 +366,10 @@ def load_config(config_path=None, verbose=False):
         "HUGGINGFACE_API_KEY",
         "GEMINI_DEFAULT_MODEL",
         "REPORT_REFINE_METHOD",
+        "LOCAL_LLM_COMMAND",
+        "LOCAL_LLM_MODEL",
+        "LOCAL_LLM_ARGS",
+        "LOCAL_LLM_TIMEOUT",
         "DRY_RUN",
         "LOG_DIR",
         "LOG_LEVEL",

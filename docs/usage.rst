@@ -251,15 +251,22 @@ Override grades
 ----------------
 
 Place ``override_grades.xlsx`` in the working directory (see ``sample/override_grades.xlsx`` for the format).
-Required columns: ``M? Sinh Vi?n`` or ``H? v? T?n``, plus at least one of ``CC``/``GK``/``CK`` (order does not matter). ``STT`` and ``L? do`` are optional.
-Common header aliases are accepted, for example ``MSSV``, ``M? SV``, ``H? t?n``, ``Midterm`` (Gi?a k?), ``Final`` (Cu?i k?), ``CC`` (Chuy?n c?n), ``Reason`` (L? do).
-Non-empty CC/GK/CK cells override computed grades, and ``L? do`` is appended to the final evaluation output when present.
+Required columns: ``Mã Sinh Viên`` or ``Họ và Tên``, plus at least one of ``CC``/``GK``/``CK`` (order does not matter). ``STT`` and ``Lý do`` are optional.
+Common header aliases are accepted, for example ``MSSV``, ``Mã SV``, ``Họ tên``, ``Midterm`` (Giữa kỳ), ``Final`` (Cuối kỳ), ``CC`` (Chuyên cần), ``Reason`` (Lý do).
+Non-empty CC/GK/CK cells override computed grades, and ``Lý do`` is appended to the final evaluation output when present.
 
 AI report refinement
 -------------------
 
-Set ``REPORT_REFINE_METHOD`` to ``gemini`` or ``huggingface`` in ``config.json`` (requires the corresponding API key).
+Set ``REPORT_REFINE_METHOD`` to ``gemini``, ``huggingface``, or ``local`` in ``config.json`` (requires the corresponding API key for remote providers).
 When AI refinement runs, the report includes the default model and the model actually used.
+Local LLM settings (defaults to Ollama):
+
+- ``LOCAL_LLM_COMMAND`` (default: ``ollama``)
+- ``LOCAL_LLM_MODEL`` (default: ``llama3.2:3b``)
+- ``LOCAL_LLM_ARGS`` (optional extra CLI args)
+Runtime overrides: ``--local-llm-command``, ``--local-llm-model``, ``--local-llm-args``.
+
 
 AI model verification and listing
 ---------------------------------
@@ -269,6 +276,12 @@ Verify credentials and connectivity:
 .. code-block:: bash
 
    course --test-ai
+
+Verify the local model:
+
+.. code-block:: bash
+
+   course --test-ai local
 
 Test a specific model name:
 

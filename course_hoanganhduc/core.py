@@ -378,8 +378,8 @@ def main():
                               help="Number of config backups to retain (default from config)",
                               dest="config_backup_keep", metavar="COUNT")
     config_group.add_argument('--test-ai', '-tai', nargs='?', const="all",
-                              choices=["gemini", "huggingface", "all"],
-                              help="Test AI services ('gemini', 'huggingface', or 'all')",
+                              choices=["gemini", "huggingface", "local", "all"],
+                              help="Test AI services ('gemini', 'huggingface', 'local', or 'all')",
                               dest="test_ai", metavar="AI_SERVICE")
     config_group.add_argument('--test-ai-model', '-tam', type=str,
                               help="Override model name for --test-ai (provider-specific)",
@@ -391,9 +391,18 @@ def main():
                               help="Override HuggingFace model name for --test-ai all",
                               dest="test_ai_huggingface_model", metavar="MODEL")
     config_group.add_argument('--list-ai-models', '-lam', nargs='?', const="all",
-                              choices=["gemini", "huggingface", "all"],
-                              help="List available AI models for a provider ('gemini', 'huggingface', or 'all')",
+                              choices=["gemini", "huggingface", "local", "all"],
+                              help="List available AI models for a provider ('gemini', 'huggingface', 'local', or 'all')",
                               dest="list_ai_models", metavar="AI_SERVICE")
+    config_group.add_argument('--local-llm-command', type=str,
+                              help="Command to run the local LLM (default: ollama)",
+                              dest="local_llm_command", metavar="CMD")
+    config_group.add_argument('--local-llm-model', type=str,
+                              help="Local LLM model name (default from config/settings)",
+                              dest="local_llm_model", metavar="MODEL")
+    config_group.add_argument('--local-llm-args', type=str,
+                              help="Extra args for local LLM command",
+                              dest="local_llm_args", metavar="ARGS")
 
     db_group = parser.add_argument_group("Student Database")
     db_group.add_argument('--db', '-db', '-D', type=str, help="Database file name (default: students.db, saved in script folder)", dest="db", metavar="DB")
@@ -469,8 +478,8 @@ def main():
     ocr_group.add_argument('--simple-text', '-T', action='store_true',
                            help="Extract simple text (no layout) from PDF OCR",
                            dest="simple_text")
-    ocr_group.add_argument('--refine', '-R', type=str, choices=['gemini', 'huggingface'], default=None,
-                           help="Refine extracted text using AI ('gemini' or 'huggingface')",
+    ocr_group.add_argument('--refine', '-R', type=str, choices=['gemini', 'huggingface', 'local'], default=None,
+                           help="Refine extracted text using AI ('gemini', 'huggingface', or 'local')",
                            dest="refine")
 
     exam_group = parser.add_argument_group("Exams (Multichoice)")
@@ -626,7 +635,7 @@ def main():
     automation_group.add_argument('--weekly-score', type=float,
                                   help="Score to assign to clean submissions (default: 10)",
                                   dest="weekly_score", metavar="SCORE")
-    automation_group.add_argument('--weekly-refine', type=str, choices=['gemini', 'huggingface', 'none'],
+    automation_group.add_argument('--weekly-refine', type=str, choices=['gemini', 'huggingface', 'local', 'none'],
                                   help="AI refinement method for weekly notices",
                                   dest="weekly_refine", metavar="METHOD")
     automation_group.add_argument('--weekly-ocr-service', type=str, choices=['ocrspace', 'tesseract', 'paddleocr'],
@@ -744,6 +753,20 @@ def main():
         _apply_config_overrides({"LOG_MAX_BYTES": args.log_max_bytes})
     if args.log_backups:
         _apply_config_overrides({"LOG_BACKUP_COUNT": args.log_backups})
+    if args.local_llm_command:
+        _apply_config_overrides({"LOCAL_LLM_COMMAND": args.local_llm_command})
+    if args.local_llm_model:
+        _apply_config_overrides({"LOCAL_LLM_MODEL": args.local_llm_model})
+    if args.local_llm_args:
+        _apply_config_overrides({"LOCAL_LLM_ARGS": args.local_llm_args})
+    if "local" not in (ALL_AI_METHODS or []):
+        if isinstance(ALL_AI_METHODS, (list, tuple)):
+            updated_methods = list(ALL_AI_METHODS)
+        else:
+            updated_methods = [m.strip() for m in str(ALL_AI_METHODS).split(",") if m.strip()]
+        if "local" not in updated_methods:
+            updated_methods.append("local")
+            _apply_config_overrides({"ALL_AI_METHODS": updated_methods})
 
     log_dir = args.log_dir or LOG_DIR or os.path.dirname(default_config_path)
     setup_logging(
@@ -1839,7 +1862,7 @@ def main():
                     verbose=args.verbose,
                 )
             elif choice == '52':
-                method = input("Test AI service (all/gemini/huggingface) [all] (or 'q' to quit): ").strip().lower()
+                method = input("Test AI service (all/gemini/huggingface/local) [all] (or 'q' to quit): ").strip().lower()
                 if method in ('q', 'quit'):
                     continue
                 method = method or "all"
@@ -1863,7 +1886,7 @@ def main():
                     if rate_limit:
                         print(f"[AITest] {m} rate limit headers: {rate_limit}")
             elif choice == '53':
-                method = input("List AI models (all/gemini/huggingface) [all] (or 'q' to quit): ").strip().lower()
+                method = input("List AI models (all/gemini/huggingface/local) [all] (or 'q' to quit): ").strip().lower()
                 if method in ('q', 'quit'):
                     continue
                 method = method or "all"
@@ -1922,7 +1945,7 @@ def main():
                 if simple_text in ('q', 'quit'):
                     continue
                 simple_text = simple_text == "y"
-                refine = input("Refine extracted text with AI? (none/gemini/huggingface) [none] (or 'q' to quit): ").strip().lower()
+                refine = input("Refine extracted text with AI? (none/gemini/huggingface/local) [none] (or 'q' to quit): ").strip().lower()
                 if refine in ('q', 'quit'):
                     continue
                 refine = refine if refine in ALL_AI_METHODS else None
@@ -2115,7 +2138,7 @@ def main():
                     course_id = CANVAS_LMS_COURSE_ID
                 assignment_id = input("Enter Canvas assignment ID for peer review notification (or leave blank to select): ").strip()
                 assignment_id = assignment_id if assignment_id else None
-                refine = input("Refine reminder message with AI? (none/gemini/huggingface) [none] (or 'q' to quit): ").strip().lower()
+                refine = input("Refine reminder message with AI? (none/gemini/huggingface/local) [none] (or 'q' to quit): ").strip().lower()
                 if refine in ('q', 'quit'):
                     continue
                 refine = refine if refine in ALL_AI_METHODS else None
@@ -2168,7 +2191,7 @@ def main():
                     continue
                 if not course_id:
                     course_id = CANVAS_LMS_COURSE_ID
-                refine = input("Refine reply with AI? (none/gemini/huggingface) [none] (or 'q' to quit): ").strip().lower()
+                refine = input("Refine reply with AI? (none/gemini/huggingface/local) [none] (or 'q' to quit): ").strip().lower()
                 if refine in ('q', 'quit'):
                     continue
                 refine = refine if refine in ALL_AI_METHODS else None
@@ -2189,7 +2212,7 @@ def main():
                     continue
                 if not course_id:
                     course_id = CANVAS_LMS_COURSE_ID
-                refine = input("Refine page content with AI? (none/gemini/huggingface) [none] (or 'q' to quit): ").strip().lower()
+                refine = input("Refine page content with AI? (none/gemini/huggingface/local) [none] (or 'q' to quit): ").strip().lower()
                 if refine in ('q', 'quit'):
                     continue
                 refine = refine if refine in ALL_AI_METHODS else None
@@ -2342,7 +2365,7 @@ def main():
                 if ocr_lang in ('q', 'quit'):
                     continue
                 ocr_lang = ocr_lang or "auto"
-                refine = input("Refine extracted text with AI? (none/gemini/huggingface) [none] (or 'q' to quit): ").strip().lower()
+                refine = input("Refine extracted text with AI? (none/gemini/huggingface/local) [none] (or 'q' to quit): ").strip().lower()
                 if refine in ('q', 'quit'):
                     continue
                 refine = refine if refine in ALL_AI_METHODS else None
@@ -2489,7 +2512,7 @@ def main():
                 if ocr_lang in ('q', 'quit'):
                     continue
                 ocr_lang = ocr_lang or "auto"
-                refine = input("Refine extracted text with AI? (none/gemini/huggingface) [none] (or 'q' to quit): ").strip().lower()
+                refine = input("Refine extracted text with AI? (none/gemini/huggingface/local) [none] (or 'q' to quit): ").strip().lower()
                 if refine in ('q', 'quit'):
                     continue
                 refine = refine if refine in ALL_AI_METHODS else None
@@ -2818,7 +2841,7 @@ def main():
                 meaningful_raw = input("Meaningfulness threshold [0.4]: ").strip()
                 similarity_raw = input("Similarity threshold [0.85]: ").strip()
                 score_raw = input("Auto-grade score [10]: ").strip()
-                refine_raw = input("Refine method (gemini/huggingface/none) [none]: ").strip().lower()
+                refine_raw = input("Refine method (gemini/huggingface/local/none) [none]: ").strip().lower()
                 ocr_raw = input(f"OCR service (ocrspace/tesseract/paddleocr) [{DEFAULT_OCR_METHOD}]: ").strip().lower()
                 ocr_lang = input("OCR language [auto]: ").strip() or "auto"
                 notify_raw = input("Notify missing submissions? (y/n) [y]: ").strip().lower()
@@ -2867,7 +2890,7 @@ def main():
                 meaningful_raw = input("Meaningfulness threshold [0.4]: ").strip()
                 similarity_raw = input("Similarity threshold [0.85]: ").strip()
                 score_raw = input("Auto-grade score [10]: ").strip()
-                refine_raw = input("Refine method (gemini/huggingface/none) [none]: ").strip().lower()
+                refine_raw = input("Refine method (gemini/huggingface/local/none) [none]: ").strip().lower()
                 ocr_raw = input(f"OCR service (ocrspace/tesseract/paddleocr) [{DEFAULT_OCR_METHOD}]: ").strip().lower()
                 ocr_lang = input("OCR language [auto]: ").strip() or "auto"
                 notify_raw = input("Notify missing submissions? (y/n) [y]: ").strip().lower()

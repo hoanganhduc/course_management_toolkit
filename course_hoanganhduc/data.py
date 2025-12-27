@@ -23,6 +23,7 @@ import tempfile
 import base64
 import PyPDF2
 import io
+import shlex
 from collections import defaultdict
 import difflib
 from openpyxl.styles import Alignment
@@ -516,9 +517,9 @@ Text to refine:
 {chunk}"""
 
         refined_text = None
-    model_name = _normalize_gemini_model_name(GEMINI_DEFAULT_MODEL)
-    if not model_name:
-        model_name = GEMINI_DEFAULT_MODEL
+        model_name = _normalize_gemini_model_name(GEMINI_DEFAULT_MODEL)
+        if not model_name:
+            model_name = GEMINI_DEFAULT_MODEL
         for attempt in range(1, max_attempts + 1):
             try:
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
@@ -745,6 +746,111 @@ Text to refine:
     refined_text = '\n\n'.join(refined_chunks)
     return refined_text
 
+
+def _run_local_llm(prompt, model=None, verbose=False):
+    command = LOCAL_LLM_COMMAND
+    if not command:
+        return "", "Missing LOCAL_LLM_COMMAND."
+    cmd_parts = shlex.split(command)
+    if not cmd_parts:
+        return "", "Invalid LOCAL_LLM_COMMAND."
+    model_name = model or LOCAL_LLM_MODEL
+    if not model_name:
+        return "", "Missing LOCAL_LLM_MODEL."
+    extra_args = shlex.split(LOCAL_LLM_ARGS) if LOCAL_LLM_ARGS else []
+    if "ollama" in os.path.basename(cmd_parts[0]).lower() and "run" not in cmd_parts:
+        cmd_parts.append("run")
+    cmd = cmd_parts + [model_name] + extra_args
+    try:
+        result = subprocess.run(
+            cmd,
+            input=prompt,
+            text=True,
+            capture_output=True,
+            timeout=LOCAL_LLM_TIMEOUT,
+            encoding="utf-8",
+            errors="replace",
+        )
+        if result.returncode != 0:
+            err = result.stderr.strip() or f"Command failed ({result.returncode})."
+            return "", err
+        return result.stdout.strip(), ""
+    except FileNotFoundError:
+        return "", f"Command not found: {cmd_parts[0]}"
+    except Exception as e:
+        if verbose:
+            print(f"[LocalLLM] Error: {e}")
+        return "", f"Error: {e}"
+
+
+def refine_text_with_local_llm(text, model=None, user_prompt=None, verbose=False):
+    """
+    Use a locally installed LLM (default: Ollama) to refine OCR-extracted text.
+    """
+    model_name = model or LOCAL_LLM_MODEL
+    if not model_name:
+        if verbose:
+            print("No local model specified. Returning original text.")
+        else:
+            print("Notice: No local model specified.")
+        return text
+
+    max_chunk_size = 4000
+    if len(text) <= max_chunk_size:
+        chunks = [text]
+    else:
+        paragraphs = text.split('\n\n')
+        chunks = []
+        current_chunk = ""
+        for paragraph in paragraphs:
+            if len(current_chunk) + len(paragraph) + 2 <= max_chunk_size:
+                if current_chunk:
+                    current_chunk += '\n\n' + paragraph
+                else:
+                    current_chunk = paragraph
+            else:
+                if current_chunk:
+                    chunks.append(current_chunk)
+                current_chunk = paragraph
+        if current_chunk:
+            chunks.append(current_chunk)
+
+    refined_chunks = []
+    for i, chunk in enumerate(chunks):
+        if verbose:
+            print(f"[LocalLLM] Refining chunk {i+1}/{len(chunks)} with local model...")
+        else:
+            print(f"Refining chunk {i+1}/{len(chunks)} with local model...")
+        if user_prompt:
+            prompt = user_prompt.format(text=chunk)
+        else:
+            prompt = f"""You are an expert text correction assistant. Please refine the following OCR-extracted text by:
+
+1. Correcting OCR errors (misrecognized characters, words)
+2. Fixing obvious spelling mistakes
+3. Improving readability while preserving the original meaning
+4. IMPORTANT: Maintain the exact layout, line breaks, and spacing structure
+5. Keep all dates, numbers, and proper nouns as accurate as possible
+6. If the text appears to be in Vietnamese, correct Vietnamese-specific OCR errors
+7. If text contains student names, student IDs (8-digit numbers), or dates (d/m/yyyy format), pay special attention to accuracy
+
+Please return ONLY the corrected text without any explanations or additional comments.
+
+Text to refine:
+{chunk}"""
+        refined_text, error = _run_local_llm(prompt, model=model_name, verbose=verbose)
+        if error:
+            if verbose:
+                print(f"[LocalLLM] {error} Using original text.")
+            else:
+                print("Notice: Local LLM failed. Using original text.")
+            refined_chunks.append(chunk)
+        else:
+            _set_last_ai_model("local", model_name)
+            refined_chunks.append(refined_text if refined_text else chunk)
+
+    return '\n\n'.join(refined_chunks)
+
 def refine_text_with_ai(text, method=DEFAULT_AI_METHOD, verbose=False, **kwargs):
     """
     Refine OCR-extracted text using an AI model.
@@ -765,6 +871,9 @@ def refine_text_with_ai(text, method=DEFAULT_AI_METHOD, verbose=False, **kwargs)
         api_key = kwargs.get("api_key", HUGGINGFACE_API_KEY)
         model = kwargs.get("model", "meta-llama/llama-3.1-8b-instruct")
         return refine_text_with_huggingface(text, api_key=api_key, model=model, user_prompt=user_prompt, verbose=verbose)
+    elif method == "local":
+        model = kwargs.get("model", LOCAL_LLM_MODEL)
+        return refine_text_with_local_llm(text, model=model, user_prompt=user_prompt, verbose=verbose)
     # Fallback (should not reach here)
     return text
 
@@ -774,7 +883,7 @@ def test_ai_models(methods=None, verbose=False, model_override=None):
     Verify AI model connectivity and credentials with a minimal test prompt.
     Returns a dict: {method: {"ok": bool, "message": str}}.
     """
-    available = ALL_AI_METHODS if ALL_AI_METHODS else ["gemini", "huggingface"]
+    available = ALL_AI_METHODS if ALL_AI_METHODS else ["gemini", "huggingface", "local"]
     if not methods or methods == "all":
         methods_to_test = available
     elif isinstance(methods, (list, tuple, set)):
@@ -799,6 +908,8 @@ def test_ai_models(methods=None, verbose=False, model_override=None):
 
     for method in methods_to_test:
         method_override = override_map.get(method) if override_map else model_override
+        if verbose:
+            print(f"[AITest] Starting test for {method}...")
         if method == "gemini":
             if not GEMINI_API_KEY:
                 results[method] = {"ok": False, "message": "Missing GEMINI_API_KEY."}
@@ -807,7 +918,11 @@ def test_ai_models(methods=None, verbose=False, model_override=None):
                 results[method] = {"ok": False, "message": "Missing GEMINI_DEFAULT_MODEL."}
                 continue
             model_name = _normalize_gemini_model_name(method_override) if method_override else GEMINI_DEFAULT_MODEL
+            if verbose:
+                print(f"[AITest] Gemini model: {model_name}")
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={GEMINI_API_KEY}"
+            if verbose:
+                print(f"[AITest] Gemini endpoint: {url}")
             headers = {'Content-Type': 'application/json'}
             data = {
                 "contents": [
@@ -820,9 +935,13 @@ def test_ai_models(methods=None, verbose=False, model_override=None):
                     }
                 ]
             }
+            if verbose:
+                print(f"[AITest] Gemini test prompt: {prompt}")
             try:
                 resp = requests.post(url, headers=headers, json=data, timeout=120)
                 rate_info = extract_rate_limit_headers(resp.headers)
+                if verbose and rate_info:
+                    print(f"[AITest] Gemini rate limit headers: {rate_info}")
                 if _is_rate_limited(response=resp):
                     if method_override:
                         results[method] = {
@@ -842,14 +961,20 @@ def test_ai_models(methods=None, verbose=False, model_override=None):
                         if verbose:
                             print(f"[AITest] Gemini rate limited, retrying with fallback model: {model_name}")
                         fallback_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={GEMINI_API_KEY}"
+                        if verbose:
+                            print(f"[AITest] Gemini fallback endpoint: {fallback_url}")
                         resp = requests.post(fallback_url, headers=headers, json=data, timeout=120)
                         rate_info = extract_rate_limit_headers(resp.headers)
+                        if verbose and rate_info:
+                            print(f"[AITest] Gemini fallback rate limit headers: {rate_info}")
                         if not _is_rate_limited(response=resp):
                             resp.raise_for_status()
                             result = resp.json()
                             response = ""
                             if 'candidates' in result and len(result['candidates']) > 0:
                                 response = result['candidates'][0]['content']['parts'][0]['text'].strip()
+                            if verbose:
+                                print(f"[AITest] Gemini fallback response: {response}")
                             ok = isinstance(response, str) and response.strip().upper().startswith("OK")
                             results[method] = {
                                 "ok": ok,
@@ -871,6 +996,8 @@ def test_ai_models(methods=None, verbose=False, model_override=None):
                 response = ""
                 if 'candidates' in result and len(result['candidates']) > 0:
                     response = result['candidates'][0]['content']['parts'][0]['text'].strip()
+                if verbose:
+                    print(f"[AITest] Gemini response: {response}")
                 ok = isinstance(response, str) and response.strip().upper().startswith("OK")
                 results[method] = {
                     "ok": ok,
@@ -895,11 +1022,17 @@ def test_ai_models(methods=None, verbose=False, model_override=None):
                 results[method] = {"ok": False, "message": "Missing HUGGINGFACE_API_KEY."}
                 continue
             url = "https://router.huggingface.co/novita/v3/openai/chat/completions"
+            if verbose:
+                print(f"[AITest] HuggingFace endpoint: {url}")
             headers = {
                 "Authorization": f"Bearer {HUGGINGFACE_API_KEY}",
                 "Content-Type": "application/json"
             }
             model_name = method_override if method_override else "meta-llama/llama-3.1-8b-instruct"
+            if verbose:
+                print(f"[AITest] HuggingFace model: {model_name}")
+            if verbose:
+                print(f"[AITest] HuggingFace test prompt: {prompt}")
             payload = {
                 "messages": [
                     {
@@ -913,6 +1046,8 @@ def test_ai_models(methods=None, verbose=False, model_override=None):
             try:
                 resp = requests.post(url, headers=headers, json=payload, timeout=120)
                 rate_info = extract_rate_limit_headers(resp.headers)
+                if verbose and rate_info:
+                    print(f"[AITest] HuggingFace rate limit headers: {rate_info}")
                 if _is_rate_limited(response=resp):
                     if method_override:
                         results[method] = {
@@ -933,12 +1068,16 @@ def test_ai_models(methods=None, verbose=False, model_override=None):
                         payload["model"] = fallback_model
                         resp = requests.post(url, headers=headers, json=payload, timeout=120)
                         rate_info = extract_rate_limit_headers(resp.headers)
+                        if verbose and rate_info:
+                            print(f"[AITest] HuggingFace fallback rate limit headers: {rate_info}")
                         if not _is_rate_limited(response=resp):
                             resp.raise_for_status()
                             result = resp.json()
                             response = ""
                             if isinstance(result, dict) and "choices" in result and result["choices"]:
                                 response = result["choices"][0]["message"]["content"].strip()
+                            if verbose:
+                                print(f"[AITest] HuggingFace fallback response: {response}")
                             ok = isinstance(response, str) and response.strip().upper().startswith("OK")
                             results[method] = {
                                 "ok": ok,
@@ -960,6 +1099,8 @@ def test_ai_models(methods=None, verbose=False, model_override=None):
                 response = ""
                 if isinstance(result, dict) and "choices" in result and result["choices"]:
                     response = result["choices"][0]["message"]["content"].strip()
+                if verbose:
+                    print(f"[AITest] HuggingFace response: {response}")
                 ok = isinstance(response, str) and response.strip().upper().startswith("OK")
                 results[method] = {
                     "ok": ok,
@@ -979,6 +1120,28 @@ def test_ai_models(methods=None, verbose=False, model_override=None):
                     "model": payload["model"],
                     "rate_limit": None,
                 }
+        elif method == "local":
+            model_name = method_override or LOCAL_LLM_MODEL
+            if verbose:
+                print(f"[AITest] Local command: {LOCAL_LLM_COMMAND}")
+                print(f"[AITest] Local model: {model_name}")
+                if LOCAL_LLM_ARGS:
+                    print(f"[AITest] Local args: {LOCAL_LLM_ARGS}")
+            if verbose:
+                print(f"[AITest] Local test prompt: {prompt}")
+            response, error = _run_local_llm(prompt, model=model_name, verbose=verbose)
+            if verbose and response:
+                print(f"[AITest] Local response: {response}")
+            if error:
+                results[method] = {"ok": False, "message": error, "model": model_name, "rate_limit": None}
+            else:
+                ok = isinstance(response, str) and response.strip().upper().startswith("OK")
+                results[method] = {
+                    "ok": ok,
+                    "message": "OK" if ok else f"Unexpected response: {str(response).strip()}",
+                    "model": model_name,
+                    "rate_limit": None,
+                }
         else:
             results[method] = {"ok": False, "message": f"Unknown method: {method}."}
             continue
@@ -991,7 +1154,7 @@ def list_ai_models(methods=None, verbose=False):
     List available AI models for the provided API keys (when supported by the provider).
     Returns a dict: {method: {"ok": bool, "message": str, "models": list, "rate_limit": dict|None}}.
     """
-    available = ALL_AI_METHODS if ALL_AI_METHODS else ["gemini", "huggingface"]
+    available = ALL_AI_METHODS if ALL_AI_METHODS else ["gemini", "huggingface", "local"]
     if not methods or methods == "all":
         methods_to_test = available
     elif isinstance(methods, (list, tuple, set)):
@@ -1115,6 +1278,66 @@ def list_ai_models(methods=None, verbose=False):
                     "rate_limit": rate_info or None,
                     "total": total,
                     "truncated": truncated,
+                }
+            except Exception as e:
+                results[method] = {
+                    "ok": False,
+                    "message": f"Error: {e}",
+                    "models": [],
+                    "rate_limit": None,
+                    "total": 0,
+                    "truncated": False,
+                }
+        elif method == "local":
+            cmd_parts = shlex.split(LOCAL_LLM_COMMAND) if LOCAL_LLM_COMMAND else []
+            if not cmd_parts:
+                results[method] = {
+                    "ok": False,
+                    "message": "Missing LOCAL_LLM_COMMAND.",
+                    "models": [],
+                    "rate_limit": None,
+                    "total": 0,
+                    "truncated": False,
+                }
+                continue
+            if "ollama" in os.path.basename(cmd_parts[0]).lower() and "list" not in cmd_parts:
+                cmd_parts.append("list")
+            try:
+                resp = subprocess.run(
+                    cmd_parts,
+                    capture_output=True,
+                    text=True,
+                    timeout=LOCAL_LLM_TIMEOUT,
+                    encoding="utf-8",
+                    errors="replace",
+                )
+                if resp.returncode != 0:
+                    message = resp.stderr.strip() or f"Command failed ({resp.returncode})."
+                    results[method] = {
+                        "ok": False,
+                        "message": message,
+                        "models": [],
+                        "rate_limit": None,
+                        "total": 0,
+                        "truncated": False,
+                    }
+                    continue
+                models = []
+                for idx, line in enumerate(resp.stdout.splitlines()):
+                    if idx == 0 and "NAME" in line.upper():
+                        continue
+                    parts = line.strip().split()
+                    if not parts:
+                        continue
+                    models.append(parts[0])
+                total = len(models)
+                results[method] = {
+                    "ok": True,
+                    "message": "OK",
+                    "models": models,
+                    "rate_limit": None,
+                    "total": total,
+                    "truncated": False,
                 }
             except Exception as e:
                 results[method] = {
@@ -1402,9 +1625,9 @@ def calculate_cc_ck_gk(student, gradebook_csv_path="canvas_gradebook.csv", overr
         # If CC not found in attributes, calculate from components
         if CC is None or CC == 0.0:
             # Try multiple variants
-            diem_danh = to_scale_10(getattr(student, "??i???m danh Final Score", None)) or to_scale_10(getattr(student, "Attendance Final Score", None))
+            diem_danh = to_scale_10(getattr(student, "Điểm danh Final Score", None)) or to_scale_10(getattr(student, "Attendance Final Score", None))
             quiz = to_scale_10(getattr(student, "Quiz Final Score", None))
-            bai_tap = to_scale_10(getattr(student, "BA?i t??-p Final Score", None)) or to_scale_10(getattr(student, "Assignment Final Score", None))
+            bai_tap = to_scale_10(getattr(student, "Bài tập Final Score", None)) or to_scale_10(getattr(student, "Assignment Final Score", None))
             CC = round(0.25 * (diem_danh or 0) + 0.25 * (quiz or 0) + 0.5 * (bai_tap or 0), 1)
 
     if override_gk is not None:
@@ -1412,7 +1635,7 @@ def calculate_cc_ck_gk(student, gradebook_csv_path="canvas_gradebook.csv", overr
         if verbose:
             print("[OverrideGrades] Using override GK from override_grades.xlsx.")
     else:
-        GK = get_avg_score_by_title(student, "gi??_a k??3")
+        GK = get_avg_score_by_title(student, "giữa kỳ")
         if GK is None:
             midterm_id = str(CANVAS_MIDTERM_ASSIGNMENT_ID).strip()
             if midterm_id:
@@ -1425,7 +1648,7 @@ def calculate_cc_ck_gk(student, gradebook_csv_path="canvas_gradebook.csv", overr
         if verbose:
             print("[OverrideGrades] Using override CK from override_grades.xlsx.")
     else:
-        CK = get_avg_score_by_title(student, "cu??`i k??3")
+        CK = get_avg_score_by_title(student, "cuối kỳ")
         if CK is None:
             final_id = str(CANVAS_FINAL_ASSIGNMENT_ID).strip()
             if final_id:
@@ -1438,9 +1661,9 @@ def calculate_cc_ck_gk(student, gradebook_csv_path="canvas_gradebook.csv", overr
     GK = 0.0 if GK is None or (isinstance(GK, float) and pd.isna(GK)) else GK
 
     details = {
-        "diem_danh": to_scale_10(getattr(student, "??i???m danh Final Score", None)) or to_scale_10(getattr(student, "Attendance Final Score", None)),
+        "diem_danh": to_scale_10(getattr(student, "Điểm danh Final Score", None)) or to_scale_10(getattr(student, "Attendance Final Score", None)),
         "quiz": to_scale_10(getattr(student, "Quiz Final Score", None)),
-        "bai_tap": to_scale_10(getattr(student, "BA?i t??-p Final Score", None)) or to_scale_10(getattr(student, "Assignment Final Score", None)),
+        "bai_tap": to_scale_10(getattr(student, "Bài tập Final Score", None)) or to_scale_10(getattr(student, "Assignment Final Score", None)),
         "GK": GK,
         "CK": CK,
         "CC": CC,
@@ -1723,6 +1946,8 @@ def update_mat_excel_grades(file_path, students, output_path=None, diff_output_p
             default_model = GEMINI_DEFAULT_MODEL
         elif REPORT_REFINE_METHOD == "huggingface":
             default_model = "meta-llama/llama-3.1-8b-instruct"
+        elif REPORT_REFINE_METHOD == "local":
+            default_model = LOCAL_LLM_MODEL
         if REPORT_REFINE_METHOD and default_model:
             report_text += f"\nDefault model (M\u00f4 h\u00ecnh m\u1eb7c \u0111\u1ecbnh): {default_model}"
 
@@ -2269,7 +2494,7 @@ def read_students_from_pdf(pdf_path, db_path=None, lang="auto", service=DEFAULT_
     Updates the database if db_path is provided (deduplication and merge logic similar to Excel/CSV).
     Only lines matching the format: <some number> <student id> <full name> <dob> <class> are used.
     Excludes metadata lines (e.g., containing 'ĐẠI HỌC QUỐC GIA HÀ NỘI', 'TRƯỜNG ĐẠI HỌC KHOA HỌC TỰ NHIÊN', etc.).
-    The 'refine' parameter can be "gemini", "huggingface", or None, indicating which AI model/service to use for text refinement.
+    The 'refine' parameter can be "gemini", "huggingface", "local", or None, indicating which AI model/service to use for text refinement.
     If verbose is True, print more details; otherwise, print only important notice.
     """
     # Step 1: Extract text from PDF using OCR
@@ -3437,7 +3662,7 @@ def extract_text_from_scanned_pdf_ocrspace(pdf_path, txt_output_path=None, lang=
     Keeps the overlay exactly as in the PDF: texts on the same line must stay on the same line.
     Requires pdf2image, PIL, and PyPDF2.
     Uses the JSON response structure to extract and combine parsed texts.
-    Optionally refines the extracted text using an AI service (refine="gemini", "huggingface", or None).
+    Optionally refines the extracted text using an AI service (refine="gemini", "huggingface", "local", or None).
     Returns the path to the text file.
     """
     lang_map = {
@@ -3688,14 +3913,14 @@ def extract_text_from_scanned_pdf_with_tesseract(pdf_path, txt_output_path=None,
     """
     Extract text from a scanned PDF file using Tesseract OCR.
     Converts PDF pages to images and applies OCR to extract text.
-    Optionally refines the extracted text using an AI service (refine="gemini", "huggingface", or None).
+    Optionally refines the extracted text using an AI service (refine="gemini", "huggingface", "local", or None).
 
     Args:
         pdf_path: Path to the PDF file
         txt_output_path: Path to save the extracted text (if None, will use pdf_path with suffix)
         lang: Language code for Tesseract (e.g., "vie" for Vietnamese, "eng" for English)
         simple_text: If True, output raw text without page headers
-        refine: AI service to refine text ("gemini", "huggingface", or None)
+        refine: AI service to refine text ("gemini", "huggingface", "local", or None)
         verbose: If True, print more details; otherwise, print only important notice
 
     Returns:
@@ -3945,7 +4170,7 @@ def extract_text_from_scanned_pdf(
     Extract handwriting text from a scanned PDF file using the specified OCR service.
     Supported services: see ALL_OCR_METHODS.
     If simple_text=True, print raw result without any layout.
-    If refine is "gemini" or "huggingface", refine the extracted text using the corresponding AI service.
+    If refine is "gemini", "huggingface", or "local", refine the extracted text using the corresponding AI service.
     Returns the path to the output text file (or (txt_path, page_rotations) tuple if available).
     If verbose is True, print more details; otherwise, print only important notice.
     """
@@ -4755,7 +4980,7 @@ def analyze_text_meaningfulness(text, refine_method=DEFAULT_AI_METHOD, average_l
 
     Args:
         text (str): The extracted text to analyze.
-        refine_method (str): AI service to use ("gemini" or "huggingface"). Default is "gemini".
+        refine_method (str): AI service to use ("gemini", "huggingface", or "local"). Default is "gemini".
         average_length (float): Average length of all submissions for comparison. If None, length factor is ignored.
         verbose (bool): If True, print more details; otherwise, print only important notice.
 
@@ -4886,6 +5111,10 @@ def analyze_text_meaningfulness(text, refine_method=DEFAULT_AI_METHOD, average_l
             if verbose:
                 print("[Meaningfulness] Calling HuggingFace for AI analysis...")
             response = refine_text_with_huggingface("", user_prompt=prompt)
+        elif refine_method == "local":
+            if verbose:
+                print("[Meaningfulness] Calling local model for AI analysis...")
+            response = refine_text_with_local_llm("", user_prompt=prompt)
 
         # Extract score from response
         score_match = re.search(r'(\d+\.?\d*)', response.strip())
@@ -5092,7 +5321,7 @@ def generate_low_quality_message(filename, score, text, refine_method=DEFAULT_AI
             signal.alarm(60)
             try:
                 while True:
-                    choice = input("Which AI model do you want to use to generate the message? (gemini/huggingface) [default: gemini]: ").strip().lower()
+                    choice = input("Which AI model do you want to use to generate the message? (gemini/huggingface/local) [default: gemini]: ").strip().lower()
                     if not choice:
                         refine_method = "gemini"
                         break
@@ -5101,9 +5330,9 @@ def generate_low_quality_message(filename, score, text, refine_method=DEFAULT_AI
                         break
                     else:
                         if verbose:
-                            print("[Meaningfulness] Please enter 'gemini' or 'huggingface'.")
+                            print("[Meaningfulness] Please enter 'gemini', 'huggingface', or 'local'.")
                         else:
-                            print("Please enter 'gemini' or 'huggingface'.")
+                            print("Please enter 'gemini', 'huggingface', or 'local'.")
             except TimeoutError:
                 refine_method = "gemini"
             finally:
@@ -5112,7 +5341,7 @@ def generate_low_quality_message(filename, score, text, refine_method=DEFAULT_AI
             # Fallback for platforms without SIGALRM (e.g., Windows)
             try:
                 while True:
-                    choice = input("Which AI model do you want to use to generate the message? (gemini/huggingface) [default: gemini]: ").strip().lower()
+                    choice = input("Which AI model do you want to use to generate the message? (gemini/huggingface/local) [default: gemini]: ").strip().lower()
                     if not choice:
                         refine_method = "gemini"
                         break
@@ -5121,9 +5350,9 @@ def generate_low_quality_message(filename, score, text, refine_method=DEFAULT_AI
                         break
                     else:
                         if verbose:
-                            print("[Meaningfulness] Please enter 'gemini' or 'huggingface'.")
+                            print("[Meaningfulness] Please enter 'gemini', 'huggingface', or 'local'.")
                         else:
-                            print("Please enter 'gemini' or 'huggingface'.")
+                            print("Please enter 'gemini', 'huggingface', or 'local'.")
             except KeyboardInterrupt:
                 refine_method = "gemini"
 
@@ -5186,6 +5415,10 @@ Please write a complete, professional message that is ready to send without any 
             if verbose:
                 print("[Meaningfulness] Generating message using HuggingFace...")
             message = refine_text_with_huggingface("", user_prompt=prompt)
+        elif refine_method == "local":
+            if verbose:
+                print("[Meaningfulness] Generating message using local model...")
+            message = refine_text_with_local_llm("", user_prompt=prompt)
         
         # Add automatic generation note
         message += "\n\nThông báo này được tạo và gửi tự động bởi hệ thống AI sau khi phát hiện chất lượng bài nộp thấp."
