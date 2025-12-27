@@ -43,7 +43,7 @@ RUN apt-get update && \
 	#   fonts-liberation \
 	  xdg-utils \
 	  unzip \
-	#   libqpdf-dev && \
+	  libqpdf-dev && \
 	rm -rf /var/lib/apt/lists/*
 
 # # Install Google Chrome
