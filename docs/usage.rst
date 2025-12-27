@@ -149,6 +149,60 @@ Export a roster to CSV:
 
    course --export-roster
 
+Override grades
+----------------
+
+Place ``override_grades.xlsx`` in the working directory (see ``sample/override_grades.xlsx`` for the format).
+Required columns: ``M? Sinh Vi?n`` or ``H? v? T?n``, plus at least one of ``CC``/``GK``/``CK`` (order does not matter). ``STT`` and ``L? do`` are optional.
+Common header aliases are accepted, for example ``MSSV``, ``M? SV``, ``H? t?n``, ``Midterm`` (Gi?a k?), ``Final`` (Cu?i k?), ``CC`` (Chuy?n c?n), ``Reason`` (L? do).
+Non-empty CC/GK/CK cells override computed grades, and ``L? do`` is appended to the final evaluation output when present.
+
+AI report refinement
+-------------------
+
+Set ``REPORT_REFINE_METHOD`` to ``gemini`` or ``huggingface`` in ``config.json`` (requires the corresponding API key).
+When AI refinement runs, the report includes the default model and the model actually used.
+
+AI model verification and listing
+---------------------------------
+
+Verify credentials and connectivity:
+
+.. code-block:: bash
+
+   course --test-ai
+
+Test a specific model name:
+
+.. code-block:: bash
+
+   course --test-ai gemini --test-ai-model gemini-2.5-flash
+
+List available models:
+
+.. code-block:: bash
+
+   course --list-ai-models gemini
+
+When an AI call is rate-limited, the tool retries and may switch to a different available model with similar capabilities.
+
+Submission quality checks
+-------------------------
+
+Meaningfulness checks can be tuned via config keys:
+
+- ``QUALITY_MIN_CHARS``
+- ``QUALITY_UNIQUE_CHAR_RATIO_MIN``
+- ``QUALITY_REPEAT_CHAR_RATIO_MAX``
+- ``QUALITY_VN_CHAR_RATIO_MIN``
+- ``QUALITY_ALNUM_RATIO_MIN``
+- ``QUALITY_SYMBOL_RATIO_MAX``
+- ``QUALITY_EMPTY_LINE_RATIO_MAX``
+- ``QUALITY_MATH_DENSITY_THRESHOLD``
+- ``QUALITY_LENGTH_RATIO_LOW``
+- ``QUALITY_LENGTH_RATIO_MEDIUM``
+- ``QUALITY_LENGTH_RATIO_HIGH``
+
 Troubleshooting
 ---------------
 

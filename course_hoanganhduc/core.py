@@ -18,6 +18,26 @@ from .canvas import *
 from .google_classroom import *
 
 
+def _apply_config_overrides(config):
+    if not config:
+        return
+    globals().update(config)
+    module_names = [
+        "course_hoanganhduc.settings",
+        "course_hoanganhduc.data",
+        "course_hoanganhduc.canvas",
+        "course_hoanganhduc.google_classroom",
+        "course_hoanganhduc.utils",
+    ]
+    for name in module_names:
+        module = sys.modules.get(name)
+        if not module:
+            continue
+        for key, value in config.items():
+            if hasattr(module, key):
+                setattr(module, key, value)
+
+
 def _build_menu_sections():
     return [
         ("Student Database", [
@@ -28,6 +48,7 @@ def _build_menu_sections():
             ("Show details of a student", "7"),
             ("Show details of all students", "8"),
             ("Interactively modify the student database", "14"),
+            ("Load override grades into database", "51"),
         ]),
         ("Student Exports", [
             ("Export student list to Excel file", "4"),
@@ -84,6 +105,8 @@ def _build_menu_sections():
         ]),
         ("Configuration and Integrations", [
             ("Load config from JSON file and save to default location", "36"),
+            ("Test AI services (Gemini/HuggingFace)", "52"),
+            ("List AI models for provider", "53"),
             ("Sync students with Google Classroom", "49"),
         ]),
     ]
@@ -277,6 +300,23 @@ def main():
     config_group.add_argument('--clear-credentials', '-ccred', action='store_true',
                               help="Delete stored credentials.json and token.pickle from the default location",
                               dest="clear_credentials")
+    config_group.add_argument('--test-ai', '-tai', nargs='?', const="all",
+                              choices=["gemini", "huggingface", "all"],
+                              help="Test AI services ('gemini', 'huggingface', or 'all')",
+                              dest="test_ai", metavar="AI_SERVICE")
+    config_group.add_argument('--test-ai-model', '-tam', type=str,
+                              help="Override model name for --test-ai (provider-specific)",
+                              dest="test_ai_model", metavar="MODEL")
+    config_group.add_argument('--test-ai-gemini-model', type=str,
+                              help="Override Gemini model name for --test-ai all",
+                              dest="test_ai_gemini_model", metavar="MODEL")
+    config_group.add_argument('--test-ai-huggingface-model', type=str,
+                              help="Override HuggingFace model name for --test-ai all",
+                              dest="test_ai_huggingface_model", metavar="MODEL")
+    config_group.add_argument('--list-ai-models', '-lam', nargs='?', const="all",
+                              choices=["gemini", "huggingface", "all"],
+                              help="List available AI models for a provider ('gemini', 'huggingface', or 'all')",
+                              dest="list_ai_models", metavar="AI_SERVICE")
 
     db_group = parser.add_argument_group("Student Database")
     db_group.add_argument('--db', '-db', '-D', type=str, help="Database file name (default: students.db, saved in script folder)", dest="db", metavar="DB")
@@ -296,6 +336,9 @@ def main():
     db_group.add_argument('--export-final-grade-distribution', nargs='?', const=True,
                           help="Export final grade distribution to a TXT file. Optionally provide output path (default: ./final_grade_distribution.txt).",
                           dest='export_final_grade_distribution')
+    db_group.add_argument('--load-override-grades', '-log', nargs='?', const="override_grades.xlsx",
+                          help="Load override_grades.xlsx and persist overrides to the database (default: override_grades.xlsx).",
+                          dest='load_override_grades', metavar="OVERRIDE_XLSX")
     db_group.add_argument('--update-mat-excel', '-ume', type=str, nargs='+',
                           help="Update MAT*.xlsx file(s) with grades from database (provide one or more file paths)",
                           dest="update_mat_excel", metavar="MAT_XLSX")
@@ -481,12 +524,34 @@ def main():
     if args.config:
         config_path = args.config
         config = load_config(config_path, verbose=args.verbose)
-        # Save to default location
+        if config is None:
+            config = {}
+        config["CONFIG_VERSION"] = __version__
+        # Save to default location only if different.
         default_config_path = get_default_config_path(course_code=args.course_code, verbose=args.verbose)
-        with open(default_config_path, "w", encoding="utf-8") as f:
-            json.dump(config, f, ensure_ascii=False, indent=2)
-        if args.verbose:
-            print(f"[Config] Loaded config from {config_path}, saved to {default_config_path}")
+        config_for_save = config
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                raw_config = json.load(f)
+            if isinstance(raw_config, dict):
+                raw_config["CONFIG_VERSION"] = __version__
+                config_for_save = raw_config
+        except Exception:
+            pass
+        existing_config = None
+        if os.path.exists(default_config_path):
+            try:
+                with open(default_config_path, "r", encoding="utf-8") as f:
+                    existing_config = json.load(f)
+            except Exception:
+                existing_config = None
+        if existing_config != config_for_save:
+            with open(default_config_path, "w", encoding="utf-8") as f:
+                json.dump(config_for_save, f, ensure_ascii=False, indent=2)
+            if args.verbose:
+                print(f"[Config] Loaded config from {config_path}, saved to {default_config_path}")
+        elif args.verbose:
+            print(f"[Config] Loaded config from {config_path}; default config is already up to date.")
     else:
         default_config_path = get_default_config_path(course_code=args.course_code, verbose=args.verbose)
         config = load_config(default_config_path, verbose=args.verbose)
@@ -495,7 +560,7 @@ def main():
 
     # Promote config values to module-level defaults (legacy behavior).
     if config:
-        globals().update(config)
+        _apply_config_overrides(config)
 
     if getattr(args, "no_restricted", False):
         DEFAULT_RESTRICTED = False
@@ -529,6 +594,53 @@ def main():
 
     if args.export_all_details:
         export_all_details_to_txt(students, args.export_all_details, db_path=db_path, verbose=args.verbose)
+
+    if args.load_override_grades:
+        override_path = args.load_override_grades if isinstance(args.load_override_grades, str) else "override_grades.xlsx"
+        load_override_grades_to_database(override_file=override_path, db_path=db_path, verbose=args.verbose)
+        students = load_database(db_path, verbose=args.verbose)
+
+    # AI tests/listing can run without any other actions.
+    if args.test_ai:
+        model_override = args.test_ai_model
+        if args.test_ai == "gemini" and args.test_ai_gemini_model:
+            model_override = args.test_ai_gemini_model
+        elif args.test_ai == "huggingface" and args.test_ai_huggingface_model:
+            model_override = args.test_ai_huggingface_model
+        elif args.test_ai == "all":
+            model_override = {
+                "gemini": args.test_ai_gemini_model,
+                "huggingface": args.test_ai_huggingface_model,
+            }
+        results = test_ai_models(args.test_ai, verbose=args.verbose, model_override=model_override)
+        for method, outcome in results.items():
+            status = "OK" if outcome.get("ok") else "FAIL"
+            message = outcome.get("message", "")
+            model = outcome.get("model", "")
+            rate_limit = outcome.get("rate_limit")
+            if model:
+                print(f"[AITest] {method}: {status}. {message} Model: {model}.")
+            else:
+                print(f"[AITest] {method}: {status}. {message}")
+            if rate_limit:
+                print(f"[AITest] {method} rate limit headers: {rate_limit}")
+
+    if args.list_ai_models:
+        results = list_ai_models(args.list_ai_models, verbose=args.verbose)
+        for method, outcome in results.items():
+            status = "OK" if outcome.get("ok") else "FAIL"
+            message = outcome.get("message", "")
+            models = outcome.get("models", [])
+            rate_limit = outcome.get("rate_limit")
+            total = outcome.get("total", len(models))
+            truncated = outcome.get("truncated", False)
+            print(f"[AIModels] {method}: {status}. {message}")
+            if models:
+                print(f"[AIModels] {method} models ({total} total): {', '.join(models)}")
+                if truncated:
+                    print("[AIModels] Output truncated to 50 models.")
+            if rate_limit:
+                print(f"[AIModels] {method} rate limit headers: {rate_limit}")
 
     if args.search:
         results = search_students(students, args.search, db_path=db_path, verbose=args.verbose)
@@ -1275,6 +1387,7 @@ def main():
                     break
             else:
                 _print_menu_fallback(menu_sections)
+                # In fallback mode, translate displayed numbers to action codes.
                 choice = input("Choose an option (or 'q' to quit): ").strip()
                 if choice.lower() in ('q', 'quit', '0'):
                     break
@@ -1325,6 +1438,60 @@ def main():
                 print_student_details(students, identifier, verbose=args.verbose)
             elif choice == '8':
                 print_all_student_details(students, verbose=args.verbose)
+            elif choice == '51':
+                override_path = input_with_completion(
+                    "Enter override_grades.xlsx path (leave blank for ./override_grades.xlsx, or 'q' to quit): "
+                ).strip()
+                if override_path.lower() in ('q', 'quit'):
+                    continue
+                if not override_path:
+                    override_path = "override_grades.xlsx"
+                load_override_grades_to_database(override_file=override_path, db_path=db_path, verbose=args.verbose)
+                students = load_database(db_path, verbose=args.verbose)
+            elif choice == '52':
+                method = input("Test AI service (all/gemini/huggingface) [all] (or 'q' to quit): ").strip().lower()
+                if method in ('q', 'quit'):
+                    continue
+                method = method or "all"
+                if method == "all":
+                    gemini_override = input("Gemini model override (blank for default): ").strip() or None
+                    hf_override = input("HuggingFace model override (blank for default): ").strip() or None
+                    model_override = {"gemini": gemini_override, "huggingface": hf_override}
+                else:
+                    model_override = input("Model override (leave blank for default): ").strip()
+                    model_override = model_override or None
+                results = test_ai_models(method, verbose=args.verbose, model_override=model_override)
+                for m, outcome in results.items():
+                    status = "OK" if outcome.get("ok") else "FAIL"
+                    message = outcome.get("message", "")
+                    model = outcome.get("model", "")
+                    rate_limit = outcome.get("rate_limit")
+                    if model:
+                        print(f"[AITest] {m}: {status}. {message} Model: {model}.")
+                    else:
+                        print(f"[AITest] {m}: {status}. {message}")
+                    if rate_limit:
+                        print(f"[AITest] {m} rate limit headers: {rate_limit}")
+            elif choice == '53':
+                method = input("List AI models (all/gemini/huggingface) [all] (or 'q' to quit): ").strip().lower()
+                if method in ('q', 'quit'):
+                    continue
+                method = method or "all"
+                results = list_ai_models(method, verbose=args.verbose)
+                for m, outcome in results.items():
+                    status = "OK" if outcome.get("ok") else "FAIL"
+                    message = outcome.get("message", "")
+                    models = outcome.get("models", [])
+                    rate_limit = outcome.get("rate_limit")
+                    total = outcome.get("total", len(models))
+                    truncated = outcome.get("truncated", False)
+                    print(f"[AIModels] {m}: {status}. {message}")
+                    if models:
+                        print(f"[AIModels] {m} models ({total} total): {', '.join(models)}")
+                        if truncated:
+                            print("[AIModels] Output truncated to 50 models.")
+                    if rate_limit:
+                        print(f"[AIModels] {m} rate limit headers: {rate_limit}")
             elif choice == '9':
                 export_path = input_with_completion("Enter export TXT file path (or 'q' to quit): ").strip()
                 if export_path.lower() in ('q', 'quit'):

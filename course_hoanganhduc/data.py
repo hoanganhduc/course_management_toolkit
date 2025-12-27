@@ -38,6 +38,7 @@ import signal
 import platform
 from pathlib import Path
 import time
+import random
 import traceback
 import cv2
 import subprocess
@@ -63,6 +64,9 @@ from .settings import *
 from .config import *
 from .models import *
 from .utils import *
+
+AI_LAST_MODEL_USED = {"provider": None, "model": None}
+_AI_MODEL_CACHE = {}
 
 def clean_excel_data(df, verbose=False):
     """
@@ -353,6 +357,90 @@ def normalize_columns(df, verbose=False):
 
     return df
 
+def _get_retry_after_seconds(response):
+    retry_after = response.headers.get("Retry-After")
+    if retry_after:
+        try:
+            return int(float(retry_after))
+        except Exception:
+            return None
+    return None
+
+
+def _sleep_with_backoff(attempt, base_seconds=5, retry_after=None):
+    sleep_seconds = retry_after if retry_after is not None else base_seconds * attempt
+    time.sleep(sleep_seconds)
+
+
+def _is_rate_limited(response=None, error_text=""):
+    if response is not None and response.status_code in (429, 503):
+        return True
+    if error_text and "rate" in error_text.lower():
+        return True
+    return False
+
+
+def _set_last_ai_model(provider, model):
+    AI_LAST_MODEL_USED["provider"] = provider
+    AI_LAST_MODEL_USED["model"] = model
+
+
+def _reset_last_ai_model():
+    AI_LAST_MODEL_USED["provider"] = None
+    AI_LAST_MODEL_USED["model"] = None
+
+
+def get_last_ai_model_used():
+    provider = AI_LAST_MODEL_USED.get("provider")
+    model = AI_LAST_MODEL_USED.get("model")
+    if not provider:
+        return ""
+    if model:
+        return f"{provider} ({model})"
+    return provider
+
+
+def _normalize_gemini_model_name(name):
+    if not name:
+        return ""
+    value = str(name).strip()
+    if value.startswith("models/"):
+        return value.split("/", 1)[1]
+    return value
+
+
+def _get_cached_models(provider, target_capability=None):
+    cached = _AI_MODEL_CACHE.get(provider)
+    if not cached:
+        return []
+    models = cached.get("models", []) or []
+    if target_capability:
+        model_caps = cached.get("capabilities", {}) or {}
+        models = [m for m in models if target_capability in (model_caps.get(m) or [])]
+    return models
+
+
+def _update_model_cache(provider, models, capabilities=None):
+    _AI_MODEL_CACHE[provider] = {
+        "models": models,
+        "capabilities": capabilities or {},
+        "updated_at": time.time(),
+    }
+
+
+def _pick_fallback_model(provider, current_model=None, target_capability=None):
+    models = _get_cached_models(provider, target_capability=target_capability)
+    if not models:
+        listed = list_ai_models(provider, verbose=False)
+        models = (listed.get(provider, {}) or {}).get("models", []) if isinstance(listed, dict) else []
+    if not models:
+        return ""
+    candidates = [m for m in models if m and m != current_model]
+    if not candidates:
+        return ""
+    return random.choice(candidates)
+
+
 def refine_text_with_gemini(text, api_key=None, user_prompt=None, verbose=False):
     """
     Use Gemini API to refine OCR-extracted text while preserving layout.
@@ -400,6 +488,9 @@ def refine_text_with_gemini(text, api_key=None, user_prompt=None, verbose=False)
 
     refined_chunks = []
 
+    max_attempts = 3
+    base_sleep_seconds = 5
+
     for i, chunk in enumerate(chunks):
         if verbose:
             print(f"[Gemini] Refining chunk {i+1}/{len(chunks)} with Gemini API...")
@@ -424,40 +515,67 @@ Please return ONLY the corrected text without any explanations or additional com
 Text to refine:
 {chunk}"""
 
-        try:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_DEFAULT_MODEL}:generateContent?key={api_key}"
-            headers = {'Content-Type': 'application/json'}
-            data = {
-                "contents": [
-                    {
-                        "parts": [
-                            {
-                                "text": prompt
-                            }
-                        ]
-                    }
-                ]
-            }
-            response = requests.post(url, headers=headers, json=data)
-            response.raise_for_status()
-            result = response.json()
-            if 'candidates' in result and len(result['candidates']) > 0:
-                refined_text = result['candidates'][0]['content']['parts'][0]['text'].strip()
-                refined_chunks.append(refined_text)
-                if verbose:
-                    print(f"[Gemini] Chunk {i+1} refined successfully.")
-            else:
-                if verbose:
-                    print(f"[Gemini] No response from Gemini API for chunk {i+1}. Using original text.")
+        refined_text = None
+    model_name = _normalize_gemini_model_name(GEMINI_DEFAULT_MODEL)
+    if not model_name:
+        model_name = GEMINI_DEFAULT_MODEL
+        for attempt in range(1, max_attempts + 1):
+            try:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
+                headers = {'Content-Type': 'application/json'}
+                data = {
+                    "contents": [
+                        {
+                            "parts": [
+                                {
+                                    "text": prompt
+                                }
+                            ]
+                        }
+                    ]
+                }
+                response = requests.post(url, headers=headers, json=data, timeout=120)
+                if _is_rate_limited(response=response):
+                    retry_after = _get_retry_after_seconds(response)
+                    if verbose:
+                        print(f"[Gemini] Rate limited for chunk {i+1}. Retry {attempt}/{max_attempts} after {retry_after or base_sleep_seconds * attempt}s.")
+                    fallback_model = _pick_fallback_model("gemini", current_model=model_name, target_capability="generateContent")
+                    if fallback_model:
+                        model_name = _normalize_gemini_model_name(fallback_model)
+                        if verbose:
+                            print(f"[Gemini] Switching to fallback model: {model_name}")
+                    if attempt < max_attempts:
+                        _sleep_with_backoff(attempt, base_seconds=base_sleep_seconds, retry_after=retry_after)
+                        continue
+                response.raise_for_status()
+                result = response.json()
+                if 'candidates' in result and len(result['candidates']) > 0:
+                    refined_text = result['candidates'][0]['content']['parts'][0]['text'].strip()
+                    _set_last_ai_model("gemini", model_name)
+                    if verbose:
+                        print(f"[Gemini] Chunk {i+1} refined successfully.")
                 else:
-                    print(f"Notice: No response from Gemini API for chunk {i+1}.")
-                refined_chunks.append(chunk)
-        except Exception as e:
-            if verbose:
-                print(f"[Gemini] Error calling Gemini API for chunk {i+1}: {e}")
-            else:
-                print(f"Notice: Error calling Gemini API for chunk {i+1}.")
-            refined_chunks.append(chunk)
+                    if verbose:
+                        print(f"[Gemini] No response from Gemini API for chunk {i+1}. Using original text.")
+                    else:
+                        print(f"Notice: No response from Gemini API for chunk {i+1}.")
+                    refined_text = chunk
+                break
+            except Exception as e:
+                if verbose:
+                    print(f"[Gemini] Error calling Gemini API for chunk {i+1} (attempt {attempt}/{max_attempts}): {e}")
+                else:
+                    print(f"Notice: Error calling Gemini API for chunk {i+1}.")
+                fallback_model = _pick_fallback_model("gemini", current_model=model_name, target_capability="generateContent")
+                if fallback_model:
+                    model_name = _normalize_gemini_model_name(fallback_model)
+                    if verbose:
+                        print(f"[Gemini] Switching to fallback model: {model_name}")
+                if attempt < max_attempts:
+                    _sleep_with_backoff(attempt, base_seconds=base_sleep_seconds)
+                    continue
+                refined_text = chunk
+        refined_chunks.append(refined_text if refined_text is not None else chunk)
 
     refined_text = '\n\n'.join(refined_chunks)
     return refined_text
@@ -518,6 +636,8 @@ def refine_text_with_huggingface(
             chunks.append(current_chunk)
 
     refined_chunks = []
+    max_attempts = 3
+    base_sleep_seconds = 5
     for i, chunk in enumerate(chunks):
         if verbose:
             print(f"[HuggingFace] Refining chunk {i+1}/{len(chunks)} with Hugging Face Chat API (novita endpoint)...")
@@ -551,34 +671,76 @@ Text to refine:
             "model": model,
             "stream": False
         }
-        try:
-            response = requests.post(url, headers=headers, json=payload, timeout=120)
-            response.raise_for_status()
-            result = response.json()
-            # The result should have 'choices' with 'message'->'content'
-            if isinstance(result, dict) and "choices" in result and result["choices"]:
-                refined_text = result["choices"][0]["message"]["content"].strip()
-                refined_chunks.append(refined_text)
-                if verbose:
-                    print(f"[HuggingFace] Chunk {i+1} refined successfully.")
-            elif isinstance(result, dict) and "error" in result:
-                if verbose:
-                    print(f"[HuggingFace] API error: {result['error']}")
+        refined_text = None
+        model_name = model
+        for attempt in range(1, max_attempts + 1):
+            try:
+                payload["model"] = model_name
+                response = requests.post(url, headers=headers, json=payload, timeout=120)
+                if _is_rate_limited(response=response):
+                    retry_after = _get_retry_after_seconds(response)
+                    if verbose:
+                        print(f"[HuggingFace] Rate limited for chunk {i+1}. Retry {attempt}/{max_attempts} after {retry_after or base_sleep_seconds * attempt}s.")
+                    fallback_model = _pick_fallback_model(
+                        "huggingface",
+                        current_model=model_name,
+                        target_capability="text-generation",
+                    )
+                    if fallback_model:
+                        model_name = fallback_model
+                        if verbose:
+                            print(f"[HuggingFace] Switching to fallback model: {model_name}")
+                    if attempt < max_attempts:
+                        _sleep_with_backoff(attempt, base_seconds=base_sleep_seconds, retry_after=retry_after)
+                        continue
+                response.raise_for_status()
+                result = response.json()
+                # The result should have 'choices' with 'message'->'content'
+                if isinstance(result, dict) and "choices" in result and result["choices"]:
+                    refined_text = result["choices"][0]["message"]["content"].strip()
+                    _set_last_ai_model("huggingface", model_name)
+                    if verbose:
+                        print(f"[HuggingFace] Chunk {i+1} refined successfully.")
+                elif isinstance(result, dict) and "error" in result:
+                    error_text = str(result["error"])
+                    if _is_rate_limited(error_text=error_text):
+                        if attempt < max_attempts:
+                            if verbose:
+                                print(f"[HuggingFace] Rate limit error for chunk {i+1}. Retry {attempt}/{max_attempts}.")
+                            fallback_model = _pick_fallback_model("huggingface", current_model=model_name)
+                            if fallback_model:
+                                model_name = fallback_model
+                                if verbose:
+                                    print(f"[HuggingFace] Switching to fallback model: {model_name}")
+                            _sleep_with_backoff(attempt, base_seconds=base_sleep_seconds)
+                            continue
+                    if verbose:
+                        print(f"[HuggingFace] API error: {result['error']}")
+                    else:
+                        print(f"Notice: Hugging Face API error for chunk {i+1}.")
+                    refined_text = chunk
                 else:
-                    print(f"Notice: Hugging Face API error for chunk {i+1}.")
-                refined_chunks.append(chunk)
-            else:
+                    if verbose:
+                        print(f"[HuggingFace] No valid response from Hugging Face API for chunk {i+1}. Using original text.")
+                    else:
+                        print(f"Notice: No valid response from Hugging Face API for chunk {i+1}.")
+                    refined_text = chunk
+                break
+            except Exception as e:
                 if verbose:
-                    print(f"[HuggingFace] No valid response from Hugging Face API for chunk {i+1}. Using original text.")
+                    print(f"[HuggingFace] Error calling Hugging Face API for chunk {i+1} (attempt {attempt}/{max_attempts}): {e}")
                 else:
-                    print(f"Notice: No valid response from Hugging Face API for chunk {i+1}.")
-                refined_chunks.append(chunk)
-        except Exception as e:
-            if verbose:
-                print(f"[HuggingFace] Error calling Hugging Face API for chunk {i+1}: {e}")
-            else:
-                print(f"Notice: Error calling Hugging Face API for chunk {i+1}.")
-            refined_chunks.append(chunk)
+                    print(f"Notice: Error calling Hugging Face API for chunk {i+1}.")
+                fallback_model = _pick_fallback_model("huggingface", current_model=model_name)
+                if fallback_model:
+                    model_name = fallback_model
+                    if verbose:
+                        print(f"[HuggingFace] Switching to fallback model: {model_name}")
+                if attempt < max_attempts:
+                    _sleep_with_backoff(attempt, base_seconds=base_sleep_seconds)
+                    continue
+                refined_text = chunk
+        refined_chunks.append(refined_text if refined_text is not None else chunk)
 
     refined_text = '\n\n'.join(refined_chunks)
     return refined_text
@@ -606,13 +768,428 @@ def refine_text_with_ai(text, method=DEFAULT_AI_METHOD, verbose=False, **kwargs)
     # Fallback (should not reach here)
     return text
 
-def calculate_cc_ck_gk(student, gradebook_csv_path="canvas_gradebook.csv", verbose=False):
+
+def test_ai_models(methods=None, verbose=False, model_override=None):
+    """
+    Verify AI model connectivity and credentials with a minimal test prompt.
+    Returns a dict: {method: {"ok": bool, "message": str}}.
+    """
+    available = ALL_AI_METHODS if ALL_AI_METHODS else ["gemini", "huggingface"]
+    if not methods or methods == "all":
+        methods_to_test = available
+    elif isinstance(methods, (list, tuple, set)):
+        methods_to_test = list(methods)
+    else:
+        methods_to_test = [methods]
+
+    def extract_rate_limit_headers(headers):
+        rate_info = {}
+        for key, value in headers.items():
+            lower = key.lower()
+            if "rate" in lower or "limit" in lower:
+                rate_info[key] = value
+        return rate_info
+
+    results = {}
+    prompt = "Reply with exactly: OK"
+    if isinstance(model_override, dict):
+        override_map = model_override
+    else:
+        override_map = {}
+
+    for method in methods_to_test:
+        method_override = override_map.get(method) if override_map else model_override
+        if method == "gemini":
+            if not GEMINI_API_KEY:
+                results[method] = {"ok": False, "message": "Missing GEMINI_API_KEY."}
+                continue
+            if not GEMINI_DEFAULT_MODEL:
+                results[method] = {"ok": False, "message": "Missing GEMINI_DEFAULT_MODEL."}
+                continue
+            model_name = _normalize_gemini_model_name(method_override) if method_override else GEMINI_DEFAULT_MODEL
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={GEMINI_API_KEY}"
+            headers = {'Content-Type': 'application/json'}
+            data = {
+                "contents": [
+                    {
+                        "parts": [
+                            {
+                                "text": prompt
+                            }
+                        ]
+                    }
+                ]
+            }
+            try:
+                resp = requests.post(url, headers=headers, json=data, timeout=120)
+                rate_info = extract_rate_limit_headers(resp.headers)
+                if _is_rate_limited(response=resp):
+                    if method_override:
+                        results[method] = {
+                            "ok": False,
+                            "message": f"Rate limited (HTTP {resp.status_code}).",
+                            "model": model_name,
+                            "rate_limit": rate_info or None,
+                        }
+                        continue
+                    fallback_model = _pick_fallback_model(
+                        "gemini",
+                        current_model=_normalize_gemini_model_name(GEMINI_DEFAULT_MODEL),
+                        target_capability="generateContent",
+                    )
+                    if fallback_model:
+                        model_name = _normalize_gemini_model_name(fallback_model)
+                        if verbose:
+                            print(f"[AITest] Gemini rate limited, retrying with fallback model: {model_name}")
+                        fallback_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={GEMINI_API_KEY}"
+                        resp = requests.post(fallback_url, headers=headers, json=data, timeout=120)
+                        rate_info = extract_rate_limit_headers(resp.headers)
+                        if not _is_rate_limited(response=resp):
+                            resp.raise_for_status()
+                            result = resp.json()
+                            response = ""
+                            if 'candidates' in result and len(result['candidates']) > 0:
+                                response = result['candidates'][0]['content']['parts'][0]['text'].strip()
+                            ok = isinstance(response, str) and response.strip().upper().startswith("OK")
+                            results[method] = {
+                                "ok": ok,
+                                "message": "OK (fallback model)" if ok else f"Unexpected response: {str(response).strip()}",
+                                "model": model_name,
+                                "rate_limit": rate_info or None,
+                            }
+                            _update_model_cache("gemini", [model_name])
+                            continue
+                    results[method] = {
+                        "ok": False,
+                        "message": f"Rate limited (HTTP {resp.status_code}).",
+                        "model": model_name,
+                        "rate_limit": rate_info or None,
+                    }
+                    continue
+                resp.raise_for_status()
+                result = resp.json()
+                response = ""
+                if 'candidates' in result and len(result['candidates']) > 0:
+                    response = result['candidates'][0]['content']['parts'][0]['text'].strip()
+                ok = isinstance(response, str) and response.strip().upper().startswith("OK")
+                results[method] = {
+                    "ok": ok,
+                    "message": "OK" if ok else f"Unexpected response: {str(response).strip()}",
+                    "model": model_name,
+                    "rate_limit": rate_info or None,
+                }
+                _update_model_cache(
+                    "gemini",
+                    [_normalize_gemini_model_name(model_name)],
+                    capabilities={_normalize_gemini_model_name(model_name): ["generateContent"]},
+                )
+            except Exception as e:
+                results[method] = {
+                    "ok": False,
+                    "message": f"Error: {e}",
+                    "model": model_name,
+                    "rate_limit": None,
+                }
+        elif method == "huggingface":
+            if not HUGGINGFACE_API_KEY:
+                results[method] = {"ok": False, "message": "Missing HUGGINGFACE_API_KEY."}
+                continue
+            url = "https://router.huggingface.co/novita/v3/openai/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {HUGGINGFACE_API_KEY}",
+                "Content-Type": "application/json"
+            }
+            model_name = method_override if method_override else "meta-llama/llama-3.1-8b-instruct"
+            payload = {
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                "model": model_name,
+                "stream": False
+            }
+            try:
+                resp = requests.post(url, headers=headers, json=payload, timeout=120)
+                rate_info = extract_rate_limit_headers(resp.headers)
+                if _is_rate_limited(response=resp):
+                    if method_override:
+                        results[method] = {
+                            "ok": False,
+                            "message": f"Rate limited (HTTP {resp.status_code}).",
+                            "model": payload["model"],
+                            "rate_limit": rate_info or None,
+                        }
+                        continue
+                    fallback_model = _pick_fallback_model(
+                        "huggingface",
+                        current_model=payload["model"],
+                        target_capability="text-generation",
+                    )
+                    if fallback_model:
+                        if verbose:
+                            print(f"[AITest] HuggingFace rate limited, retrying with fallback model: {fallback_model}")
+                        payload["model"] = fallback_model
+                        resp = requests.post(url, headers=headers, json=payload, timeout=120)
+                        rate_info = extract_rate_limit_headers(resp.headers)
+                        if not _is_rate_limited(response=resp):
+                            resp.raise_for_status()
+                            result = resp.json()
+                            response = ""
+                            if isinstance(result, dict) and "choices" in result and result["choices"]:
+                                response = result["choices"][0]["message"]["content"].strip()
+                            ok = isinstance(response, str) and response.strip().upper().startswith("OK")
+                            results[method] = {
+                                "ok": ok,
+                                "message": "OK (fallback model)" if ok else f"Unexpected response: {str(response).strip()}",
+                                "model": payload["model"],
+                                "rate_limit": rate_info or None,
+                            }
+                            _update_model_cache("huggingface", [payload["model"]])
+                            continue
+                    results[method] = {
+                        "ok": False,
+                        "message": f"Rate limited (HTTP {resp.status_code}).",
+                        "model": payload["model"],
+                        "rate_limit": rate_info or None,
+                    }
+                    continue
+                resp.raise_for_status()
+                result = resp.json()
+                response = ""
+                if isinstance(result, dict) and "choices" in result and result["choices"]:
+                    response = result["choices"][0]["message"]["content"].strip()
+                ok = isinstance(response, str) and response.strip().upper().startswith("OK")
+                results[method] = {
+                    "ok": ok,
+                    "message": "OK" if ok else f"Unexpected response: {str(response).strip()}",
+                    "model": payload["model"],
+                    "rate_limit": rate_info or None,
+                }
+                _update_model_cache(
+                    "huggingface",
+                    [payload["model"]],
+                    capabilities={payload["model"]: ["text-generation"]},
+                )
+            except Exception as e:
+                results[method] = {
+                    "ok": False,
+                    "message": f"Error: {e}",
+                    "model": payload["model"],
+                    "rate_limit": None,
+                }
+        else:
+            results[method] = {"ok": False, "message": f"Unknown method: {method}."}
+            continue
+
+    return results
+
+
+def list_ai_models(methods=None, verbose=False):
+    """
+    List available AI models for the provided API keys (when supported by the provider).
+    Returns a dict: {method: {"ok": bool, "message": str, "models": list, "rate_limit": dict|None}}.
+    """
+    available = ALL_AI_METHODS if ALL_AI_METHODS else ["gemini", "huggingface"]
+    if not methods or methods == "all":
+        methods_to_test = available
+    elif isinstance(methods, (list, tuple, set)):
+        methods_to_test = list(methods)
+    else:
+        methods_to_test = [methods]
+
+    results = {}
+    for method in methods_to_test:
+        if method == "gemini":
+            if not GEMINI_API_KEY:
+                results[method] = {
+                    "ok": False,
+                    "message": "Missing GEMINI_API_KEY.",
+                    "models": [],
+                    "rate_limit": None,
+                    "total": 0,
+                    "truncated": False,
+                }
+                continue
+            url = f"https://generativelanguage.googleapis.com/v1beta/models?key={GEMINI_API_KEY}"
+            try:
+                resp = requests.get(url, timeout=120)
+                rate_info = {}
+                for key, value in resp.headers.items():
+                    if "rate" in key.lower() or "limit" in key.lower():
+                        rate_info[key] = value
+                if _is_rate_limited(response=resp):
+                    results[method] = {
+                        "ok": False,
+                        "message": f"Rate limited (HTTP {resp.status_code}).",
+                        "models": [],
+                        "rate_limit": rate_info or None,
+                    }
+                    continue
+                resp.raise_for_status()
+                payload = resp.json()
+                models = []
+                capabilities = {}
+                for entry in payload.get("models", []) if isinstance(payload, dict) else []:
+                    if not isinstance(entry, dict):
+                        continue
+                    name = entry.get("name")
+                    methods = entry.get("supportedGenerationMethods", [])
+                    if name and isinstance(methods, list) and "generateContent" in methods:
+                        models.append(name)
+                        capabilities[_normalize_gemini_model_name(name)] = methods
+                total = len(models)
+                if total > 50:
+                    models = models[:50]
+                    truncated = True
+                else:
+                    truncated = False
+                _update_model_cache("gemini", [_normalize_gemini_model_name(m) for m in models], capabilities=capabilities)
+                results[method] = {
+                    "ok": True,
+                    "message": "OK",
+                    "models": models,
+                    "rate_limit": rate_info or None,
+                    "total": total,
+                    "truncated": truncated,
+                }
+            except Exception as e:
+                results[method] = {
+                    "ok": False,
+                    "message": f"Error: {e}",
+                    "models": [],
+                    "rate_limit": None,
+                    "total": 0,
+                    "truncated": False,
+                }
+        elif method == "huggingface":
+            if not HUGGINGFACE_API_KEY:
+                results[method] = {
+                    "ok": False,
+                    "message": "Missing HUGGINGFACE_API_KEY.",
+                    "models": [],
+                    "rate_limit": None,
+                    "total": 0,
+                    "truncated": False,
+                }
+                continue
+            url = "https://huggingface.co/api/models"
+            params = {
+                "pipeline_tag": "text-generation",
+                "limit": 50,
+                "sort": "downloads",
+            }
+            headers = {"Authorization": f"Bearer {HUGGINGFACE_API_KEY}"}
+            try:
+                resp = requests.get(url, headers=headers, params=params, timeout=120)
+                rate_info = {}
+                for key, value in resp.headers.items():
+                    if "rate" in key.lower() or "limit" in key.lower():
+                        rate_info[key] = value
+                if _is_rate_limited(response=resp):
+                    results[method] = {
+                        "ok": False,
+                        "message": f"Rate limited (HTTP {resp.status_code}).",
+                        "models": [],
+                        "rate_limit": rate_info or None,
+                    }
+                    continue
+                resp.raise_for_status()
+                payload = resp.json()
+                models = []
+                capabilities = {}
+                for entry in payload if isinstance(payload, list) else []:
+                    model_id = entry.get("modelId") if isinstance(entry, dict) else None
+                    if model_id:
+                        models.append(model_id)
+                total = len(models)
+                truncated = total >= 50
+                for model_id in models:
+                    capabilities[model_id] = ["text-generation"]
+                _update_model_cache("huggingface", models, capabilities=capabilities)
+                results[method] = {
+                    "ok": True,
+                    "message": "OK (top public models; availability depends on provider).",
+                    "models": models,
+                    "rate_limit": rate_info or None,
+                    "total": total,
+                    "truncated": truncated,
+                }
+            except Exception as e:
+                results[method] = {
+                    "ok": False,
+                    "message": f"Error: {e}",
+                    "models": [],
+                    "rate_limit": None,
+                    "total": 0,
+                    "truncated": False,
+                }
+        else:
+            results[method] = {
+                "ok": False,
+                "message": f"Unknown method: {method}.",
+                "models": [],
+                "rate_limit": None,
+                "total": 0,
+                "truncated": False,
+            }
+
+    return results
+
+def calculate_cc_ck_gk(student, gradebook_csv_path="canvas_gradebook.csv", override_file="override_grades.xlsx", verbose=False):
     """
     Calculate CC (Chuyên cần), CK (Cuối kỳ), GK (Giữa kỳ) for a student object using Canvas gradebook CSV.
     If gradebook_csv_path is provided, extract scores from the CSV using the student's Canvas ID.
     Returns a dict: {"CC": cc, "CK": ck, "GK": gk, "details": {...}}
     """
-    overrides = get_override_grades()
+    overrides = get_override_grades(file_path=override_file, verbose=verbose)
+    override_entry = None
+    student_id = _normalize_student_id(getattr(student, "Student ID", ""))
+    student_name = str(getattr(student, "Name", "")).strip()
+    if overrides.get("by_id") and student_id in overrides["by_id"]:
+        override_entry = overrides["by_id"][student_id]
+    elif overrides.get("by_name") and student_name:
+        override_entry = overrides["by_name"].get(_normalize_vietnamese_name(student_name))
+    override_cc = override_entry.get("CC") if override_entry and _is_grade_provided(override_entry.get("CC")) else None
+    override_gk = override_entry.get("GK") if override_entry and _is_grade_provided(override_entry.get("GK")) else None
+    override_ck = override_entry.get("CK") if override_entry and _is_grade_provided(override_entry.get("CK")) else None
+    override_fields = []
+    if override_cc is not None:
+        override_fields.append("CC")
+    if override_gk is not None:
+        override_fields.append("GK")
+    if override_ck is not None:
+        override_fields.append("CK")
+    if verbose and override_entry:
+        print(
+            "[OverrideGrades] Found entry for "
+            f"{student_name} ({student_id}): CC={override_cc}, GK={override_gk}, CK={override_ck}, "
+            f"reason={override_entry.get('reason', '')}"
+        )
+    if verbose and not override_entry:
+        print(f"[OverrideGrades] No entry found for {student_name} ({student_id}).")
+
+    if override_cc is not None and override_gk is not None and override_ck is not None:
+        details = {
+            "diem_danh": None,
+            "quiz": None,
+            "bai_tap": None,
+            "GK": override_gk,
+            "CK": override_ck,
+            "CC": override_cc,
+        }
+        override_reason = override_entry.get("reason", "") if override_entry else ""
+        if verbose:
+            print("[OverrideGrades] All scores overridden; skipping gradebook/attribute calculation.")
+        return {
+            "CC": override_cc,
+            "CK": override_ck,
+            "GK": override_gk,
+            "details": details,
+            "override_reason": override_reason,
+            "override_fields": override_fields,
+        }
 
     def to_scale_10(val):
         if val is None or (isinstance(val, float) and pd.isna(val)):
@@ -741,8 +1318,12 @@ def calculate_cc_ck_gk(student, gradebook_csv_path="canvas_gradebook.csv", verbo
             quiz_col = find_best_col(df.columns, ["quiz"], prefer_final=True) or "Quiz Final Score"
             bai_tap_col = find_best_col(df.columns, ["bai tap", "assignment"], prefer_final=True) or "Bài tập Final Score"
 
-            # Compute CC
-            if cc_col:
+            # Compute CC unless overridden.
+            if override_cc is not None:
+                CC = override_cc
+                if verbose:
+                    print("[OverrideGrades] Using override CC from override_grades.xlsx.")
+            elif cc_col:
                 CC = to_scale_10(row.get(cc_col, 0.0))
             else:
                 diem_danh = to_scale_10(row.get(diem_danh_col, 0.0))
@@ -754,8 +1335,12 @@ def calculate_cc_ck_gk(student, gradebook_csv_path="canvas_gradebook.csv", verbo
             gk_col = find_best_col(df.columns, gk_keywords, prefer_final=True) or "Giữa kỳ Final Score"
             ck_col = find_best_col(df.columns, ck_keywords, prefer_final=True, exclude_keywords=ck_exclude_keywords) or "Cuối kỳ Final Score"
 
-            GK = to_scale_10(row.get(gk_col, 0.0))
-            CK = to_scale_10(row.get(ck_col, 0.0))
+            GK = override_gk if override_gk is not None else to_scale_10(row.get(gk_col, 0.0))
+            CK = override_ck if override_ck is not None else to_scale_10(row.get(ck_col, 0.0))
+            if verbose and override_gk is not None:
+                print("[OverrideGrades] Using override GK from override_grades.xlsx.")
+            if verbose and override_ck is not None:
+                print("[OverrideGrades] Using override CK from override_grades.xlsx.")
 
             details = {
                 "diem_danh": to_scale_10(row.get(diem_danh_col, 0.0)),
@@ -766,7 +1351,17 @@ def calculate_cc_ck_gk(student, gradebook_csv_path="canvas_gradebook.csv", verbo
                 "CC": CC,
             }
             CC, CK, GK, override_reason = apply_override_grades(student, CC, CK, GK, overrides)
-            return {"CC": CC, "CK": CK, "GK": GK, "details": details, "override_reason": override_reason}
+            details["CC"] = CC
+            details["GK"] = GK
+            details["CK"] = CK
+            return {
+                "CC": CC,
+                "CK": CK,
+                "GK": GK,
+                "details": details,
+                "override_reason": override_reason,
+                "override_fields": override_fields,
+            }
         except Exception as e:
             if verbose:
                 print(f"[calculate_cc_ck_gk] Error extracting from gradebook CSV: {e}")
@@ -791,51 +1386,77 @@ def calculate_cc_ck_gk(student, gradebook_csv_path="canvas_gradebook.csv", verbo
             return round(sum(scores) / len(scores), 2)
         return None
 
-    # Try to detect CC attribute robustly
-    CC = None
-    for attr in student.__dict__:
-        nattr = normalize_text(attr)
-        if any(k in nattr for k in cc_keywords) and any(fk in nattr for fk in final_keywords):
-            CC = to_scale_10(getattr(student, attr))
-            break
+    # Try to detect CC attribute robustly unless overridden
+    if override_cc is not None:
+        CC = override_cc
+        if verbose:
+            print("[OverrideGrades] Using override CC from override_grades.xlsx.")
+    else:
+        CC = None
+        for attr in student.__dict__:
+            nattr = normalize_text(attr)
+            if any(k in nattr for k in cc_keywords) and any(fk in nattr for fk in final_keywords):
+                CC = to_scale_10(getattr(student, attr))
+                break
 
-    # If CC not found in attributes, calculate from components
-    if CC is None or CC == 0.0:
-        # Try multiple variants
-        diem_danh = to_scale_10(getattr(student, "Điểm danh Final Score", None)) or to_scale_10(getattr(student, "Attendance Final Score", None))
-        quiz = to_scale_10(getattr(student, "Quiz Final Score", None))
-        bai_tap = to_scale_10(getattr(student, "Bài tập Final Score", None)) or to_scale_10(getattr(student, "Assignment Final Score", None))
-        CC = round(0.25 * (diem_danh or 0) + 0.25 * (quiz or 0) + 0.5 * (bai_tap or 0), 1)
+        # If CC not found in attributes, calculate from components
+        if CC is None or CC == 0.0:
+            # Try multiple variants
+            diem_danh = to_scale_10(getattr(student, "??i???m danh Final Score", None)) or to_scale_10(getattr(student, "Attendance Final Score", None))
+            quiz = to_scale_10(getattr(student, "Quiz Final Score", None))
+            bai_tap = to_scale_10(getattr(student, "BA?i t??-p Final Score", None)) or to_scale_10(getattr(student, "Assignment Final Score", None))
+            CC = round(0.25 * (diem_danh or 0) + 0.25 * (quiz or 0) + 0.5 * (bai_tap or 0), 1)
 
-    GK = get_avg_score_by_title(student, "giữa kỳ")
-    CK = get_avg_score_by_title(student, "cuối kỳ")
-    if GK is None:
-        midterm_id = str(CANVAS_MIDTERM_ASSIGNMENT_ID).strip()
-        if midterm_id:
-            GK = getattr(student, f"Assignment: {midterm_id}", None)
+    if override_gk is not None:
+        GK = override_gk
+        if verbose:
+            print("[OverrideGrades] Using override GK from override_grades.xlsx.")
+    else:
+        GK = get_avg_score_by_title(student, "gi??_a k??3")
         if GK is None:
-            GK = getattr(student, "Midterm Final Score", None)
-    if CK is None:
-        final_id = str(CANVAS_FINAL_ASSIGNMENT_ID).strip()
-        if final_id:
-            CK = getattr(student, f"Assignment: {final_id}", None)
+            midterm_id = str(CANVAS_MIDTERM_ASSIGNMENT_ID).strip()
+            if midterm_id:
+                GK = getattr(student, f"Assignment: {midterm_id}", None)
+            if GK is None:
+                GK = getattr(student, "Midterm Final Score", None)
+
+    if override_ck is not None:
+        CK = override_ck
+        if verbose:
+            print("[OverrideGrades] Using override CK from override_grades.xlsx.")
+    else:
+        CK = get_avg_score_by_title(student, "cu??`i k??3")
         if CK is None:
-            CK = getattr(student, "Final Final Score", None)
+            final_id = str(CANVAS_FINAL_ASSIGNMENT_ID).strip()
+            if final_id:
+                CK = getattr(student, f"Assignment: {final_id}", None)
+            if CK is None:
+                CK = getattr(student, "Final Final Score", None)
 
     CC = 0.0 if CC is None or (isinstance(CC, float) and pd.isna(CC)) else CC
     CK = 0.0 if CK is None or (isinstance(CK, float) and pd.isna(CK)) else CK
     GK = 0.0 if GK is None or (isinstance(GK, float) and pd.isna(GK)) else GK
 
     details = {
-        "diem_danh": to_scale_10(getattr(student, "Điểm danh Final Score", None)) or to_scale_10(getattr(student, "Attendance Final Score", None)),
+        "diem_danh": to_scale_10(getattr(student, "??i???m danh Final Score", None)) or to_scale_10(getattr(student, "Attendance Final Score", None)),
         "quiz": to_scale_10(getattr(student, "Quiz Final Score", None)),
-        "bai_tap": to_scale_10(getattr(student, "Bài tập Final Score", None)) or to_scale_10(getattr(student, "Assignment Final Score", None)),
+        "bai_tap": to_scale_10(getattr(student, "BA?i t??-p Final Score", None)) or to_scale_10(getattr(student, "Assignment Final Score", None)),
         "GK": GK,
         "CK": CK,
         "CC": CC,
     }
     CC, CK, GK, override_reason = apply_override_grades(student, CC, CK, GK, overrides)
-    return {"CC": CC, "CK": CK, "GK": GK, "details": details, "override_reason": override_reason}
+    details["CC"] = CC
+    details["GK"] = GK
+    details["CK"] = CK
+    return {
+        "CC": CC,
+        "CK": CK,
+        "GK": GK,
+        "details": details,
+        "override_reason": override_reason,
+        "override_fields": override_fields,
+    }
 
 def update_mat_excel_grades(file_path, students, output_path=None, verbose=False):
     """
@@ -848,6 +1469,8 @@ def update_mat_excel_grades(file_path, students, output_path=None, verbose=False
     - Returns the path to the updated file.
     The header row must contain CC, CK, GK.
     """
+    global _override_grades_cache
+    global _override_grades_cache_path
 
     def normalize_vietnamese_name(name):
         """Normalize Vietnamese name by removing diacritics and converting to lowercase."""
@@ -863,6 +1486,22 @@ def update_mat_excel_grades(file_path, students, output_path=None, verbose=False
     def names_match(name1, name2):
         """Check if two names match after normalization."""
         return normalize_vietnamese_name(name1) == normalize_vietnamese_name(name2)
+
+    # Prefer override_grades.xlsx alongside the MAT file, if present.
+    # Temporarily swap the override cache so per-course files are respected.
+    override_cache_backup = _override_grades_cache
+    override_cache_path_backup = _override_grades_cache_path
+    override_path = os.path.join(os.path.dirname(os.path.abspath(file_path)), "override_grades.xlsx")
+    override_file = "override_grades.xlsx"
+    if os.path.exists(override_path):
+        _override_grades_cache = load_override_grades(file_path=override_path, verbose=verbose)
+        _override_grades_cache_path = override_path
+        override_file = override_path
+        if verbose:
+            override_count = len(_override_grades_cache.get("by_id", {})) + len(_override_grades_cache.get("by_name", {}))
+            print(f"[OverrideGrades] Using override file: {override_file} (entries: {override_count})")
+    elif verbose:
+        print(f"[OverrideGrades] No override file found at: {override_path}")
 
     # Step 1: Create temp copy and unmerge all merged cells
     temp_path = file_path + "_temp.xlsx"
@@ -972,16 +1611,17 @@ def update_mat_excel_grades(file_path, students, output_path=None, verbose=False
     os.makedirs(results_dir, exist_ok=True)
 
     for s in students:
-        sid = str(getattr(s, "Student ID", "")).strip()
+        sid = _normalize_student_id(getattr(s, "Student ID", ""))
         name = str(getattr(s, "Name", "")).strip()
         name_display = name.replace("/", "_").replace("\\", "_").replace(" ", "_")
         
-        scores = calculate_cc_ck_gk(s)
+        scores = calculate_cc_ck_gk(s, override_file=override_file, verbose=verbose)
         CC = scores["CC"]
         CK = scores["CK"]
         GK = scores["GK"]
         details = scores["details"]
         override_reason = scores.get("override_reason", "")
+        override_fields = scores.get("override_fields", [])
         total_score = round(0.2 * CC + 0.2 * (float(GK) if GK else 0) + 0.6 * (float(CK) if CK else 0), 1)
         
         # Try to find matching row by ID first, then by name
@@ -1012,22 +1652,44 @@ def update_mat_excel_grades(file_path, students, output_path=None, verbose=False
 
         # Save results to TXT file
         result_lines = []
-        result_lines.append(f"Student ID: {sid}")
-        result_lines.append(f"Name: {getattr(s, 'Name', '')}")
-        result_lines.append(f"CC (Chuyên cần): {CC}")
-        result_lines.append(f"GK (Giữa kỳ): {GK}")
-        result_lines.append(f"CK (Cuối kỳ): {CK}")
-        result_lines.append(f"Assignment group scores:")
-        result_lines.append(f"  Điểm danh Final Score: {details['diem_danh']}")
-        result_lines.append(f"  Quiz Final Score: {details['quiz']}")
-        result_lines.append(f"  Bài tập Final Score: {details['bai_tap']}")
+        result_lines.append(f"Student ID (M\u00e3 sinh vi\u00ean): {sid}")
+        result_lines.append(f"Name (H\u1ecd v\u00e0 T\u00ean): {getattr(s, 'Name', '')}")
+        result_lines.append(f"CC (Chuy\u00ean c\u1ea7n): {CC}")
+        result_lines.append(f"GK (Gi\u1eefa k\u1ef3 / Midterm): {GK}")
+        result_lines.append(f"CK (Cu\u1ed1i k\u1ef3 / Final): {CK}")
+        result_lines.append("Assignment group scores (\u0110i\u1ec3m th\u00e0nh ph\u1ea7n):")
+        result_lines.append(f"  Attendance (\u0110i\u1ec3m danh): {details['diem_danh']}")
+        result_lines.append(f"  Quiz (Tr\u1eafc nghi\u1ec7m): {details['quiz']}")
+        result_lines.append(f"  Assignment (B\u00e0i t\u1eadp): {details['bai_tap']}")
+        if override_fields:
+            result_lines.append(f"Overridden scores (\u0110i\u1ec3m \u0111\u01b0\u1ee3c ghi \u0111\u00e8): {', '.join(override_fields)}")
         if override_reason:
-            result_lines.append(f"Override reason: {override_reason}")
-        result_lines.append(f"Total score (scale 10): {total_score}")
+            result_lines.append(f"Override reason (L\u00fd do ghi \u0111\u00e8): {override_reason}")
+        result_lines.append(f"Total score (scale 10) (T\u1ed5ng \u0111i\u1ec3m thang 10): {total_score}")
+
+        report_text = "\n".join(result_lines)
+        _reset_last_ai_model()
+        if REPORT_REFINE_METHOD:
+            try:
+                report_text = refine_text_with_ai(report_text, method=REPORT_REFINE_METHOD, verbose=verbose)
+            except Exception as e:
+                if verbose:
+                    print(f"[ReportRefine] Failed to refine report with {REPORT_REFINE_METHOD}: {e}")
+        model_used = get_last_ai_model_used()
+        if REPORT_REFINE_METHOD and model_used:
+            report_text += f"\nAI model used (M\u00f4 h\u00ecnh AI): {model_used}"
+        default_model = ""
+        if REPORT_REFINE_METHOD == "gemini":
+            default_model = GEMINI_DEFAULT_MODEL
+        elif REPORT_REFINE_METHOD == "huggingface":
+            default_model = "meta-llama/llama-3.1-8b-instruct"
+        if REPORT_REFINE_METHOD and default_model:
+            report_text += f"\nDefault model (M\u00f4 h\u00ecnh m\u1eb7c \u0111\u1ecbnh): {default_model}"
+
         result_filename = f"{sid}_{name_display}_results.txt"
         result_path = os.path.join(results_dir, result_filename)
         with open(result_path, "w", encoding="utf-8") as f:
-            f.write("\n".join(result_lines))
+            f.write(report_text)
 
     if verbose:
         print(f"[update_mat_excel_grades] Calculated CC, CK, GK values for {len(sid_to_values)} students from Canvas assignment scores.")
@@ -1063,6 +1725,9 @@ def update_mat_excel_grades(file_path, students, output_path=None, verbose=False
 
     wb_out.save(output_path)
     os.remove(temp_path)
+    # Restore global cache to avoid side effects on other operations.
+    _override_grades_cache = override_cache_backup
+    _override_grades_cache_path = override_cache_path_backup
     if verbose:
         print(f"[update_mat_excel_grades] Updated {updated_count} cells in {output_path}")
     else:
@@ -2270,6 +2935,11 @@ def extract_text_from_scanned_pdf_ocrspace(pdf_path, txt_output_path=None, lang=
     api_url = OCRSPACE_API_URL
     api_key = OCRSPACE_API_KEY  # Free API key
 
+    if not api_url:
+        raise ValueError("OCRSPACE_API_URL is not set. Update your config.json or settings.")
+    if not api_key:
+        raise ValueError("OCRSPACE_API_KEY is not set. Update your config.json before using ocrspace.")
+
     if verbose:
         print(f"[OCRSpace] Reading PDF: {pdf_path}")
         print(f"[OCRSpace] Using OCR language: {ocr_lang}")
@@ -2361,12 +3031,20 @@ def extract_text_from_scanned_pdf_ocrspace(pdf_path, txt_output_path=None, lang=
 
             if verbose:
                 print(f"[OCRSpace] Uploading chunk to OCR.space API...")
+            # OCR.space expects a form-encoded payload and returns JSON per chunk.
             response = requests.post(api_url, data=data)
+            if not response.ok:
+                if verbose:
+                    print(f"[OCRSpace] HTTP {response.status_code}: {response.text[:500]}")
+                else:
+                    print(f"OCR.space request failed with status {response.status_code}.")
+                continue
             try:
                 result = response.json()
             except Exception as e:
                 if verbose:
                     print(f"[OCRSpace] Failed to parse OCR.space response: {e}")
+                    print(f"[OCRSpace] Raw response: {response.text[:500]}")
                 else:
                     print("Failed to parse OCR.space response.")
                 continue
@@ -2749,6 +3427,7 @@ def extract_text_from_scanned_pdf(
     Returns the path to the output text file (or (txt_path, page_rotations) tuple if available).
     If verbose is True, print more details; otherwise, print only important notice.
     """
+    # Dispatch OCR based on service and optionally refine the result with AI.
     if service is None:
         service = DEFAULT_OCR_METHOD
     service = service.lower()
@@ -3174,16 +3853,33 @@ def add_blackboard_counts_from_pdf(pdf_path, db_path=None, lang="vnm", service=D
         all_dates.update(date_counts.keys())
     all_dates = sorted(all_dates)
 
+    def _parse_date(date_str):
+        if not date_str:
+            return None
+        parts = [p for p in date_str.split("/") if p.strip()]
+        if len(parts) != 3:
+            return None
+        try:
+            day, month, year = (int(p) for p in parts)
+        except ValueError:
+            return None
+        return [day, month, year]
+
     def date_leq(date1, date2):
-        d1 = [int(x) for x in date1.split("/")]
-        d2 = [int(x) for x in date2.split("/")]
+        d1 = _parse_date(date1)
+        d2 = _parse_date(date2)
+        if not d1 or not d2:
+            return False
         return d1[2] < d2[2] or (d1[2] == d2[2] and (d1[1] < d2[1] or (d1[1] == d2[1] and d1[0] <= d2[0])))
 
     sid_to_total = {sid: sum(date_counts.values()) for sid, date_counts in counts_dict.items()}
-    sid_to_total_until_midterm = {
-        sid: sum(v for k, v in date_counts.items() if date_leq(k, MIDTERM_DATE))
-        for sid, date_counts in counts_dict.items()
-    }
+    if _parse_date(MIDTERM_DATE):
+        sid_to_total_until_midterm = {
+            sid: sum(v for k, v in date_counts.items() if date_leq(k, MIDTERM_DATE))
+            for sid, date_counts in counts_dict.items()
+        }
+    else:
+        sid_to_total_until_midterm = dict(sid_to_total)
     max_total = max(sid_to_total.values()) if sid_to_total else 0
     max_total_until_midterm = max(sid_to_total_until_midterm.values()) if sid_to_total_until_midterm else 0
 
@@ -3551,50 +4247,22 @@ def analyze_text_meaningfulness(text, refine_method=DEFAULT_AI_METHOD, average_l
             print("Notice: Empty text, score = 0.0")
         return 0.0
 
-    # Pre-analysis using heuristics to catch obvious cases
+    # Pre-analysis using heuristics to short-circuit obvious cases.
     heuristic_score = _analyze_text_heuristics(text)
+    metrics = _compute_text_quality_metrics(text)
+    is_math_document = metrics["likely_math"]
 
-    # Check for mathematical content presence
-    math_indicators = [
-        r'[∀∃∄∈∉∋∌∑∏∐∫∬∭∮∯∰∱∲∳]',  # Mathematical operators
-        r'[αβγδεζηθικλμνξοπρςστυφχψω]',  # Greek letters
-        r'[ΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩ]',  # Greek uppercase
-        r'\\[a-zA-Z]+',  # LaTeX commands
-        r'\$[^$]*\$',  # LaTeX inline math
-        r'\$\$[^$]*\$\$',  # LaTeX display math
-        r'[a-z]\s*[=><≤≥]\s*[0-9a-z]',  # Simple equations
-        r'[a-z]\([a-z]\)',  # Function notation
-        r'lim[a-z→∞]',  # Limits
-        r'[∂∇]',  # Differential operators
-        r'[a-z]\^[0-9]+',  # Superscripts
-        r'[a-z]_[0-9]+',  # Subscripts
-        r'(\d+\.\d+)',  # Decimal numbers
-        r'(\d+,\d+)',  # Decimal numbers (comma)
-        r'(\d+\/\d+)'   # Fractions
-    ]
-
-    # Calculate math content density
-    math_matches = 0
-    for pattern in math_indicators:
-        try:
-            math_matches += len(re.findall(pattern, text, re.IGNORECASE))
-        except Exception:
-            continue
-
-    math_density = math_matches / max(1, len(text.split()))
-    is_math_document = math_density > 0.05  # Threshold to consider as math document
-
-    # Length-based adjustment if average_length is provided
+    # Length-based adjustment if average_length is provided (compares to cohort).
     if average_length and average_length > 0:
         text_length = len(text.strip())
         length_ratio = text_length / average_length
 
         # Apply penalty for submissions that are significantly shorter than average
-        if length_ratio < 0.3:  # Less than 30% of average length
+        if length_ratio < QUALITY_LENGTH_RATIO_LOW:  # Less than 30% of average length
             length_penalty = 0.5  # Reduce score by 50%
-        elif length_ratio < 0.5:  # Less than 50% of average length
+        elif length_ratio < QUALITY_LENGTH_RATIO_MEDIUM:  # Less than 50% of average length
             length_penalty = 0.7  # Reduce score by 30%
-        elif length_ratio < 0.7:  # Less than 70% of average length
+        elif length_ratio < QUALITY_LENGTH_RATIO_HIGH:  # Less than 70% of average length
             length_penalty = 0.85  # Reduce score by 15%
         else:
             length_penalty = 1.0  # No penalty
@@ -3603,10 +4271,11 @@ def analyze_text_meaningfulness(text, refine_method=DEFAULT_AI_METHOD, average_l
         if verbose:
             print(f"[Meaningfulness] Length ratio: {length_ratio:.2f}, penalty: {length_penalty:.2f}, heuristic_score after penalty: {heuristic_score:.2f}")
 
-    # Adjust heuristic score if math content is detected
+    # Adjust heuristic score if math content is detected (OCR noise is higher).
     if is_math_document:
         heuristic_score = min(1.0, heuristic_score * 1.2)
         if verbose:
+            math_density = metrics.get("math_density", 0.0)
             print(f"[Meaningfulness] Math document detected (density: {math_density:.2f}), heuristic_score boosted to {heuristic_score:.2f}")
 
     # If heuristics show very low or very high confidence, use that
@@ -3633,6 +4302,10 @@ def analyze_text_meaningfulness(text, refine_method=DEFAULT_AI_METHOD, average_l
     else:
         length_context += ")"
     math_context = ", likely contains mathematical content" if is_math_document else ""
+    issues = _summarize_quality_issues(metrics, average_length=average_length)
+    issues_text = "; ".join(issues) if issues else "None"
+    if verbose:
+        print(f"[Meaningfulness] Detected issues: {issues_text}")
 
     # Escape curly braces in text to avoid f-string format errors
     safe_text = text.replace("{", "{{").replace("}", "}}")
@@ -3671,6 +4344,7 @@ def analyze_text_meaningfulness(text, refine_method=DEFAULT_AI_METHOD, average_l
         "- Common OCR substitutions: đ→d, ô→o, ư→u, etc.\n"
         "- Tone marks may appear as separate characters\n"
         "- Handwriting OCR often produces character fragments\n\n"
+        f"Detected potential issues: {issues_text}.\n"
         f"Based on preliminary analysis, this text appears to have moderate quality (heuristic score: {heuristic_score:.2f}){length_context}{math_context}. Please provide your expert assessment.\n\n"
         "Respond with ONLY a single number between 0 and 1 (format: 0.XX). No explanations needed.\n\n"
         "Text to analyze:\n"
@@ -3726,111 +4400,150 @@ def analyze_text_meaningfulness(text, refine_method=DEFAULT_AI_METHOD, average_l
             print(f"Error analyzing text meaningfulness: {e}")
         return heuristic_score  # Fallback to heuristic score
 
+def _compute_text_quality_metrics(text):
+    text = text.strip()
+    total_chars = len(text)
+    words = re.findall(r"\w+", text, re.UNICODE)
+    total_words = len(words)
+    unique_chars = len(set(text)) if total_chars else 0
+    unique_char_ratio = unique_chars / total_chars if total_chars else 0.0
+
+    alnum_count = sum(1 for c in text if c.isalnum())
+    alnum_ratio = alnum_count / total_chars if total_chars else 0.0
+    symbol_count = sum(1 for c in text if not c.isalnum() and not c.isspace())
+    symbol_ratio = symbol_count / total_chars if total_chars else 0.0
+
+    repeat_char_runs = len(re.findall(r"(.)\1{3,}", text))
+    repeat_char_ratio = repeat_char_runs / max(1, total_chars // 10)
+
+    lines = text.splitlines()
+    empty_lines = sum(1 for line in lines if not line.strip())
+    line_empty_ratio = empty_lines / max(1, len(lines))
+
+    # Use Unicode ranges to detect Vietnamese letters and avoid mojibake.
+    vn_letter_re = re.compile(r"[\u00c0-\u1ef9\u0102\u0103\u00c2\u00e2\u00ca\u00ea\u00d4\u00f4\u01a0\u01a1\u01af\u01b0\u0110\u0111]")
+    vn_char_count = len(vn_letter_re.findall(text))
+    vn_char_ratio = vn_char_count / total_chars if total_chars else 0.0
+
+    common_vn_words = [
+        "và", "là", "của", "trong", "có", "được", "một", "cho", "với", "các",
+        "này", "đó", "những", "từ", "theo", "hoặc", "khi", "nếu", "sẽ", "đã",
+        "đang", "bài", "sinh", "viên", "giải", "đáp", "phương", "trình", "hàm",
+        "số", "định", "nghĩa"
+    ]
+    text_lower = unicodedata.normalize("NFC", text).lower()
+    common_word_count = sum(1 for word in common_vn_words if word in text_lower)
+
+    math_indicators = [
+        r"\\[a-zA-Z]+",
+        r"\$[^$]*\$", r"\$\$[^$]*\$\$",
+        r"[a-zA-Z]\s*[=<>]\s*[0-9a-zA-Z]",
+        r"[a-zA-Z]\^[0-9]+", r"[a-zA-Z]_[0-9]+",
+        r"(\d+/\d+)", r"(\d+\.\d+)"
+    ]
+    # Heuristic math signal to avoid penalizing symbol-heavy math submissions.
+    math_matches = 0
+    for pattern in math_indicators:
+        try:
+            math_matches += len(re.findall(pattern, text))
+        except Exception:
+            continue
+    math_density = math_matches / max(1, total_words)
+    likely_math = math_density > QUALITY_MATH_DENSITY_THRESHOLD
+
+    return {
+        "total_chars": total_chars,
+        "total_words": total_words,
+        "unique_char_ratio": unique_char_ratio,
+        "alnum_ratio": alnum_ratio,
+        "symbol_ratio": symbol_ratio,
+        "repeat_char_ratio": repeat_char_ratio,
+        "line_empty_ratio": line_empty_ratio,
+        "vn_char_ratio": vn_char_ratio,
+        "common_word_count": common_word_count,
+        "likely_math": likely_math,
+        "math_density": math_density,
+    }
+
+
+def _summarize_quality_issues(metrics, average_length=None):
+    issues = []
+    if metrics["total_chars"] < QUALITY_MIN_CHARS:
+        issues.append("Nội dung quá ngắn")
+    if (
+        metrics["unique_char_ratio"] < QUALITY_UNIQUE_CHAR_RATIO_MIN
+        or metrics["repeat_char_ratio"] > QUALITY_REPEAT_CHAR_RATIO_MAX
+    ):
+        issues.append("Ký tự lặp bất thường hoặc thiếu đa dạng")
+    if metrics["vn_char_ratio"] < QUALITY_VN_CHAR_RATIO_MIN and not metrics["likely_math"]:
+        issues.append("Tỷ lệ ký tự tiếng Việt rất thấp")
+    if metrics["alnum_ratio"] < QUALITY_ALNUM_RATIO_MIN:
+        issues.append("Tỷ lệ ký tự chữ/số thấp")
+    if metrics["symbol_ratio"] > QUALITY_SYMBOL_RATIO_MAX and not metrics["likely_math"]:
+        issues.append("Quá nhiều ký hiệu hoặc ký tự không chữ/số")
+    if metrics["line_empty_ratio"] > QUALITY_EMPTY_LINE_RATIO_MAX:
+        issues.append("Nhiều dòng trống")
+    if average_length and average_length > 0:
+        length_ratio = metrics["total_chars"] / average_length
+        if length_ratio < QUALITY_LENGTH_RATIO_LOW:
+            issues.append("Độ dài thấp hơn nhiều so với trung bình")
+        elif length_ratio < QUALITY_LENGTH_RATIO_MEDIUM:
+            issues.append("Độ dài thấp hơn trung bình")
+    return issues
+
+
 def _analyze_text_heuristics(text):
     """
     Analyze text meaningfulness using heuristic methods.
-    
+
     Args:
         text (str): The text to analyze.
-    
+
     Returns:
         float: Heuristic meaningfulness score between 0 and 1.
     """
     if not text or not text.strip():
         return 0.0
-    
-    text = text.strip()
-    
-    # Basic metrics
-    total_chars = len(text)
-    total_words = len(text.split())
-    
-    if total_chars < 50:  # Very short text
+
+    metrics = _compute_text_quality_metrics(text)
+    total_chars = metrics["total_chars"]
+    total_words = metrics["total_words"]
+
+    if total_chars < QUALITY_MIN_CHARS:
         return 0.2
-    
-    # Vietnamese alphabet and common characters
-    vietnamese_chars = set('aáàảãạăắằẳẵặâấầẩẫậeéèẻẽẹêếềểễệiíìỉĩịoóòỏõọôốồổỗộơớờởỡợuúùủũụưứừửữựyýỳỷỹỵđ')
-    vietnamese_chars.update('AÁÀẢÃẠĂẮẰẲẴẶÂẤẦẨẪẬEÉÈẺẼẸÊẾỀỂỄỆIÍÌỈĨỊOÓÒỎÕỌÔỐỒỔỖỘƠỚỜỞỠỢUÚÙỦŨỤƯỨỪỬỮỰYÝỲỶỸỴĐ')
-    
-    # Count Vietnamese characters
-    vn_char_count = sum(1 for c in text if c in vietnamese_chars)
-    vn_char_ratio = vn_char_count / total_chars if total_chars > 0 else 0
-    
-    # Count letters vs other characters
-    letter_count = sum(1 for c in text if c.isalpha())
-    letter_ratio = letter_count / total_chars if total_chars > 0 else 0
-    
-    # Check for common OCR artifacts
-    ocr_artifacts = ['|', '!', '@', '#', '$', '%', '^', '&', '*', '~', '`', '\\', '/', '<', '>', '{', '}', '[', ']']
-    artifact_count = sum(text.count(char) for char in ocr_artifacts)
-    artifact_ratio = artifact_count / total_chars if total_chars > 0 else 0
-    
-    # Check for repeated characters (OCR errors often create these)
-    repeated_chars = len(re.findall(r'(.)\1{3,}', text))  # 4+ repeated chars
-    repeated_ratio = repeated_chars / total_chars if total_chars > 0 else 0
-    
-    # Check for common Vietnamese words (simple vocabulary check)
-    common_vn_words = [
-        'và', 'của', 'có', 'là', 'được', 'cho', 'với', 'từ', 'này', 'đó', 'một', 'các', 'trong',
-        'về', 'để', 'như', 'hay', 'đã', 'sẽ', 'không', 'cũng', 'đều', 'theo', 'khi', 'nếu',
-        'sinh viên', 'học sinh', 'giáo viên', 'bài tập', 'kiểm tra', 'thi', 'học', 'nghiên cứu',
-        'phân tích', 'kết quả', 'thí nghiệm', 'dự án', 'báo cáo', 'tài liệu', 'chương', 'phần'
-    ]
-    
-    text_lower = text.lower()
-    word_matches = sum(1 for word in common_vn_words if word in text_lower)
-    word_match_ratio = word_matches / len(common_vn_words)
-    
-    # Check for sentence structure (periods, question marks, exclamations)
-    sentence_endings = text.count('.') + text.count('?') + text.count('!')
-    sentence_ratio = sentence_endings / total_words if total_words > 0 else 0
-    
-    # Check for whitespace ratio (too many spaces indicate OCR issues)
-    whitespace_count = sum(1 for c in text if c.isspace())
-    whitespace_ratio = whitespace_count / total_chars if total_chars > 0 else 0
-    
-    # Check for digit ratio (too many digits might indicate OCR misrecognition)
-    digit_count = sum(1 for c in text if c.isdigit())
-    digit_ratio = digit_count / total_chars if total_chars > 0 else 0
-    
-    # Calculate weighted score
-    score = 0.0
-    
-    # Vietnamese character presence (30% weight)
-    score += min(vn_char_ratio * 2, 1.0) * 0.3
-    
-    # Letter ratio (20% weight)
-    score += min(letter_ratio * 1.2, 1.0) * 0.2
-    
-    # Common word presence (25% weight)
-    score += min(word_match_ratio * 3, 1.0) * 0.25
-    
-    # Sentence structure (15% weight)
-    score += min(sentence_ratio * 10, 1.0) * 0.15
-    
-    # Penalty for OCR artifacts (10% weight)
-    score += max(0, 1 - artifact_ratio * 5) * 0.1
-    
-    # Penalties for obvious OCR issues
-    if repeated_ratio > 0.1:  # Too many repeated characters
-        score *= 0.5
-    
-    if whitespace_ratio > 0.5:  # Too much whitespace
-        score *= 0.7
-    
-    if digit_ratio > 0.3:  # Too many digits
+
+    if (
+        metrics["unique_char_ratio"] < QUALITY_UNIQUE_CHAR_RATIO_MIN
+        or metrics["repeat_char_ratio"] > QUALITY_REPEAT_CHAR_RATIO_MAX
+    ):
+        return 0.1
+
+    score = 0.3
+
+    if metrics["vn_char_ratio"] > 0.05:
+        score += 0.2
+    if metrics["vn_char_ratio"] > 0.1:
+        score += 0.2
+
+    if metrics["common_word_count"] > 0:
+        score += 0.1
+    if metrics["common_word_count"] > 3:
+        score += 0.1
+
+    if total_words > 10:
+        score += 0.1
+    if total_words > 50:
+        score += 0.05
+
+    if metrics["alnum_ratio"] < QUALITY_ALNUM_RATIO_MIN:
         score *= 0.8
-    
-    if artifact_ratio > 0.2:  # Too many OCR artifacts
-        score *= 0.3
-    
-    # Boost for longer, more substantial texts
-    if total_words > 100:
-        score *= 1.1
-    elif total_words > 50:
-        score *= 1.05
-    
+    if metrics["symbol_ratio"] > QUALITY_SYMBOL_RATIO_MAX and not metrics["likely_math"]:
+        score *= 0.7
+    if metrics["line_empty_ratio"] > QUALITY_EMPTY_LINE_RATIO_MAX:
+        score *= 0.85
+
     return min(1.0, max(0.0, score))
+
 
 def generate_low_quality_message(filename, score, text, refine_method=DEFAULT_AI_METHOD, verbose=False):
     """
@@ -3894,7 +4607,11 @@ def generate_low_quality_message(filename, score, text, refine_method=DEFAULT_AI
 
     # Truncate text for context
     text_sample = text[:1000] + "..." if len(text) > 1000 else text
+    metrics = _compute_text_quality_metrics(text)
+    issues = _summarize_quality_issues(metrics, average_length=None)
+    issues_text = "; ".join(issues) if issues else "Không phát hiện rõ ràng"
 
+    # The prompt includes explicit criteria and detected issues to keep the message consistent.
     prompt = f"""You are an expert educational assistant. Generate a polite, formal, professional message in Vietnamese to inform a student that their PDF submission has quality issues and needs to be reformatted and resubmitted. Do not add any extra message or sign message. Mention that the message is automatically generated and sent. Do not use "em" for calling a student in Vietnamese, instead use "bạn" for singular or "các bạn" for plural. 
 
 The message should include:
@@ -3909,6 +4626,7 @@ The message should include:
    - Context appropriateness for academic submission
    - Content length and substance relative to expectations
    - Vietnamese-specific issues like missing diacritics and tone marks
+   - Detected issues from system heuristics: {issues_text}
 4. Mention that this might be due to:
    - Poor scan quality or resolution
    - Handwriting legibility issues
@@ -3928,6 +4646,7 @@ The message should include:
 Context:
 - File: {filename}
 - Quality score: {score:.2f}/1.0 (threshold for acceptable quality is 0.4)
+- Detected issues: {issues_text}
 - Sample extracted text: {text_sample[:500]}...
 
 Please write a complete, professional message that is ready to send without any placeholders or additional editing needed. The message should be empathetic but clear about the requirement to resubmit with improved quality."""
@@ -3957,7 +4676,7 @@ Please write a complete, professional message that is ready to send without any 
         else:
             print(f"Error generating message: {e}")
         # Fallback message with updated criteria
-        return f"""Chào bạn,
+        fallback_message = f"""Chào bạn,
 
 Hệ thống đã phát hiện rằng bài nộp của bạn (file: {filename}) có chất lượng đọc thấp (điểm: {score:.2f}/1.0, ngưỡng chấp nhận: 0.4/1.0).
 
@@ -3991,6 +4710,9 @@ Trân trọng,
 Hệ thống tự động
 
 Thông báo này được tạo và gửi tự động bởi hệ thống AI sau khi phát hiện chất lượng bài nộp thấp."""
+        if issues_text:
+            fallback_message += f"\n\nC\u00e1c d\u1ea5u hi\u1ec7u h\u1ec7 th\u1ed1ng ph\u00e1t hi\u1ec7n: {issues_text}"
+        return fallback_message
 
 def read_multichoice_exam_solutions_from_pdf(
     pdf_path,
@@ -5081,6 +5803,7 @@ def export_roster_to_csv(students, file_path=None, verbose=False):
     if verbose:
         print(f"Roster exported to {file_path}")
 _override_grades_cache = None
+_override_grades_cache_path = None
 
 
 def _normalize_vietnamese_name(value):
@@ -5089,6 +5812,40 @@ def _normalize_vietnamese_name(value):
     value = unicodedata.normalize("NFD", str(value))
     value = "".join(c for c in value if not unicodedata.combining(c))
     return value.lower().strip()
+
+
+def _normalize_student_id(value):
+    if value is None:
+        return ""
+    if isinstance(value, float):
+        if pd.isna(value):
+            return ""
+        return str(int(value))
+    if isinstance(value, int):
+        return str(value)
+    raw = unicodedata.normalize("NFKC", str(value)).strip()
+    if not raw:
+        return ""
+    raw = re.sub(r"\\s+", "", raw)
+    if re.match(r"^\\d+\\.0+$", raw):
+        return raw.split(".", 1)[0]
+    if re.match(r"^\\d+$", raw):
+        return raw
+    return raw
+
+
+def _looks_like_student_id(value):
+    raw = _normalize_student_id(value)
+    return bool(raw) and raw.isdigit() and len(raw) >= 5
+
+
+def _looks_like_name(value):
+    if value is None:
+        return False
+    raw = str(value).strip()
+    if not raw:
+        return False
+    return any(ch.isalpha() for ch in raw)
 
 
 def _is_grade_provided(value):
@@ -5121,27 +5878,57 @@ def load_override_grades(file_path="override_grades.xlsx", verbose=False):
             print(f"[OverrideGrades] File not found: {file_path}")
         return {"by_id": {}, "by_name": {}}
 
+    # Header names are matched by aliases; order is not required.
     df = pd.read_excel(file_path)
-    headers = {str(col).strip().lower(): col for col in df.columns}
+    header_aliases = {
+        "stt": ["stt", "no", "stt."],
+        "student_id": ["m\u00e3 sinh vi\u00ean", "mssv", "m\u00e3 sv", "student id", "studentid", "id"],
+        "full_name": ["h\u1ecd v\u00e0 t\u00ean", "h\u1ecd t\u00ean", "t\u00ean", "ho va ten", "ho ten", "name", "full name"],
+        "cc": ["cc", "chuyen can", "chuy\u00ean c\u1ea7n", "attendance"],
+        "gk": ["gk", "giua ky", "gi\u1eefa k\u1ef3", "midterm"],
+        "ck": ["ck", "cuoi ky", "cu\u1ed1i k\u1ef3", "final", "final exam"],
+        "reason": ["l\u00fd do", "ly do", "reason", "note", "notes"],
+    }
 
-    def pick_col(*candidates):
-        for name in candidates:
-            key = name.lower()
-            if key in headers:
-                return headers[key]
+    def normalize_header(value):
+        raw = unicodedata.normalize("NFKC", str(value)).strip().lower()
+        raw = unicodedata.normalize("NFD", raw)
+        raw = "".join(c for c in raw if not unicodedata.combining(c))
+        raw = re.sub(r"\\s+", " ", raw)
+        return raw
+
+    normalized_columns = {normalize_header(col): col for col in df.columns}
+
+    def find_column(aliases):
+        for alias in aliases:
+            key = normalize_header(alias)
+            if key in normalized_columns:
+                return normalized_columns[key]
         return None
 
-    col_name = pick_col("họ và tên", "ho va ten", "full name", "name")
-    col_id = pick_col("mã sinh viên", "ma sinh vien", "student id", "id")
-    col_cc = pick_col("cc")
-    col_ck = pick_col("ck")
-    col_gk = pick_col("gk")
-    col_reason = pick_col("reason", "lý do", "ly do")
+    col_id = find_column(header_aliases["student_id"])
+    col_name = find_column(header_aliases["full_name"])
+    col_cc = find_column(header_aliases["cc"])
+    col_gk = find_column(header_aliases["gk"])
+    col_ck = find_column(header_aliases["ck"])
+    col_reason = find_column(header_aliases["reason"])
+
+    if not col_id and not col_name:
+        raise ValueError("[OverrideGrades] Missing required column: M\u00e3 Sinh Vi\u00ean or H\u1ecd v\u00e0 T\u00ean.")
+    if not col_cc and not col_gk and not col_ck:
+        raise ValueError("[OverrideGrades] Missing required score columns: CC, GK, or CK.")
 
     overrides = {"by_id": {}, "by_name": {}}
     for _, row in df.iterrows():
-        student_id = str(row[col_id]).strip() if col_id and _is_grade_provided(row.get(col_id)) else ""
-        full_name = str(row[col_name]).strip() if col_name and _is_grade_provided(row.get(col_name)) else ""
+        raw_id = row.get(col_id) if col_id and _is_grade_provided(row.get(col_id)) else ""
+        raw_name = row.get(col_name) if col_name and _is_grade_provided(row.get(col_name)) else ""
+        student_id = _normalize_student_id(raw_id)
+        full_name = str(raw_name).strip() if raw_name != "" else ""
+        # Guard against user-swapped ID/name columns in the input file.
+        if _looks_like_name(student_id) and _looks_like_student_id(full_name):
+            student_id, full_name = _normalize_student_id(full_name), str(raw_id).strip()
+            if verbose:
+                print("[OverrideGrades] Detected swapped ID/name cells; swapping for this row.")
         if not student_id and not full_name:
             continue
         entry = {
@@ -5155,19 +5942,33 @@ def load_override_grades(file_path="override_grades.xlsx", verbose=False):
         if full_name:
             overrides["by_name"][_normalize_vietnamese_name(full_name)] = entry
 
+    if verbose:
+        sample_ids = list(overrides["by_id"].keys())[:3]
+        sample_names = list(overrides["by_name"].keys())[:3]
+        print(
+            "[OverrideGrades] Loaded entries - "
+            f"by_id: {len(overrides['by_id'])}, by_name: {len(overrides['by_name'])}."
+        )
+        if sample_ids:
+            print(f"[OverrideGrades] Sample IDs: {sample_ids}")
+        if sample_names:
+            print(f"[OverrideGrades] Sample names: {sample_names}")
+
     return overrides
 
 
 def get_override_grades(file_path="override_grades.xlsx", verbose=False):
     global _override_grades_cache
-    if _override_grades_cache is None:
+    global _override_grades_cache_path
+    if _override_grades_cache is None or _override_grades_cache_path != file_path:
         _override_grades_cache = load_override_grades(file_path=file_path, verbose=verbose)
+        _override_grades_cache_path = file_path
     return _override_grades_cache
 
 
 def apply_override_grades(student, CC, CK, GK, overrides):
     entry = None
-    student_id = str(getattr(student, "Student ID", "")).strip()
+    student_id = _normalize_student_id(getattr(student, "Student ID", ""))
     student_name = str(getattr(student, "Name", "")).strip()
 
     if overrides.get("by_id") and student_id in overrides["by_id"]:
@@ -5175,6 +5976,7 @@ def apply_override_grades(student, CC, CK, GK, overrides):
     elif overrides.get("by_name") and student_name:
         entry = overrides["by_name"].get(_normalize_vietnamese_name(student_name))
 
+    # Only override fields explicitly provided in override_grades.xlsx.
     if not entry:
         return CC, CK, GK, ""
 
@@ -5187,3 +5989,79 @@ def apply_override_grades(student, CC, CK, GK, overrides):
         GK = entry["GK"]
 
     return CC, CK, GK, override_reason
+
+
+def load_override_grades_to_database(override_file="override_grades.xlsx", db_path=None, verbose=False):
+    """
+    Load override grades from an Excel file and persist them into the student database.
+    Stores override values on each matching student as:
+      - Override CC
+      - Override GK
+      - Override CK
+      - Override Reason
+    """
+    if not db_path:
+        db_path = get_default_db_path()
+    if not os.path.exists(db_path):
+        if verbose:
+            print(f"[OverrideGrades] Database not found: {db_path}")
+        else:
+            print(f"Database not found: {db_path}")
+        return 0
+
+    overrides = load_override_grades(file_path=override_file, verbose=verbose)
+    if not overrides.get("by_id") and not overrides.get("by_name"):
+        if verbose:
+            print("[OverrideGrades] No override entries found.")
+        else:
+            print("No override entries found.")
+        return 0
+
+    students = load_database(db_path, verbose=verbose)
+    if not students:
+        if verbose:
+            print("[OverrideGrades] No students loaded from database.")
+        else:
+            print("No students loaded from database.")
+        return 0
+
+    sid_map = {}
+    name_map = {}
+    for s in students:
+        sid = str(getattr(s, "Student ID", "")).strip()
+        name = str(getattr(s, "Name", "")).strip()
+        if sid:
+            sid_map[sid] = s
+        if name:
+            name_map[_normalize_vietnamese_name(name)] = s
+
+    updated = 0
+
+    def apply_entry(student, entry):
+        nonlocal updated
+        if _is_grade_provided(entry.get("CC")):
+            setattr(student, "Override CC", entry.get("CC"))
+        if _is_grade_provided(entry.get("GK")):
+            setattr(student, "Override GK", entry.get("GK"))
+        if _is_grade_provided(entry.get("CK")):
+            setattr(student, "Override CK", entry.get("CK"))
+        if entry.get("reason") is not None:
+            setattr(student, "Override Reason", entry.get("reason", ""))
+        updated += 1
+
+    for sid, entry in overrides.get("by_id", {}).items():
+        student = sid_map.get(str(sid).strip())
+        if student:
+            apply_entry(student, entry)
+
+    for name_key, entry in overrides.get("by_name", {}).items():
+        student = name_map.get(name_key)
+        if student:
+            apply_entry(student, entry)
+
+    save_database(students, db_path, verbose=verbose)
+    if verbose:
+        print(f"[OverrideGrades] Applied overrides to {updated} student(s).")
+    else:
+        print(f"Applied overrides to {updated} student(s).")
+    return updated

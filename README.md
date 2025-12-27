@@ -119,7 +119,14 @@ To remove stored settings or tokens, use `--clear-config` and `--clear-credentia
 ## Override grades
 
 Place `override_grades.xlsx` in the working directory (see `sample/override_grades.xlsx` for the format).
-Non-empty CC/CK/GK cells override computed grades, and the `Reason` column is appended to the final evaluation output.
+Required columns: `M? Sinh Vi?n` or `H? v? T?n`, plus at least one of `CC`/`GK`/`CK` (order does not matter). `STT` and `L? do` are optional.
+Common header aliases are accepted, for example `MSSV`, `M? SV`, `H? t?n`, `Midterm` (Gi?a k?), `Final` (Cu?i k?), `CC` (Chuy?n c?n), `Reason` (L? do).
+Non-empty CC/GK/CK cells override computed grades, and `L? do` is appended to the final evaluation output when present.
+To refine the per-student report with AI, set `REPORT_REFINE_METHOD` to `gemini` or `huggingface` in config (requires the corresponding API key). The report includes both the default model and the model actually used when AI refinement runs.
+To verify AI credentials and connectivity, run `course --test-ai` (or choose the menu entry) and check the status for each model. Use `--test-ai-model` to test a specific model name, or `--test-ai-gemini-model`/`--test-ai-huggingface-model` when testing `--test-ai all`.
+To list available Gemini models for your API key, run `course --list-ai-models gemini` (or choose the menu entry). Hugging Face lists the top public text-generation models (up to 50).
+When an AI call is rate-limited, the tool retries and may switch to a different available model with similar capabilities.
+Submission quality checks (meaningfulness) can be tuned via config keys: `QUALITY_MIN_CHARS`, `QUALITY_UNIQUE_CHAR_RATIO_MIN`, `QUALITY_REPEAT_CHAR_RATIO_MAX`, `QUALITY_VN_CHAR_RATIO_MIN`, `QUALITY_ALNUM_RATIO_MIN`, `QUALITY_SYMBOL_RATIO_MAX`, `QUALITY_EMPTY_LINE_RATIO_MAX`, `QUALITY_MATH_DENSITY_THRESHOLD`, `QUALITY_LENGTH_RATIO_LOW`, `QUALITY_LENGTH_RATIO_MEDIUM`, `QUALITY_LENGTH_RATIO_HIGH`.
 
 ## Notes
 

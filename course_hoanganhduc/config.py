@@ -256,26 +256,31 @@ def load_config(config_path=None, verbose=False):
         return None
 
     # Only return config values, do not set globals
-    result = {
-        "CREDENTIALS_PATH": config.get("CREDENTIALS_PATH", ""),
-        "TOKEN_PATH": config.get("TOKEN_PATH", ""),
-        "DEFAULT_AI_METHOD": config.get("DEFAULT_AI_METHOD", ""),
-        "ALL_AI_METHODS": config.get("ALL_AI_METHODS", []),
-        "GEMINI_API_KEY": config.get("GEMINI_API_KEY", ""),
-        "HUGGINGFACE_API_KEY": config.get("HUGGINGFACE_API_KEY", ""),
-        "GEMINI_DEFAULT_MODEL": config.get("GEMINI_DEFAULT_MODEL", ""),
-        "DEFAULT_OCR_METHOD": config.get("DEFAULT_OCR_METHOD", ""),
-        "ALL_OCR_METHODS": config.get("ALL_OCR_METHODS", []),
-        "OCRSPACE_API_KEY": config.get("OCRSPACE_API_KEY", ""),
-        "OCRSPACE_API_URL": config.get("OCRSPACE_API_URL", ""),
-        "CANVAS_LMS_API_URL": config.get("CANVAS_LMS_API_URL", ""),
-        "CANVAS_LMS_API_KEY": config.get("CANVAS_LMS_API_KEY", ""),
-        "CANVAS_LMS_COURSE_ID": config.get("CANVAS_LMS_COURSE_ID", ""),
-        "MIDTERM_DATE": config.get("MIDTERM_DATE", ""),
-        "EXAM_TYPE": config.get("EXAM_TYPE", ""),
-        "CANVAS_MIDTERM_ASSIGNMENT_ID": config.get("CANVAS_MIDTERM_ASSIGNMENT_ID", ""),
-        "CANVAS_FINAL_ASSIGNMENT_ID": config.get("CANVAS_FINAL_ASSIGNMENT_ID", ""),
-    }
+    result = {}
+    known_keys = [
+        "CONFIG_VERSION",
+        "CREDENTIALS_PATH",
+        "TOKEN_PATH",
+        "DEFAULT_AI_METHOD",
+        "ALL_AI_METHODS",
+        "GEMINI_API_KEY",
+        "HUGGINGFACE_API_KEY",
+        "GEMINI_DEFAULT_MODEL",
+        "DEFAULT_OCR_METHOD",
+        "ALL_OCR_METHODS",
+        "OCRSPACE_API_KEY",
+        "OCRSPACE_API_URL",
+        "CANVAS_LMS_API_URL",
+        "CANVAS_LMS_API_KEY",
+        "CANVAS_LMS_COURSE_ID",
+        "MIDTERM_DATE",
+        "EXAM_TYPE",
+        "CANVAS_MIDTERM_ASSIGNMENT_ID",
+        "CANVAS_FINAL_ASSIGNMENT_ID",
+    ]
+    for key in known_keys:
+        if key in config:
+            result[key] = config.get(key)
     if verbose:
         print(f"[Config] Configuration loaded from {config_path}")
         for k, v in result.items():

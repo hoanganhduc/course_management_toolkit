@@ -2504,11 +2504,24 @@ def detect_meaningful_level_and_notify_students(
 
     for filename, text in tqdm(extracted_texts.items(), desc="Analyzing PDF meaningfulness"):
         meaningful_score = analyze_text_meaningfulness(text, refine, average_length)
+        # Store diagnostic metrics so the report can show why a file was flagged.
+        metrics = _compute_text_quality_metrics(text)
+        issues = _summarize_quality_issues(metrics, average_length=average_length)
         already_sent = sent_status.get(filename, {}).get("message_sent", False)
         results[filename] = {
             "meaningful_score": meaningful_score,
             "message_sent": already_sent,
-            "text_length": len(text.strip())
+            "text_length": len(text.strip()),
+            "issues": issues,
+            "metrics": {
+                "vn_char_ratio": metrics["vn_char_ratio"],
+                "alnum_ratio": metrics["alnum_ratio"],
+                "symbol_ratio": metrics["symbol_ratio"],
+                "unique_char_ratio": metrics["unique_char_ratio"],
+                "repeat_char_ratio": metrics["repeat_char_ratio"],
+                "line_empty_ratio": metrics["line_empty_ratio"],
+                "likely_math": metrics["likely_math"],
+            },
         }
         sent_status[filename] = results[filename]
         if meaningful_score < meaningfulness_threshold and not already_sent:
@@ -2536,10 +2549,24 @@ def detect_meaningful_level_and_notify_students(
             text_length = result.get("text_length", 0)
             length_ratio = text_length / average_length if average_length > 0 else 0
             msg_status = "SENT" if result.get("message_sent") else "NOT_SENT"
-            f.write(f"{filename}: score = {score:.2f} ({status}), length = {text_length} chars ({length_ratio:.2f}x avg), message: {msg_status}")
+            issues = result.get("issues", [])
+            metrics = result.get("metrics", {})
+            issues_text = "; ".join(issues) if issues else "None"
+            f.write(
+                f"{filename}: score = {score:.2f} ({status}), length = {text_length} chars ({length_ratio:.2f}x avg), message: {msg_status}"
+            )
             if error:
                 f.write(f" - ERROR: {error}")
-            f.write("\n")
+            f.write(f"\n  Issues: {issues_text}\n")
+            if metrics:
+                # Keep metrics on one line to simplify manual scanning.
+                f.write("  Metrics: ")
+                f.write(
+                    f"vn_ratio={metrics.get('vn_char_ratio', 0):.2f}, alnum={metrics.get('alnum_ratio', 0):.2f}, "
+                    f"symbol={metrics.get('symbol_ratio', 0):.2f}, unique={metrics.get('unique_char_ratio', 0):.2f}, "
+                    f"repeat={metrics.get('repeat_char_ratio', 0):.2f}, empty_lines={metrics.get('line_empty_ratio', 0):.2f}, "
+                    f"likely_math={metrics.get('likely_math', False)}\n"
+                )
         if low_quality_files:
             f.write(f"\nLow quality files requiring attention (< {meaningfulness_threshold}):\n")
             f.write("-" * 80 + "\n")
@@ -2547,7 +2574,12 @@ def detect_meaningful_level_and_notify_students(
                 text_length = results.get(filename, {}).get("text_length", 0)
                 length_ratio = text_length / average_length if average_length > 0 else 0
                 msg_status = "SENT" if sent_status.get(filename, {}).get("message_sent") else "NOT_SENT"
-                f.write(f"{filename}: score = {score:.2f}, length = {text_length} chars ({length_ratio:.2f}x avg), message: {msg_status}\n")
+                issues = results.get(filename, {}).get("issues", [])
+                issues_text = "; ".join(issues) if issues else "None"
+                f.write(
+                    f"{filename}: score = {score:.2f}, length = {text_length} chars ({length_ratio:.2f}x avg), message: {msg_status}\n"
+                )
+                f.write(f"  Issues: {issues_text}\n")
     if verbose:
         print(f"[Meaningfulness] Analysis results saved to {result_path}")
     else:
