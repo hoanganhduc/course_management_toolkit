@@ -5,7 +5,10 @@
 import pandas as pd
 import os
 import pickle
-import readline
+try:
+    import readline
+except ImportError:  # Windows without pyreadline installed
+    readline = None
 import sys
 import argparse
 import re

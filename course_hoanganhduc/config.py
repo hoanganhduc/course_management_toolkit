@@ -127,6 +127,49 @@ def get_default_token_path(course_code=None, verbose=False):
     config_path = get_default_config_path(course_code=course_code, verbose=verbose)
     return os.path.join(os.path.dirname(config_path), "token.pickle")
 
+
+def _safe_remove(path, label=None, verbose=False):
+    if not path:
+        if verbose:
+            print(f"[Config] {label or 'path'} not set; nothing to remove.")
+        return False
+    if os.path.exists(path):
+        try:
+            os.remove(path)
+        except OSError as e:
+            print(f"[Config] Failed to remove {label or 'file'} at {path}: {e}")
+            return False
+        if verbose:
+            print(f"[Config] Removed {label or 'file'} at {path}")
+        return True
+    if verbose:
+        print(f"[Config] {label or 'file'} not found at {path}")
+    return False
+
+
+def clear_config(config_path=None, course_code=None, verbose=False):
+    """
+    Remove the stored config file.
+    """
+    if not config_path:
+        config_path = get_default_config_path(course_code=course_code, verbose=verbose)
+    return _safe_remove(config_path, label="config file", verbose=verbose)
+
+
+def clear_credentials(credentials_path=None, token_path=None, course_code=None, verbose=False):
+    """
+    Remove stored credentials and token files.
+    """
+    if not credentials_path:
+        credentials_path = get_default_credentials_path(course_code=course_code, verbose=verbose)
+    if not token_path:
+        token_path = get_default_token_path(course_code=course_code, verbose=verbose)
+    return {
+        "credentials": _safe_remove(credentials_path, label="credentials file", verbose=verbose),
+        "token": _safe_remove(token_path, label="token file", verbose=verbose),
+    }
+
+
 def load_config(config_path=None, verbose=False):
     """
     Load configuration from a JSON or base64-encoded JSON file at the default location and return config values as a dict.

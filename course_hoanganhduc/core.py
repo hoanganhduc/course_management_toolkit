@@ -5,6 +5,8 @@
 import argparse
 import json
 import os
+import sys
+import time
 
 from .version import __version__
 from .settings import *
@@ -14,6 +16,242 @@ from .utils import *
 from .data import *
 from .canvas import *
 from .google_classroom import *
+
+
+def _build_menu_sections():
+    return [
+        ("Student Database", [
+            ("Import students from Excel or CSV file", "1"),
+            ("Save current students to database", "2"),
+            ("Load students from database", "3"),
+            ("Search for students by keyword (name, student id, email, etc.)", "6"),
+            ("Show details of a student", "7"),
+            ("Show details of all students", "8"),
+            ("Interactively modify the student database", "14"),
+        ]),
+        ("Student Exports", [
+            ("Export student list to Excel file", "4"),
+            ("Export all student emails to TXT file", "5"),
+            ("Export all student details to TXT file", "9"),
+            ("Export student names and emails to TXT file", "46"),
+            ("Export student roster to CSV file", "48"),
+            ("Update MAT*.xlsx files with grades from database", "37"),
+            ("Export final grade distribution", "43"),
+        ]),
+        ("OCR and PDFs", [
+            ("Extract and add blackboard counts from PDF to database", "10"),
+            ("Extract handwriting text from PDF to TXT file", "11"),
+            ("Print blackboard counts by date for all students", "12"),
+            ("Export blackboard counts by date for all students to TXT/Markdown file", "13"),
+        ]),
+        ("Exams (Multichoice)", [
+            ("Extract multiple-choice exam solutions from PDF", "33"),
+            ("Extract student answers from scanned exam sheet PDF", "34"),
+            ("Evaluate student answers for multiple-choice exam", "35"),
+            ("Sync multichoice exam evaluations to Canvas assignment", "38"),
+        ]),
+        ("Canvas: People and Communication", [
+            ("List all assignments on Canvas LMS", "15"),
+            ("List all members of a Canvas course", "16"),
+            ("Search for a user in Canvas by name or email", "17"),
+            ("Download all submission files for a Canvas assignment", "18"),
+            ("Add a comment to a Canvas assignment submission", "19"),
+            ("Create a Canvas announcement", "20"),
+            ("Invite a single user to Canvas course by email", "21"),
+            ("Invite multiple users to Canvas course from a TXT file", "22"),
+            ("Find and notify students who have not completed required peer reviews", "23"),
+            ("Sync Canvas course members to local database", "24"),
+            ("Grade Canvas assignment submissions", "25"),
+            ("Fetch and reply to Canvas inbox messages", "26"),
+            ("List and edit Canvas course pages", "27"),
+            ("List students with multiple submissions and only the first submission on time", "28"),
+        ]),
+        ("Canvas: Rubrics and Grading", [
+            ("List all unique rubrics used in Canvas course", "29"),
+            ("Export Canvas rubrics to TXT/CSV file", "30"),
+            ("Import rubrics to Canvas course from TXT/CSV file", "31"),
+            ("Update rubrics for Canvas assignments", "32"),
+            ("Export Canvas grading scheme(s) to JSON", "39"),
+            ("Add grading scheme to Canvas course from JSON file", "40"),
+            ("Check similarities between submissions of the same student for different assignments", "41"),
+            ("Send final evaluations to students via Canvas", "42"),
+        ]),
+        ("Canvas: Admin Tools", [
+            ("Change Canvas assignment deadlines", "44"),
+            ("Change Canvas assignment lock dates", "47"),
+            ("Create Canvas groups of students", "45"),
+            ("Delete empty Canvas groups", "50"),
+        ]),
+        ("Configuration and Integrations", [
+            ("Load config from JSON file and save to default location", "36"),
+            ("Sync students with Google Classroom", "49"),
+        ]),
+    ]
+
+
+def _flatten_menu_sections(sections):
+    entries = []
+    item_indices = []
+    # Menu numbering is presentation-only; action codes map to legacy handlers below.
+    display_to_action = {}
+    code_to_index = {}
+    display = 1
+    for section_title, items in sections:
+        entries.append({"type": "section", "label": section_title})
+        for label, action in items:
+            display_code = str(display)
+            display += 1
+            entries.append({
+                "type": "item",
+                "label": label,
+                "code": display_code,
+                "action": action,
+            })
+            item_indices.append(len(entries) - 1)
+            display_to_action[display_code] = action
+            code_to_index[display_code] = len(entries) - 1
+    return entries, item_indices, display_to_action, code_to_index
+
+
+def _enable_ansi():
+    if os.name != "nt":
+        return True
+    try:
+        import ctypes
+
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.GetStdHandle(-11)
+        mode = ctypes.c_uint()
+        if kernel32.GetConsoleMode(handle, ctypes.byref(mode)) == 0:
+            return False
+        new_mode = mode.value | 0x0004
+        if kernel32.SetConsoleMode(handle, new_mode) == 0:
+            return False
+        return True
+    except Exception:
+        return False
+
+
+_ANSI_ENABLED = _enable_ansi()
+
+
+def _style(text, *codes):
+    if not _ANSI_ENABLED or not codes:
+        return text
+    return f"\x1b[{';'.join(codes)}m{text}\x1b[0m"
+
+
+def _render_menu(entries, selected_index):
+    os.system("cls" if os.name == "nt" else "clear")
+    spinner = ["-", "\\", "|", "/"]
+    indicator = spinner[int(time.time() * 4) % len(spinner)]
+    header = f"Menu {indicator} (use arrow keys, Enter to select, q to quit)"
+    if _ANSI_ENABLED:
+        header = _style(header, "1", "36")
+    print(f"{header}\n")
+    for idx, entry in enumerate(entries):
+        if entry["type"] == "section":
+            label = entry["label"]
+            if _ANSI_ENABLED:
+                label = _style(label, "1", "36")
+            print(label)
+            continue
+        prefix = ">" if idx == selected_index else " "
+        line = f"{prefix} {entry['code']}. {entry['label']}"
+        if idx == selected_index:
+            line = _style(line, "7")
+        print(line)
+    print()
+
+
+def _select_menu_option(sections):
+    entries, item_indices, _, code_to_index = _flatten_menu_sections(sections)
+    if not item_indices:
+        return None
+    selected_pos = 0
+    selected_index = item_indices[selected_pos]
+    # Track fast numeric entry (e.g., "10") to jump the selection.
+    digit_buffer = ""
+    last_digit_time = 0.0
+    try:
+        import msvcrt
+    except Exception:
+        return None
+
+    while True:
+        _render_menu(entries, selected_index)
+        key = msvcrt.getch()
+        now = time.time()
+        if key in (b"q", b"Q", b"\x1b"):
+            return None
+        if key in (b"\x00", b"\xe0"):
+            key = msvcrt.getch()
+            if key == b"H":  # Up
+                selected_pos = (selected_pos - 1) % len(item_indices)
+                selected_index = item_indices[selected_pos]
+            elif key == b"P":  # Down
+                selected_pos = (selected_pos + 1) % len(item_indices)
+                selected_index = item_indices[selected_pos]
+            elif key == b"G":  # Home
+                selected_pos = 0
+                selected_index = item_indices[selected_pos]
+            elif key == b"O":  # End
+                selected_pos = len(item_indices) - 1
+                selected_index = item_indices[selected_pos]
+            continue
+        if key in (b"w", b"W"):
+            selected_pos = (selected_pos - 1) % len(item_indices)
+            selected_index = item_indices[selected_pos]
+            continue
+        if key in (b"s", b"S"):
+            selected_pos = (selected_pos + 1) % len(item_indices)
+            selected_index = item_indices[selected_pos]
+            continue
+        if key in (b"\x08",):  # Backspace
+            digit_buffer = digit_buffer[:-1]
+            if digit_buffer in code_to_index:
+                selected_index = code_to_index[digit_buffer]
+                selected_pos = item_indices.index(selected_index)
+            continue
+        if b"0" <= key <= b"9":
+            if now - last_digit_time > 0.8:
+                digit_buffer = ""
+            digit_buffer += key.decode("ascii")
+            last_digit_time = now
+            if digit_buffer in code_to_index:
+                selected_index = code_to_index[digit_buffer]
+                selected_pos = item_indices.index(selected_index)
+            else:
+                matches = [code for code in code_to_index if code.startswith(digit_buffer)]
+                if not matches:
+                    digit_buffer = key.decode("ascii")
+                    if digit_buffer in code_to_index:
+                        selected_index = code_to_index[digit_buffer]
+                        selected_pos = item_indices.index(selected_index)
+            continue
+        if key in (b"\r", b"\n"):
+            return entries[selected_index]["action"]
+
+
+def _menu_choice_to_action(choice, sections):
+    entries, _, display_to_action, _ = _flatten_menu_sections(sections)
+    if choice in display_to_action:
+        return display_to_action[choice]
+    action_codes = {entry["action"] for entry in entries if entry["type"] == "item"}
+    if choice in action_codes:
+        return choice
+    return None
+
+
+def _print_menu_fallback(sections):
+    entries, _, _, _ = _flatten_menu_sections(sections)
+    print("\nMenu:")
+    for entry in entries:
+        if entry["type"] == "section":
+            print(f"\n{entry['label']}")
+            continue
+        print(f"{entry['code']}. {entry['label']}")
+    print("\n0. Exit\n")
 
 
 def main():
@@ -26,144 +264,218 @@ def main():
         action="version",
         version=f"course-hoanganhduc {__version__}",
         help="Show package name and version and exit.")
-    parser.add_argument('--db', '-db', '-D', type=str, help="Database file name (default: students.db, saved in script folder)", dest="db", metavar="DB")
-    parser.add_argument('--config', '-cfg', '-c', type=str, help="Load config from JSON file and save to default location", dest="config", metavar="CONFIG")
-    parser.add_argument('--course-code', '-ccode', type=str, help="Course code for config folder (e.g., MAT3500)", dest="course_code", metavar="COURSE_CODE")
-    parser.add_argument('--add-file', '-a', type=str, help="Import students from Excel or CSV file into the database", dest="add_file", metavar="FILE")
-    parser.add_argument('--export-excel', '-x', type=str, help="Export student list to Excel file", dest="export_excel", metavar="EXCEL")
-    parser.add_argument('--export-emails', '-e', type=str, help="Export all student emails to TXT file (avoids duplicates)", dest="export_emails", metavar="EMAILS")
-    parser.add_argument('--export-all-details', '-E', type=str, help="Export all student details to TXT file", dest="export_all_details", metavar="DETAILS")
-    parser.add_argument('--save', '-s', action='store_true', help="Save current students to database file", dest="save")
-    parser.add_argument('--load', '-l', action='store_true', help="Load students from database file", dest="load")
-    parser.add_argument('--search', '-S', type=str, help="Search for students by keyword (name, student id, email, etc.)", dest="search", metavar="QUERY")
-    parser.add_argument('--details', '-d', type=str, help="Show details of a student by name, student id, or email", dest="details", metavar="IDENTIFIER")
-    parser.add_argument('--all-details', '-A', action='store_true', help="Show details of all students", dest="all_details")
-    parser.add_argument('--add-blackboard-counts', '-b', type=str, help="Extract and add blackboard counts from PDF to database", dest="add_blackboard_counts", metavar="PDF")
-    parser.add_argument('--extract-text', '-t', type=str, help="Extract handwriting text from PDF and save to TXT file", dest="extract_text", metavar="PDF")
-    parser.add_argument('--print-blackboard-counts', '-p', action='store_true', help="Print blackboard counts by date for all students", dest="print_blackboard_counts")
-    parser.add_argument('--export-blackboard-counts', '-B', type=str, nargs='?', const=True, help="Export blackboard counts by date for all students to TXT/Markdown file (use .txt or .md extension, default: TXT)", dest="export_blackboard_counts", metavar="TXT_OR_MD")
-    parser.add_argument('--modify', '-m', action='store_true', help="Interactively modify the student database", dest="modify")
-    parser.add_argument('--ocr-service', '-O', type=str, choices=['ocrspace', 'tesseract', 'paddleocr'], default='ocrspace',
-                        help="OCR service to use for PDF extraction (default: 'ocrspace'). The 'ocrspace' service uses the OCR.space API and works better for handwriting text. The other two services work better for printed text and require additional local installation.", dest="ocr_service")
-    parser.add_argument('--ocr-lang', '-L', type=str, default='auto', help="OCR language for PDF extraction (default: auto)", dest="ocr_lang")
-    parser.add_argument('--simple-text', '-T', action='store_true', help="Extract simple text (no layout) from PDF OCR", dest="simple_text")
-    parser.add_argument('--refine', '-R', type=str, choices=['gemini', 'huggingface'], default=None,
-                        help="Refine extracted text using AI ('gemini' or 'huggingface')", dest="refine")
-    parser.add_argument('--list-canvas-assignments', action='store_true', help="List all assignments on Canvas LMS", dest="list_canvas_assignments")
-    parser.add_argument('--canvas-assignment-category', '-cac', type=str, help="Assignment category (group) to filter when listing Canvas assignments", dest="canvas_assignment_category")
-    parser.add_argument('--list-canvas-members', '-cm', action='store_true', help="List all members (teachers, TAs, students) of a Canvas course", dest="list_canvas_members")
-    parser.add_argument('--canvas-course-id', '-cc', type=str, help="Canvas course ID (overrides default)", dest="canvas_course_id")
-    parser.add_argument('--search-canvas-user', '-cu', type=str, help="Search for a user in Canvas by name or email", dest="search_canvas_user")
-    parser.add_argument('--download-canvas-assignment', '-da', nargs='?', const=True, default=None, help="Download all submission files for a Canvas assignment (optionally provide assignment ID)", dest="download_canvas_assignment", metavar="ASSIGNMENT_ID")
-    parser.add_argument('--download-dest-dir', '-dd', type=str, help="Destination directory for downloaded Canvas assignment files", dest="download_dest_dir", metavar="DIR")
-    parser.add_argument('--comment-canvas-submission', '-cs', action='store_true', help="Add a comment to a Canvas assignment submission", dest="comment_canvas_submission")
-    parser.add_argument('--add-canvas-announcement', '-aa', action='store_true', help="Create a new announcement in Canvas course", dest="add_canvas_announcement")
-    # Single user invite
-    parser.add_argument('--invite-canvas-email', '-ie', type=str, help="Invite a single user to Canvas course by email", dest="invite_canvas_email")
-    parser.add_argument('--invite-canvas-name', type=str, help="Name for Canvas invite (for single user)", dest="invite_canvas_name")
-    parser.add_argument('--invite-canvas-role', '-ir', type=str, default="student", help="Role for Canvas invite (student/teacher/ta, default: student)", dest="invite_canvas_role")
-    # Multiple users invite via file
-    parser.add_argument('--invite-canvas-file', '-if', type=str, help="Invite multiple users to Canvas course from a TXT file or string of pairs/emails", dest="invite_canvas_file")
-    parser.add_argument('--export-emails-and-names', '-en', nargs='?', const="emails_and_names.txt", help="Export all student emails and names to TXT file (default: emails_and_names.txt)", dest="export_emails_and_names", metavar="EMAILS_NAMES")
-    # New option: find and notify students who have not completed reviews
-    parser.add_argument('--notify-incomplete-reviews', '-nr', action='store_true', help="Find and notify students who have not completed required peer reviews for a Canvas assignment", dest="notify_incomplete_reviews")
-    parser.add_argument('--review-assignment-id', '-rai', type=str, help="Canvas assignment ID for peer review notification", dest="review_assignment_id")
-    # New option: sync Canvas students to local database
-    parser.add_argument('--sync-canvas', '-sc', action='store_true', help="Sync Canvas course members to local database", dest="sync_canvas")
-    # New option: grade Canvas assignment submissions
-    parser.add_argument('--grade-canvas-assignment', '-ga', action='store_true', help="Grade Canvas assignment submissions interactively", dest="grade_canvas_assignment")
-    # New option: fetch and reply to Canvas messages
-    parser.add_argument('--fetch-canvas-messages', '-fm', action='store_true', help="Fetch and reply to Canvas inbox messages", dest="fetch_canvas_messages")
-    # New option: edit Canvas pages
-    parser.add_argument('--edit-canvas-pages', '-ep', action='store_true', help="List and edit Canvas course pages", dest="edit_canvas_pages")
-    parser.add_argument('--list-multiple-submissions-on-time', '-lm', nargs='?', const=None, type=str, help="List students who submitted twice or more to an assignment and the first submission is on time (optionally provide assignment ID)", dest="list_multiple_submissions_on_time", metavar="ASSIGNMENT_ID")
-    # Add --verbose option
-    parser.add_argument('--verbose', '-v', action='store_true', help="Enable verbose output", dest="verbose")
-    # New options for rubrics
-    parser.add_argument('--list-canvas-rubrics', '-lr', action='store_true', help="List all unique rubrics used in Canvas course", dest="list_canvas_rubrics")
-    parser.add_argument('--export-canvas-rubrics', '-er', type=str, help="Export Canvas rubrics to TXT/CSV file", dest="export_canvas_rubrics", metavar="RUBRICS_FILE")
-    parser.add_argument('--rubric-assignment-id', '-rid', type=str, help="Assignment ID to filter rubrics", dest="rubric_assignment_id")
-    # New option: import rubrics to Canvas course
-    parser.add_argument('--import-canvas-rubrics', '-imr', type=str, help="Import rubrics from TXT/CSV file to Canvas course", dest="import_canvas_rubrics", metavar="RUBRIC_FILE")
-    parser.add_argument('--update-canvas-rubrics', '-ur', type=str, nargs='*', help="Update rubric for one or more Canvas assignments (provide assignment IDs, or leave blank to select interactively)", dest="update_canvas_rubrics", metavar="ASSIGNMENT_IDS")
-    parser.add_argument('--update-canvas-rubric-id', '-uri', type=str, help="Rubric ID to associate with assignments (leave blank to select interactively)", dest="update_canvas_rubric_id", metavar="RUBRIC_ID")
-    parser.add_argument('--extract-multichoice-solutions', '-ems', type=str, help="Extract multiple-choice exam solutions from PDF (each page is one sheet code)", dest="extract_multichoice_solutions", metavar="PDF")
-    parser.add_argument('--extract-multichoice-answers', '-ema', type=str, help="Extract student answers from scanned multi-choice exam sheet PDF", dest="extract_multichoice_answers", metavar="PDF")
-    parser.add_argument('--evaluate-multichoice-answers', type=str, nargs='?', const=EXAM_TYPE, help="Evaluate student answers for multiple-choice exam (provide exam type: midterm/final, default: global EXAM_TYPE)", dest="evaluate_multichoice_answers", metavar="EXAM_TYPE")
-    # New option: sync multichoice evaluations to Canvas
-    parser.add_argument('--sync-multichoice-evaluations', '-sme', type=str, nargs='?', const=EXAM_TYPE, help="Sync multichoice exam evaluations to Canvas assignment (provide exam type: midterm/final, default: global EXAM_TYPE)", dest="sync_multichoice_evaluations", metavar="EXAM_TYPE")
-    # New option: update MAT*.xlsx grades
-    parser.add_argument('--update-mat-excel', '-ume', type=str, nargs='+', help="Update MAT*.xlsx file(s) with grades from database (provide one or more file paths)", dest="update_mat_excel", metavar="MAT_XLSX")
-    parser.add_argument('--export-canvas-grading-scheme', '-egs', action='store_true', help="List and export Canvas grading schemes (grading standards) to JSON", dest="export_canvas_grading_scheme")
-    parser.add_argument('--add-canvas-grading-scheme', '-ags', type=str, help="Add a grading scheme to Canvas course from JSON file", dest="add_canvas_grading_scheme", metavar="GRADING_SCHEME_FILE")
-    parser.add_argument('--no-restricted', '-nres', action='store_true', help="Disable restricted mode for grading Canvas assignments (list all assignments with submissions and all students who submitted)", dest="no_restricted")
-    parser.add_argument('--check-student-submission-similarity', '-css',
-                        nargs='?',
-                        help="Check similarities between submissions of the same student for different assignments. "
-                             "Optionally provide a Canvas student ID or a comma-separated list of IDs. "
-                             "If not provided, will prompt for selection interactively.",
-                        dest="check_student_submission_similarity")
-    parser.add_argument('--change-canvas-deadlines', '-ccd', nargs='*', help="Change deadlines for one or more Canvas assignments (provide assignment IDs, or leave blank to select interactively)", dest="change_canvas_deadlines", metavar="ASSIGNMENT_IDS")
-    parser.add_argument('--change-canvas-lock-dates', '-ccl', nargs='*', help="Change lock dates (lock_at) for one or more Canvas assignments (provide assignment IDs, or leave blank to select interactively)", dest="change_canvas_lock_dates", metavar="ASSIGNMENT_IDS")
-    parser.add_argument('--new-canvas-lock-date', '-ncl', type=str, help="New lock date for Canvas assignments (format: YYYY-MM-DD HH:MM)", dest="new_canvas_lock_date", metavar="NEW_LOCK_DATE")
-    parser.add_argument('--canvas-lock-category', '-clc', type=str, help="Assignment category (group) to filter when changing lock dates", dest="canvas_lock_category")
-    parser.add_argument('--new-canvas-due-date', '-ncd', type=str, help="New due date for Canvas assignments (format: YYYY-MM-DD HH:MM)", dest="new_canvas_due_date", metavar="NEW_DUE_DATE")
-    parser.add_argument('--canvas-deadline-category', '-cdc', type=str, help="Assignment category (group) to filter when changing deadlines", dest="canvas_deadline_category")
-    parser.add_argument('--send-final-evaluations', '-sfe', nargs='?', const=True,
-                        help="Send final evaluation results to students via Canvas. Optionally provide directory with evaluation files (default: final_evaluations).",
-                        dest="send_final_evaluations", metavar="DIR")
-    parser.add_argument('--final-evals-course-id', '-fec', type=str,
-                        help="Canvas course ID to use when sending final evaluations (overrides default CANVAS_LMS_COURSE_ID).",
-                        dest="final_evals_course_id")
-    parser.add_argument('--final-evals-announce', '-fea', action='store_true',
-                        help="Also create a course announcement after sending final evaluations.",
-                        dest="final_evals_announce")
-    parser.add_argument(
-        '--export-final-grade-distribution',
-        nargs='?', const=True,
-        help="Export final grade distribution to a TXT file. Optionally provide output path (default: ./final_grade_distribution.txt).",
-        dest='export_final_grade_distribution'
-    )
-    parser.add_argument(
-        '--create-canvas-groups',
-        action='store_true',
-        help="Create groups in a Canvas course group set",
-        dest="create_canvas_groups"
-    )
-    parser.add_argument(
-        '--group-set-id',
-        type=str,
-        help="Canvas group set ID to create groups in (leave blank to select interactively)",
-        dest="group_set_id"
-    )
-    parser.add_argument(
-        '--num-groups',
-        type=int,
-        default=5,
-        help="Number of groups to create (default: 5)",
-        dest="num_groups"
-    )
-    parser.add_argument(
-        '--group-name-pattern',
-        type=str,
-        default="Group {i}",
-        help="Pattern for group names, e.g., 'Group {i}' (default: 'Group {i}')",
-        dest="group_name_pattern"
-    )
-    parser.add_argument('--export-roster', '-ero', nargs='?', const='classroom_roster.csv', help="Export classroom roster to CSV file (default: classroom_roster.csv)", dest="export_roster", metavar="CSV_FILE")
-    parser.add_argument('--sync-google-classroom', '-sgc', action='store_true', help="Sync students in the local database with active students from Google Classroom course", dest="sync_google_classroom")
-    parser.add_argument('--google-course-id', '-gci', type=str, help="Google Classroom course ID (prompts if None)", dest="google_course_id")
-    parser.add_argument('--google-credentials-path', '-gcp', type=str, default=None, help="Path to Google Classroom credentials JSON file", dest="google_credentials_path")
-    parser.add_argument('--google-token-path', '-gtp', type=str, default=None, help="Path to Google Classroom token pickle file", dest="google_token_path")
-    parser.add_argument('--delete-empty-canvas-groups', '-deg', action='store_true',
-                        help="Delete all empty groups (groups with no members) from a Canvas course group set",
-                        dest="delete_empty_canvas_groups")
-    
+
+    general_group = parser.add_argument_group("General")
+    general_group.add_argument('--verbose', '-v', action='store_true', help="Enable verbose output", dest="verbose")
+
+    config_group = parser.add_argument_group("Configuration")
+    config_group.add_argument('--config', '-cfg', '-c', type=str, help="Load config from JSON file and save to default location", dest="config", metavar="CONFIG")
+    config_group.add_argument('--course-code', '-ccode', type=str, help="Course code for config folder (e.g., MAT3500)", dest="course_code", metavar="COURSE_CODE")
+    config_group.add_argument('--clear-config', '-ccfg', action='store_true',
+                              help="Delete stored config.json from the default location",
+                              dest="clear_config")
+    config_group.add_argument('--clear-credentials', '-ccred', action='store_true',
+                              help="Delete stored credentials.json and token.pickle from the default location",
+                              dest="clear_credentials")
+
+    db_group = parser.add_argument_group("Student Database")
+    db_group.add_argument('--db', '-db', '-D', type=str, help="Database file name (default: students.db, saved in script folder)", dest="db", metavar="DB")
+    db_group.add_argument('--add-file', '-a', type=str, help="Import students from Excel or CSV file into the database", dest="add_file", metavar="FILE")
+    db_group.add_argument('--save', '-s', action='store_true', help="Save current students to database file", dest="save")
+    db_group.add_argument('--load', '-l', action='store_true', help="Load students from database file", dest="load")
+    db_group.add_argument('--search', '-S', type=str, help="Search for students by keyword (name, student id, email, etc.)", dest="search", metavar="QUERY")
+    db_group.add_argument('--details', '-d', type=str, help="Show details of a student by name, student id, or email", dest="details", metavar="IDENTIFIER")
+    db_group.add_argument('--all-details', '-A', action='store_true', help="Show details of all students", dest="all_details")
+    db_group.add_argument('--modify', '-m', action='store_true', help="Interactively modify the student database", dest="modify")
+    db_group.add_argument('--export-excel', '-x', type=str, help="Export student list to Excel file", dest="export_excel", metavar="EXCEL")
+    db_group.add_argument('--export-emails', '-e', type=str, help="Export all student emails to TXT file (avoids duplicates)", dest="export_emails", metavar="EMAILS")
+    db_group.add_argument('--export-all-details', '-E', type=str, help="Export all student details to TXT file", dest="export_all_details", metavar="DETAILS")
+    db_group.add_argument('--export-emails-and-names', '-en', nargs='?', const="emails_and_names.txt",
+                          help="Export all student emails and names to TXT file (default: emails_and_names.txt)",
+                          dest="export_emails_and_names", metavar="EMAILS_NAMES")
+    db_group.add_argument('--export-final-grade-distribution', nargs='?', const=True,
+                          help="Export final grade distribution to a TXT file. Optionally provide output path (default: ./final_grade_distribution.txt).",
+                          dest='export_final_grade_distribution')
+    db_group.add_argument('--update-mat-excel', '-ume', type=str, nargs='+',
+                          help="Update MAT*.xlsx file(s) with grades from database (provide one or more file paths)",
+                          dest="update_mat_excel", metavar="MAT_XLSX")
+    db_group.add_argument('--export-roster', '-ero', nargs='?', const='classroom_roster.csv',
+                          help="Export classroom roster to CSV file (default: classroom_roster.csv)",
+                          dest="export_roster", metavar="CSV_FILE")
+
+    ocr_group = parser.add_argument_group("OCR and PDFs")
+    ocr_group.add_argument('--add-blackboard-counts', '-b', type=str,
+                           help="Extract and add blackboard counts from PDF to database",
+                           dest="add_blackboard_counts", metavar="PDF")
+    ocr_group.add_argument('--extract-text', '-t', type=str,
+                           help="Extract handwriting text from PDF and save to TXT file",
+                           dest="extract_text", metavar="PDF")
+    ocr_group.add_argument('--print-blackboard-counts', '-p', action='store_true',
+                           help="Print blackboard counts by date for all students",
+                           dest="print_blackboard_counts")
+    ocr_group.add_argument('--export-blackboard-counts', '-B', type=str, nargs='?', const=True,
+                           help="Export blackboard counts by date for all students to TXT/Markdown file (use .txt or .md extension, default: TXT)",
+                           dest="export_blackboard_counts", metavar="TXT_OR_MD")
+    ocr_group.add_argument('--ocr-service', '-O', type=str, choices=['ocrspace', 'tesseract', 'paddleocr'], default='ocrspace',
+                           help="OCR service to use for PDF extraction (default: 'ocrspace'). The 'ocrspace' service uses the OCR.space API and works better for handwriting text. The other two services work better for printed text and require additional local installation.",
+                           dest="ocr_service")
+    ocr_group.add_argument('--ocr-lang', '-L', type=str, default='auto',
+                           help="OCR language for PDF extraction (default: auto)",
+                           dest="ocr_lang")
+    ocr_group.add_argument('--simple-text', '-T', action='store_true',
+                           help="Extract simple text (no layout) from PDF OCR",
+                           dest="simple_text")
+    ocr_group.add_argument('--refine', '-R', type=str, choices=['gemini', 'huggingface'], default=None,
+                           help="Refine extracted text using AI ('gemini' or 'huggingface')",
+                           dest="refine")
+
+    exam_group = parser.add_argument_group("Exams (Multichoice)")
+    exam_group.add_argument('--extract-multichoice-solutions', '-ems', type=str,
+                            help="Extract multiple-choice exam solutions from PDF (each page is one sheet code)",
+                            dest="extract_multichoice_solutions", metavar="PDF")
+    exam_group.add_argument('--extract-multichoice-answers', '-ema', type=str,
+                            help="Extract student answers from scanned multi-choice exam sheet PDF",
+                            dest="extract_multichoice_answers", metavar="PDF")
+    exam_group.add_argument('--evaluate-multichoice-answers', type=str, nargs='?', const=EXAM_TYPE,
+                            help="Evaluate student answers for multiple-choice exam (provide exam type: midterm/final, default: global EXAM_TYPE)",
+                            dest="evaluate_multichoice_answers", metavar="EXAM_TYPE")
+    exam_group.add_argument('--sync-multichoice-evaluations', '-sme', type=str, nargs='?', const=EXAM_TYPE,
+                            help="Sync multichoice exam evaluations to Canvas assignment (provide exam type: midterm/final, default: global EXAM_TYPE)",
+                            dest="sync_multichoice_evaluations", metavar="EXAM_TYPE")
+
+    canvas_group = parser.add_argument_group("Canvas: People and Communication")
+    canvas_group.add_argument('--list-canvas-assignments', action='store_true', help="List all assignments on Canvas LMS", dest="list_canvas_assignments")
+    canvas_group.add_argument('--canvas-assignment-category', '-cac', type=str, help="Assignment category (group) to filter when listing Canvas assignments", dest="canvas_assignment_category")
+    canvas_group.add_argument('--list-canvas-members', '-cm', action='store_true', help="List all members (teachers, TAs, students) of a Canvas course", dest="list_canvas_members")
+    canvas_group.add_argument('--canvas-course-id', '-cc', type=str, help="Canvas course ID (overrides default)", dest="canvas_course_id")
+    canvas_group.add_argument('--search-canvas-user', '-cu', type=str, help="Search for a user in Canvas by name or email", dest="search_canvas_user")
+    canvas_group.add_argument('--download-canvas-assignment', '-da', nargs='?', const=True, default=None,
+                              help="Download all submission files for a Canvas assignment (optionally provide assignment ID)",
+                              dest="download_canvas_assignment", metavar="ASSIGNMENT_ID")
+    canvas_group.add_argument('--download-dest-dir', '-dd', type=str, help="Destination directory for downloaded Canvas assignment files", dest="download_dest_dir", metavar="DIR")
+    canvas_group.add_argument('--comment-canvas-submission', '-cs', action='store_true', help="Add a comment to a Canvas assignment submission", dest="comment_canvas_submission")
+    canvas_group.add_argument('--add-canvas-announcement', '-aa', action='store_true', help="Create a new announcement in Canvas course", dest="add_canvas_announcement")
+    canvas_group.add_argument('--invite-canvas-email', '-ie', type=str, help="Invite a single user to Canvas course by email", dest="invite_canvas_email")
+    canvas_group.add_argument('--invite-canvas-name', type=str, help="Name for Canvas invite (for single user)", dest="invite_canvas_name")
+    canvas_group.add_argument('--invite-canvas-role', '-ir', type=str, default="student",
+                              help="Role for Canvas invite (student/teacher/ta, default: student)",
+                              dest="invite_canvas_role")
+    canvas_group.add_argument('--invite-canvas-file', '-if', type=str, help="Invite multiple users to Canvas course from a TXT file or string of pairs/emails", dest="invite_canvas_file")
+    canvas_group.add_argument('--notify-incomplete-reviews', '-nr', action='store_true',
+                              help="Find and notify students who have not completed required peer reviews for a Canvas assignment",
+                              dest="notify_incomplete_reviews")
+    canvas_group.add_argument('--review-assignment-id', '-rai', type=str, help="Canvas assignment ID for peer review notification", dest="review_assignment_id")
+    canvas_group.add_argument('--sync-canvas', '-sc', action='store_true', help="Sync Canvas course members to local database", dest="sync_canvas")
+    canvas_group.add_argument('--grade-canvas-assignment', '-ga', action='store_true', help="Grade Canvas assignment submissions interactively", dest="grade_canvas_assignment")
+    canvas_group.add_argument('--fetch-canvas-messages', '-fm', action='store_true', help="Fetch and reply to Canvas inbox messages", dest="fetch_canvas_messages")
+    canvas_group.add_argument('--edit-canvas-pages', '-ep', action='store_true', help="List and edit Canvas course pages", dest="edit_canvas_pages")
+    canvas_group.add_argument('--list-multiple-submissions-on-time', '-lm', nargs='?', const=None, type=str,
+                              help="List students who submitted twice or more to an assignment and the first submission is on time (optionally provide assignment ID)",
+                              dest="list_multiple_submissions_on_time", metavar="ASSIGNMENT_ID")
+
+    canvas_rubric_group = parser.add_argument_group("Canvas: Rubrics and Grading")
+    canvas_rubric_group.add_argument('--list-canvas-rubrics', '-lr', action='store_true', help="List all unique rubrics used in Canvas course", dest="list_canvas_rubrics")
+    canvas_rubric_group.add_argument('--export-canvas-rubrics', '-er', type=str, help="Export Canvas rubrics to TXT/CSV file", dest="export_canvas_rubrics", metavar="RUBRICS_FILE")
+    canvas_rubric_group.add_argument('--rubric-assignment-id', '-rid', type=str, help="Assignment ID to filter rubrics", dest="rubric_assignment_id")
+    canvas_rubric_group.add_argument('--import-canvas-rubrics', '-imr', type=str, help="Import rubrics from TXT/CSV file to Canvas course", dest="import_canvas_rubrics", metavar="RUBRIC_FILE")
+    canvas_rubric_group.add_argument('--update-canvas-rubrics', '-ur', type=str, nargs='*',
+                                     help="Update rubric for one or more Canvas assignments (provide assignment IDs, or leave blank to select interactively)",
+                                     dest="update_canvas_rubrics", metavar="ASSIGNMENT_IDS")
+    canvas_rubric_group.add_argument('--update-canvas-rubric-id', '-uri', type=str,
+                                     help="Rubric ID to associate with assignments (leave blank to select interactively)",
+                                     dest="update_canvas_rubric_id", metavar="RUBRIC_ID")
+    canvas_rubric_group.add_argument('--export-canvas-grading-scheme', '-egs', action='store_true',
+                                     help="List and export Canvas grading schemes (grading standards) to JSON",
+                                     dest="export_canvas_grading_scheme")
+    canvas_rubric_group.add_argument('--add-canvas-grading-scheme', '-ags', type=str,
+                                     help="Add a grading scheme to Canvas course from JSON file",
+                                     dest="add_canvas_grading_scheme", metavar="GRADING_SCHEME_FILE")
+    canvas_rubric_group.add_argument('--check-student-submission-similarity', '-css', nargs='?',
+                                     help="Check similarities between submissions of the same student for different assignments. "
+                                          "Optionally provide a Canvas student ID or a comma-separated list of IDs. "
+                                          "If not provided, will prompt for selection interactively.",
+                                     dest="check_student_submission_similarity")
+    canvas_rubric_group.add_argument('--send-final-evaluations', '-sfe', nargs='?', const=True,
+                                     help="Send final evaluation results to students via Canvas. Optionally provide directory with evaluation files (default: final_evaluations).",
+                                     dest="send_final_evaluations", metavar="DIR")
+    canvas_rubric_group.add_argument('--final-evals-course-id', '-fec', type=str,
+                                     help="Canvas course ID to use when sending final evaluations (overrides default CANVAS_LMS_COURSE_ID).",
+                                     dest="final_evals_course_id")
+    canvas_rubric_group.add_argument('--final-evals-announce', '-fea', action='store_true',
+                                     help="Also create a course announcement after sending final evaluations.",
+                                     dest="final_evals_announce")
+
+    canvas_admin_group = parser.add_argument_group("Canvas: Admin Tools")
+    canvas_admin_group.add_argument('--no-restricted', '-nres', action='store_true',
+                                    help="Disable restricted mode for grading Canvas assignments (list all assignments with submissions and all students who submitted)",
+                                    dest="no_restricted")
+    canvas_admin_group.add_argument('--change-canvas-deadlines', '-ccd', nargs='*',
+                                    help="Change deadlines for one or more Canvas assignments (provide assignment IDs, or leave blank to select interactively)",
+                                    dest="change_canvas_deadlines", metavar="ASSIGNMENT_IDS")
+    canvas_admin_group.add_argument('--change-canvas-lock-dates', '-ccl', nargs='*',
+                                    help="Change lock dates (lock_at) for one or more Canvas assignments (provide assignment IDs, or leave blank to select interactively)",
+                                    dest="change_canvas_lock_dates", metavar="ASSIGNMENT_IDS")
+    canvas_admin_group.add_argument('--new-canvas-lock-date', '-ncl', type=str,
+                                    help="New lock date for Canvas assignments (format: YYYY-MM-DD HH:MM)",
+                                    dest="new_canvas_lock_date", metavar="NEW_LOCK_DATE")
+    canvas_admin_group.add_argument('--canvas-lock-category', '-clc', type=str,
+                                    help="Assignment category (group) to filter when changing lock dates",
+                                    dest="canvas_lock_category")
+    canvas_admin_group.add_argument('--new-canvas-due-date', '-ncd', type=str,
+                                    help="New due date for Canvas assignments (format: YYYY-MM-DD HH:MM)",
+                                    dest="new_canvas_due_date", metavar="NEW_DUE_DATE")
+    canvas_admin_group.add_argument('--canvas-deadline-category', '-cdc', type=str,
+                                    help="Assignment category (group) to filter when changing deadlines",
+                                    dest="canvas_deadline_category")
+    canvas_admin_group.add_argument('--create-canvas-groups', action='store_true',
+                                    help="Create groups in a Canvas course group set",
+                                    dest="create_canvas_groups")
+    canvas_admin_group.add_argument('--group-set-id', type=str,
+                                    help="Canvas group set ID to create groups in (leave blank to select interactively)",
+                                    dest="group_set_id")
+    canvas_admin_group.add_argument('--num-groups', type=int, default=5,
+                                    help="Number of groups to create (default: 5)",
+                                    dest="num_groups")
+    canvas_admin_group.add_argument('--group-name-pattern', type=str, default="Group {i}",
+                                    help="Pattern for group names, e.g., 'Group {i}' (default: 'Group {i}')",
+                                    dest="group_name_pattern")
+    canvas_admin_group.add_argument('--delete-empty-canvas-groups', '-deg', action='store_true',
+                                    help="Delete all empty groups (groups with no members) from a Canvas course group set",
+                                    dest="delete_empty_canvas_groups")
+
+    gclass_group = parser.add_argument_group("Google Classroom")
+    gclass_group.add_argument('--sync-google-classroom', '-sgc', action='store_true',
+                              help="Sync students in the local database with active students from Google Classroom course",
+                              dest="sync_google_classroom")
+    gclass_group.add_argument('--google-course-id', '-gci', type=str,
+                              help="Google Classroom course ID (prompts if None)",
+                              dest="google_course_id")
+    gclass_group.add_argument('--google-credentials-path', '-gcp', type=str, default=None,
+                              help="Path to Google Classroom credentials JSON file",
+                              dest="google_credentials_path")
+    gclass_group.add_argument('--google-token-path', '-gtp', type=str, default=None,
+                              help="Path to Google Classroom token pickle file",
+                              dest="google_token_path")
+
     args = parser.parse_args()
 
     # Persist course code early so config resolution is consistent for this run.
     if args.course_code:
         cache_course_code(args.course_code)
+
+    if args.clear_config or args.clear_credentials:
+        if args.clear_config:
+            cleared = clear_config(course_code=args.course_code, verbose=args.verbose)
+            if not args.verbose:
+                msg = "Config file removed." if cleared else "Config file not found or could not be removed."
+                print(msg)
+        if args.clear_credentials:
+            results = clear_credentials(course_code=args.course_code, verbose=args.verbose)
+            if not args.verbose:
+                any_removed = results.get("credentials") or results.get("token")
+                msg = "Credentials cleared." if any_removed else "Credentials not found or could not be removed."
+                print(msg)
+        raise SystemExit(0)
 
     # Load config and set global variables for downstream modules.
     if args.config:
@@ -949,65 +1261,28 @@ def main():
             students = load_database(db_path, verbose=args.verbose)
         else:
             students = []
+        menu_sections = _build_menu_sections()
+        use_arrow_menu = True
+        try:
+            import msvcrt  # noqa: F401
+        except Exception:
+            use_arrow_menu = False
+
         while True:
-            print("\nMenu:")
-            print("1. Import students from Excel or CSV file")
-            print("2. Save current students to database")
-            print("3. Load students from database")
-            print("4. Export student list to Excel file")
-            print("5. Export all student emails to TXT file")
-            print("6. Search for students by keyword (name, student id, email, etc.)")
-            print("7. Show details of a student")
-            print("8. Show details of all students")
-            print("9. Export all student details to TXT file")
-            print("10. Extract and add blackboard counts from PDF to database")
-            print("11. Extract handwriting text from PDF to TXT file")
-            print("12. Print blackboard counts by date for all students")
-            print("13. Export blackboard counts by date for all students to TXT/Markdown file")
-            print("14. Interactively modify the student database")
-            print("15. List all assignments on Canvas LMS")
-            print("16. List all members of a Canvas course")
-            print("17. Search for a user in Canvas by name or email")
-            print("18. Download all submission files for a Canvas assignment")
-            print("19. Add a comment to a Canvas assignment submission")
-            print("20. Create a Canvas announcement")
-            print("21. Invite a single user to Canvas course by email")
-            print("22. Invite multiple users to Canvas course from a TXT file")
-            print("23. Find and notify students who have not completed required peer reviews")
-            print("24. Sync Canvas course members to local database") # New option
-            print("25. Grade Canvas assignment submissions") # New option
-            print("26. Fetch and reply to Canvas inbox messages") # New option
-            print("27. List and edit Canvas course pages") # New option
-            print("28. List students with multiple submissions and only the first submission on time") # New option
-            print("29. List all unique rubrics used in Canvas course") # New option
-            print("30. Export Canvas rubrics to TXT/CSV file") # New option
-            print("31. Import rubrics to Canvas course from TXT/CSV file") # New option
-            print("32. Update rubrics for Canvas assignments") # Added option
-            print("33. Extract multiple-choice exam solutions from PDF") # Added option
-            print("34. Extract student answers from scanned exam sheet PDF") # Added option
-            print("35. Evaluate student answers for multiple-choice exam") # Added option
-            print("36. Load config from JSON file and save to default location") # Added option
-            print("37. Update MAT*.xlsx files with grades from database") # Added option
-            print("38. Sync multichoice exam evaluations to Canvas assignment") # Added option
-            print("39. Export Canvas grading scheme(s) to JSON") # Added option
-            print("40. Add grading scheme to Canvas course from JSON file") # Added option
-            print("41. Check similarities between submissions of the same student for different assignments") # Added option
-            print("42. Send final evaluations to students via Canvas")
-            print("43. Export final grade distribution")
-            print("44. Change Canvas assignment deadlines")  # New menu entry for changing deadlines
-            print("45. Create Canvas groups of students")
-            print("46. Export student names and emails to TXT file")
-            print("47. Change Canvas assignment lock dates")
-            print("48. Export student roster to CSV file")
-            print("49. Sync students with Google Classroom")
-            print("50. Delete empty Canvas groups")
-            print("0. Exit")
-
-            print()
-
-            choice = input("Choose an option (or 'q' to quit): ").strip()
-            if choice.lower() in ('q', 'quit', '0'):
-                break
+            if use_arrow_menu:
+                choice = _select_menu_option(menu_sections)
+                if choice is None:
+                    break
+            else:
+                _print_menu_fallback(menu_sections)
+                choice = input("Choose an option (or 'q' to quit): ").strip()
+                if choice.lower() in ('q', 'quit', '0'):
+                    break
+                mapped_choice = _menu_choice_to_action(choice, menu_sections)
+                if not mapped_choice:
+                    print("Invalid option.")
+                    continue
+                choice = mapped_choice
 
             if choice == '1':
                 file_path = input_with_completion("Enter Excel/CSV file path (or 'q' to quit): ").strip()

@@ -7,7 +7,10 @@
 import pandas as pd
 import os
 import pickle
-import readline
+try:
+    import readline
+except ImportError:  # Windows without pyreadline installed
+    readline = None
 import sys
 import argparse
 import re
@@ -2163,8 +2166,7 @@ def compare_texts_from_pdfs_in_folder(
             methods_used = [method_descriptions.get(r, r) for r in reasons]
             if not methods_used:
                 methods_used = ["Text similarity (TF-IDF/sequence)"]
-            method_block = "
-".join([f"- {m}" for m in methods_used])
+            method_block = "\n".join([f"- {m}" for m in methods_used])
 
             # Generate message for this pair
             similarity_results = f"{pdf1} <-> {pdf2}: similarity = {ratio:.2f}"
@@ -2185,29 +2187,15 @@ def compare_texts_from_pdfs_in_folder(
                     print(f"Generating message using AI service: {refine} for pair {pdf1} <-> {pdf2} ...")
                 prompt = (
                     "You are an expert assistant. Compose a clear, formal, and professional message in Vietnamese to notify students "
-                    "about potential similarity detected in their submissions by the system. The message should include the following points:
-
-"
-                    "1. Provide the similarity results, listing the pair of submissions with their similarity score.
-"
-                    "2. Explain the methods used (text similarity, image similarity, layout similarity, n-gram overlap, metadata match, optional embedding similarity).
-"
-                    "3. Emphasize that automated detection can produce false positives and the case will be reviewed by lecturers and TAs before any final decision.
-"
-                    "4. Ask students to wait for review or respond if they believe the detection is incorrect.
-
-"
-                    "Ensure the message is complete, concise, and does not require any additional edits or replacements. 
-
-"
-                    "Similarity result:
-{text}
-"
-                    "Methods:
-{methods}
-"
-                    "Metrics:
-{metrics}"
+                    "about potential similarity detected in their submissions by the system. The message should include the following points:\n\n"
+                    "1. Provide the similarity results, listing the pair of submissions with their similarity score.\n"
+                    "2. Explain the methods used (text similarity, image similarity, layout similarity, n-gram overlap, metadata match, optional embedding similarity).\n"
+                    "3. Emphasize that automated detection can produce false positives and the case will be reviewed by lecturers and TAs before any final decision.\n"
+                    "4. Ask students to wait for review or respond if they believe the detection is incorrect.\n\n"
+                    "Ensure the message is complete, concise, and does not require any additional edits or replacements.\n\n"
+                    "Similarity result:\n{text}\n"
+                    "Methods:\n{methods}\n"
+                    "Metrics:\n{metrics}"
                 )
                 message = refine_text_with_ai(
                     similarity_results,
@@ -2216,26 +2204,15 @@ def compare_texts_from_pdfs_in_folder(
                 )
             else:
                 message = (
-                    "Potential similarity detected by automated checks for the following submissions:
-"
+                    "Potential similarity detected by automated checks for the following submissions:\n"
                     + similarity_results +
-                    "
-
-Assignment: "
+                    "\n\nAssignment: "
                     + assignment_name_guess +
-                    "
-
-Methods used:
-"
+                    "\n\nMethods used:\n"
                     + method_block +
-                    "
-
-Metrics:
-"
+                    "\n\nMetrics:\n"
                     + metrics_summary +
-                    "
-
-Note: Automated detection can produce false positives (OCR errors, formatting differences, or similar templates). "
+                    "\n\nNote: Automated detection can produce false positives (OCR errors, formatting differences, or similar templates). "
                     "This case will be reviewed by the lecturers and TAs before any final decision. "
                     "If you believe this detection is incorrect, you may respond with clarification."
                 )
@@ -3573,7 +3550,8 @@ def add_canvas_announcement(
         else:
             print(f"Edit the announcement in your editor: {temp_path}")
             print("Format: The first line starting with 'Title:' is the title. The rest after 'Message:' is the message body.")
-        editor = os.environ.get("EDITOR", "nano" if shutil.which("nano") else "vi")
+        default_editor = "notepad" if os.name == "nt" else ("nano" if shutil.which("nano") else "vi")
+        editor = os.environ.get("EDITOR", default_editor)
         try:
             subprocess.call([editor, temp_path])
         except Exception as e:
@@ -4897,7 +4875,8 @@ def list_and_update_canvas_pages(
             else:
                 print(f"\nEdit the content for this page in your editor: {temp_path}")
                 print("After saving and closing the editor, the content will be uploaded to Canvas.")
-            editor = os.environ.get("EDITOR", "nano" if shutil.which("nano") else "vi")
+            default_editor = "notepad" if os.name == "nt" else ("nano" if shutil.which("nano") else "vi")
+            editor = os.environ.get("EDITOR", default_editor)
             try:
                 subprocess.call([editor, temp_path])
             except Exception as e:

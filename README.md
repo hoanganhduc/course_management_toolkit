@@ -60,6 +60,10 @@ make.bat install
 course
 ```
 
+Interactive menu tips:
+- Use arrow keys (or W/S) to move, Enter to select, q to quit.
+- You can also type the menu number quickly to jump to an option.
+
 ## Common workflows
 
 Update a MAT*.xlsx file with grades from the local database:
@@ -86,6 +90,13 @@ Export a roster to CSV:
 course --export-roster
 ```
 
+Clear stored configuration or credentials:
+
+```bash
+course --clear-config
+course --clear-credentials
+```
+
 ## Configuration
 
 The tool reads settings from `config.json` stored in a course-specific folder determined by `.course_code`.
@@ -101,6 +112,7 @@ Credential and token files live in the same folder by default:
 - `token.pickle` (Google OAuth tokens)
 
 You can override paths via `CREDENTIALS_PATH` and `TOKEN_PATH`.
+To remove stored settings or tokens, use `--clear-config` and `--clear-credentials`.
 
 ## Override grades
 
