@@ -87,6 +87,7 @@ Sync Google Classroom roster into the local database:
 course --sync-google-classroom
 ```
 
+
 Export a roster to CSV:
 
 Course management toolkit for automating student records, grading workflows, PDF/OCR extraction,
@@ -145,6 +146,8 @@ course --clear-config
 course --clear-credentials
 ```
 
+Tip: `--google-credentials-path` and `--google-token-path` copy the files into the default config folder with standard filenames, even if you only set them in a separate command before running `--sync-google-classroom`.
+
 Backup or restore the database/config:
 
 ```bash
@@ -170,6 +173,7 @@ course --update-mat-excel MAT3500-3-Toan-roi-rac-4TC.xlsx --dry-run --export-gra
 
 The tool reads settings from `config.json` stored in a course-specific folder determined by `.course_code`.
 On first run, you will be prompted for a course code (e.g., MAT3500) and it will be cached in `.course_code`.
+When you load a config file with `--config`, it is copied into the default config folder as `config.json`.
 
 ## Weekly automation guide
 
@@ -199,7 +203,9 @@ Credential and token files live in the same folder by default:
 - `token.pickle` (Google OAuth tokens)
 
 You can override paths via `CREDENTIALS_PATH` and `TOKEN_PATH`.
+When you provide Google Classroom credentials/token paths via CLI or the menu, the files are copied into the default folder with the standard names.
 To remove stored settings or tokens, use `--clear-config` and `--clear-credentials`.
+You can also set `GOOGLE_CLASSROOM_COURSE_ID` in `config.json` to skip the course selection prompt.
 
 Optional settings:
 - `LOG_DIR`, `LOG_LEVEL`, `LOG_MAX_BYTES`, `LOG_BACKUP_COUNT` for rotating logs.

@@ -151,6 +151,76 @@ def _safe_remove(path, label=None, verbose=False):
     return False
 
 
+def _copy_file_to_default(src_path, dest_path, label=None, verbose=False):
+    if not src_path:
+        return None
+    if not os.path.exists(src_path) or not os.path.isfile(src_path):
+        if verbose:
+            print(f"[Config] {label or 'file'} not found at {src_path}")
+        return None
+    if os.path.abspath(src_path) == os.path.abspath(dest_path):
+        return dest_path
+    os.makedirs(os.path.dirname(dest_path) or ".", exist_ok=True)
+    if DRY_RUN:
+        print(f"[Config] Dry run: would copy {label or 'file'} from {src_path} to {dest_path}")
+        return dest_path
+    try:
+        shutil.copy2(src_path, dest_path)
+    except OSError as e:
+        print(f"[Config] Failed to copy {label or 'file'} to {dest_path}: {e}")
+        return None
+    if verbose:
+        print(f"[Config] Copied {label or 'file'} to {dest_path}")
+    return dest_path
+
+
+def sync_config_to_default(config_path=None, course_code=None, verbose=False):
+    if not config_path or not isinstance(config_path, str) or not os.path.exists(config_path):
+        return get_default_config_path(course_code=course_code, verbose=verbose)
+    default_path = get_default_config_path(course_code=course_code, verbose=verbose)
+    copied_path = _copy_file_to_default(config_path, default_path, label="config file", verbose=verbose)
+    return copied_path or default_path
+
+
+def sync_credentials_to_default(credentials_path=None, token_path=None, course_code=None, verbose=False):
+    default_credentials = get_default_credentials_path(course_code=course_code, verbose=verbose)
+    default_token = get_default_token_path(course_code=course_code, verbose=verbose)
+    if credentials_path:
+        _copy_file_to_default(credentials_path, default_credentials, label="credentials file", verbose=verbose)
+    if token_path:
+        _copy_file_to_default(token_path, default_token, label="token file", verbose=verbose)
+    return {
+        "credentials_path": default_credentials,
+        "token_path": default_token,
+    }
+
+
+def update_config_values(updates, course_code=None, verbose=False):
+    if not updates or not isinstance(updates, dict):
+        return None
+    config_path = get_default_config_path(course_code=course_code, verbose=verbose)
+    config_data = {}
+    if os.path.exists(config_path):
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                config_data = json.load(f) or {}
+        except Exception:
+            config_data = {}
+    config_data.update(updates)
+    if DRY_RUN:
+        print(f"[Config] Dry run: would update config at {config_path} with {updates}")
+        return config_path
+    try:
+        with open(config_path, "w", encoding="utf-8") as f:
+            json.dump(config_data, f, ensure_ascii=False, indent=2)
+    except OSError as e:
+        print(f"[Config] Failed to update config at {config_path}: {e}")
+        return None
+    if verbose:
+        print(f"[Config] Updated config at {config_path} with {updates}")
+    return config_path
+
+
 def clear_config(config_path=None, course_code=None, verbose=False):
     """
     Remove the stored config file.
@@ -360,6 +430,7 @@ def load_config(config_path=None, verbose=False):
         "CONFIG_VERSION",
         "CREDENTIALS_PATH",
         "TOKEN_PATH",
+        "GOOGLE_CLASSROOM_COURSE_ID",
         "DEFAULT_AI_METHOD",
         "ALL_AI_METHODS",
         "GEMINI_API_KEY",

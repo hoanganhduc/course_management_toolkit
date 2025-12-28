@@ -65,6 +65,73 @@ from .models import *
 from .utils import *
 from .data import *
 
+SCOPES = [
+    "https://www.googleapis.com/auth/classroom.courses",
+    "https://www.googleapis.com/auth/classroom.rosters",
+    "https://www.googleapis.com/auth/classroom.coursework.students",
+    "https://www.googleapis.com/auth/classroom.profile.emails",
+    "https://www.googleapis.com/auth/classroom.profile.photos",
+]
+
+
+def _get_google_classroom_credentials(credentials_path, token_path, verbose=False):
+    creds = None
+    if os.path.exists(token_path):
+        try:
+            with open(token_path, "rb") as f:
+                creds = pickle.load(f)
+        except Exception:
+            creds = None
+    if creds and getattr(creds, "scopes", None):
+        try:
+            if set(creds.scopes) != set(SCOPES):
+                creds = None
+                if os.path.exists(token_path):
+                    try:
+                        os.remove(token_path)
+                    except Exception:
+                        pass
+                if verbose:
+                    print("[GClassroom] Stored token scopes do not match required scopes; token removed.")
+        except Exception:
+            creds = None
+
+    if not creds or not getattr(creds, "valid", False):
+        if creds and getattr(creds, "expired", False) and getattr(creds, "refresh_token", None):
+            try:
+                creds.refresh(Request())
+            except Exception:
+                creds = None
+                if os.path.exists(token_path):
+                    try:
+                        os.remove(token_path)
+                    except Exception:
+                        pass
+        if not creds:
+            if not os.path.exists(credentials_path):
+                raise FileNotFoundError(f"Google credentials not found: {credentials_path}")
+            flow = InstalledAppFlow.from_client_secrets_file(credentials_path, SCOPES)
+            creds = flow.run_local_server(port=0)
+            # save token
+            with open(token_path, "wb") as f:
+                pickle.dump(creds, f)
+    return creds
+
+
+def list_google_classroom_courses(credentials_path, token_path, verbose=False):
+    creds = _get_google_classroom_credentials(credentials_path, token_path, verbose=verbose)
+    service = build("classroom", "v1", credentials=creds)
+    courses = []
+    next_token = None
+    while True:
+        req = service.courses().list(pageToken=next_token, pageSize=50) if next_token else service.courses().list(pageSize=50)
+        resp = req.execute()
+        courses.extend(resp.get("courses", []) or [])
+        next_token = resp.get("nextPageToken")
+        if not next_token:
+            break
+    return courses
+
 def sync_students_with_google_classroom(students, db_path=None, course_id=None, credentials_path='gclassroom_credentials.json', token_path='token.pickle', fetch_grades=False, verbose=False):
     """
     Sync students in the local database with active students from Google Classroom.
@@ -76,16 +143,9 @@ def sync_students_with_google_classroom(students, db_path=None, course_id=None, 
 
     Returns (added_count, updated_count).
     """
-    SCOPES = [
-        "https://www.googleapis.com/auth/classroom.courses.readonly",
-        "https://www.googleapis.com/auth/classroom.rosters.readonly",
-        "https://www.googleapis.com/auth/classroom.coursework.me.readonly",
-        "https://www.googleapis.com/auth/classroom.student-submissions.students.readonly"
-    ]
-
     try:
-        # load current DB list if db_path provided
-        if db_path and os.path.exists(db_path):
+        # load current DB list only if no students were passed in
+        if (students is None or students == []) and db_path and os.path.exists(db_path):
             try:
                 students = load_database(db_path, verbose=verbose)
             except Exception:
@@ -104,33 +164,7 @@ def sync_students_with_google_classroom(students, db_path=None, course_id=None, 
             StudentClass = lambda **kw: SimpleNamespace(**kw)
 
         # authenticate
-        creds = None
-        if os.path.exists(token_path):
-            try:
-                with open(token_path, "rb") as f:
-                    creds = pickle.load(f)
-            except Exception:
-                creds = None
-
-        if not creds or not getattr(creds, "valid", False):
-            if creds and getattr(creds, "expired", False) and getattr(creds, "refresh_token", None):
-                try:
-                    creds.refresh(Request())
-                except Exception:
-                    creds = None
-                    if os.path.exists(token_path):
-                        try:
-                            os.remove(token_path)
-                        except Exception:
-                            pass
-            if not creds:
-                if not os.path.exists(credentials_path):
-                    raise FileNotFoundError(f"Google credentials not found: {credentials_path}")
-                flow = InstalledAppFlow.from_client_secrets_file(credentials_path, SCOPES)
-                creds = flow.run_local_server(port=0)
-                # save token
-                with open(token_path, "wb") as f:
-                    pickle.dump(creds, f)
+        creds = _get_google_classroom_credentials(credentials_path, token_path, verbose=verbose)
 
         service = build("classroom", "v1", credentials=creds)
 

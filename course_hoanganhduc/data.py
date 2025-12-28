@@ -1982,6 +1982,12 @@ def update_mat_excel_grades(file_path, students, output_path=None, diff_output_p
 
     for s in students:
         sid = _normalize_student_id(getattr(s, "Student ID", ""))
+        if not sid:
+            inferred_sid = _infer_student_id_from_email(getattr(s, "Email", ""))
+            if inferred_sid:
+                sid = inferred_sid
+                if not getattr(s, "Student ID", ""):
+                    setattr(s, "Student ID", sid)
         name = str(getattr(s, "Name", "")).strip()
         name_display = name.replace("/", "_").replace("\\", "_").replace(" ", "_")
         
@@ -2060,7 +2066,8 @@ def update_mat_excel_grades(file_path, students, output_path=None, diff_output_p
         if REPORT_REFINE_METHOD and default_model:
             report_text += f"\nDefault model (M\u00f4 h\u00ecnh m\u1eb7c \u0111\u1ecbnh): {default_model}"
 
-        result_filename = f"{sid}_{name_display}_results.txt"
+        filename_sid = sid or "unknown"
+        result_filename = f"{filename_sid}_{name_display}_results.txt"
         if not dry_run:
             result_path = os.path.join(results_dir, result_filename)
             with open(result_path, "w", encoding="utf-8") as f:
@@ -3363,6 +3370,8 @@ def en_to_vn_field(field, verbose=False):
         "GitHub ID": "ID GitHub",
         "GitHub Handle": "Tên đăng nhập GitHub",
         "GitHub": "GitHub",
+        "Google_ID": "Google ID",
+        "Google_Classroom_Display_Name": "Google Classroom Display Name",
     }
     if field.startswith("Blackboard Count: "):
         date = field[len("Blackboard Count: "):]
@@ -3399,14 +3408,96 @@ def print_all_student_details(students, db_path=None, verbose=False):
     else:
         print(f"Tổng số sinh viên: {len(students)}")
     print('-' * 40)
+    display_labels = {
+        "Google_ID": "Google ID",
+        "Google_Classroom_Display_Name": "Google Classroom Display Name",
+    }
+    vn_to_en = {
+        "Họ và Tên": "Name",
+        "Mã sinh viên": "Student ID",
+        "Ngày sinh": "Date of Birth",
+        "Lớp": "Class",
+        "Điểm học phần": "Course Grade",
+        "Tổng điểm": "Total Score",
+        "Tổng điểm (DB)": "Total Score (DB)",
+        "Tổng điểm (Canvas)": "Total Score (Canvas)",
+    }
     for idx, s in enumerate(students, 1):
         if verbose:
-            print(f"[print_all_student_details] Sinh viên {idx}:")
+            print(f"[print_all_student_details] Sinh viên {idx}/{len(students)}:")
         else:
-            print(f"Sinh viên {idx}:")
-        for k, v in s.__dict__.items():
-            vn_k = en_to_vn_field(k, verbose=verbose)
-            print(f"{vn_k}: {v}")
+            print(f"Sinh viên {idx}/{len(students)}:")
+        data = s.__dict__
+        preferred_keys = [
+            "Họ và Tên", "Name",
+            "Mã sinh viên", "Student ID",
+            "STT",
+            "Ngày sinh", "Date of Birth", "DOB",
+            "Lớp", "Class",
+            "Điểm học phần", "Course Grade",
+            "Tổng điểm (DB)", "Total Score",
+            "Tổng điểm (Canvas)", "Total Final Score",
+            "Email",
+            "Google_ID",
+            "Google_Classroom_Display_Name",
+        ]
+        seen = set()
+        ordered_keys = []
+        for key in preferred_keys:
+            if key in data and key not in seen:
+                ordered_keys.append(key)
+                seen.add(key)
+        remaining_keys = [k for k in data.keys() if k not in seen and k not in ("Grades", "Submissions")]
+        for key in sorted(remaining_keys):
+            ordered_keys.append(key)
+        for k in ordered_keys:
+            v = data.get(k)
+            if isinstance(k, str) and k in display_labels:
+                en_k = display_labels[k]
+            elif isinstance(k, str) and k in vn_to_en:
+                en_k = vn_to_en[k]
+            else:
+                en_k = k if isinstance(k, str) else str(k)
+            vn_k = en_to_vn_field(k, verbose=verbose) if isinstance(k, str) else str(k)
+            print(f"{en_k} ({vn_k}): {v}")
+        grades = data.get("Grades")
+        if isinstance(grades, dict):
+            total_gc = 0.0
+            total_gc_max = 0.0
+            print("Grades (Điểm):")
+            for title in sorted(grades.keys()):
+                info = grades.get(title) or {}
+                if isinstance(info, dict):
+                    grade = info.get("grade")
+                    max_points = info.get("max_points")
+                    if grade is not None and max_points is not None:
+                        value = f"{grade}/{max_points}"
+                        try:
+                            total_gc += float(grade)
+                            total_gc_max += float(max_points)
+                        except (TypeError, ValueError):
+                            pass
+                    elif grade is not None:
+                        value = f"{grade}"
+                        try:
+                            total_gc += float(grade)
+                        except (TypeError, ValueError):
+                            pass
+                    else:
+                        value = str(info)
+                else:
+                    value = str(info)
+                print(f"  - {title}: {value}")
+            if total_gc_max > 0:
+                print(f"Total score (Classroom) (Tổng điểm Classroom): {total_gc}/{total_gc_max}")
+            elif total_gc > 0:
+                print(f"Total score (Classroom) (Tổng điểm Classroom): {total_gc}")
+        submissions = data.get("Submissions")
+        if isinstance(submissions, dict):
+            print("Submissions (Nộp bài):")
+            for title in sorted(submissions.keys()):
+                state = submissions.get(title)
+                print(f"  - {title}: {state}")
         print('-' * 40)
 
 def export_to_excel(students, file_path=None, db_path=None, verbose=False):
@@ -3746,11 +3837,93 @@ def export_all_details_to_txt(students, file_path=None, db_path=None, verbose=Fa
     with open(file_path, 'w', encoding='utf-8') as f:
         f.write(f"Tổng số sinh viên: {len(students)}\n")
         f.write('-' * 40 + '\n')
+        display_labels = {
+            "Google_ID": "Google ID",
+            "Google_Classroom_Display_Name": "Google Classroom Display Name",
+        }
+        vn_to_en = {
+            "Họ và Tên": "Name",
+            "Mã sinh viên": "Student ID",
+            "Ngày sinh": "Date of Birth",
+            "Lớp": "Class",
+            "Điểm học phần": "Course Grade",
+            "Tổng điểm": "Total Score",
+            "Tổng điểm (DB)": "Total Score (DB)",
+            "Tổng điểm (Canvas)": "Total Score (Canvas)",
+        }
         for idx, s in enumerate(students, 1):
-            f.write(f"Sinh viên {idx}:\n")
-            for k, v in s.__dict__.items():
-                vn_k = en_to_vn_field(k, verbose=verbose)
-                f.write(f"{vn_k}: {v}\n")
+            f.write(f"Sinh viên {idx}/{len(students)}:\n")
+            data = s.__dict__
+            preferred_keys = [
+                "Họ và Tên", "Name",
+                "Mã sinh viên", "Student ID",
+                "STT",
+                "Ngày sinh", "Date of Birth", "DOB",
+                "Lớp", "Class",
+                "Điểm học phần", "Course Grade",
+                "Tổng điểm (DB)", "Total Score",
+                "Tổng điểm (Canvas)", "Total Final Score",
+                "Email",
+                "Google_ID",
+                "Google_Classroom_Display_Name",
+            ]
+            seen = set()
+            ordered_keys = []
+            for key in preferred_keys:
+                if key in data and key not in seen:
+                    ordered_keys.append(key)
+                    seen.add(key)
+            remaining_keys = [k for k in data.keys() if k not in seen and k not in ("Grades", "Submissions")]
+            for key in sorted(remaining_keys):
+                ordered_keys.append(key)
+            for k in ordered_keys:
+                v = data.get(k)
+                if isinstance(k, str) and k in display_labels:
+                    en_k = display_labels[k]
+                elif isinstance(k, str) and k in vn_to_en:
+                    en_k = vn_to_en[k]
+                else:
+                    en_k = k if isinstance(k, str) else str(k)
+                vn_k = en_to_vn_field(k, verbose=verbose) if isinstance(k, str) else str(k)
+                f.write(f"{en_k} ({vn_k}): {v}\n")
+            grades = data.get("Grades")
+            if isinstance(grades, dict):
+                total_gc = 0.0
+                total_gc_max = 0.0
+                f.write("Grades (Điểm):\n")
+                for title in sorted(grades.keys()):
+                    info = grades.get(title) or {}
+                    if isinstance(info, dict):
+                        grade = info.get("grade")
+                        max_points = info.get("max_points")
+                        if grade is not None and max_points is not None:
+                            value = f"{grade}/{max_points}"
+                            try:
+                                total_gc += float(grade)
+                                total_gc_max += float(max_points)
+                            except (TypeError, ValueError):
+                                pass
+                        elif grade is not None:
+                            value = f"{grade}"
+                            try:
+                                total_gc += float(grade)
+                            except (TypeError, ValueError):
+                                pass
+                        else:
+                            value = str(info)
+                    else:
+                        value = str(info)
+                    f.write(f"  - {title}: {value}\n")
+                if total_gc_max > 0:
+                    f.write(f"Total score (Classroom) (Tổng điểm Classroom): {total_gc}/{total_gc_max}\n")
+                elif total_gc > 0:
+                    f.write(f"Total score (Classroom) (Tổng điểm Classroom): {total_gc}\n")
+            submissions = data.get("Submissions")
+            if isinstance(submissions, dict):
+                f.write("Submissions (Nộp bài):\n")
+                for title in sorted(submissions.keys()):
+                    state = submissions.get(title)
+                    f.write(f"  - {title}: {state}\n")
             f.write('-' * 40 + '\n')
     if verbose:
         print(f"[ExportAllDetails] Exported all student details to {file_path}")
@@ -3764,6 +3937,7 @@ def export_all_details_to_txt(students, file_path=None, db_path=None, verbose=Fa
     )
 
 def extract_text_from_scanned_pdf_ocrspace(pdf_path, txt_output_path=None, lang="auto", simple_text=False, refine=DEFAULT_AI_METHOD, verbose=False):
+
     """
     Extract text from a scanned PDF file using the free OCR.space API.
     Splits the PDF into smaller PDFs with at least 1 page, at most 3 pages, and each chunk not exceeding 1024 KB,
@@ -6709,6 +6883,18 @@ def _normalize_student_id(value):
 def _looks_like_student_id(value):
     raw = _normalize_student_id(value)
     return bool(raw) and raw.isdigit() and len(raw) >= 5
+
+
+def _infer_student_id_from_email(email):
+    if not email:
+        return ""
+    local_part = str(email).split("@", 1)[0].strip()
+    if _looks_like_student_id(local_part):
+        return _normalize_student_id(local_part)
+    digits = re.sub(r"\\D+", "", local_part)
+    if _looks_like_student_id(digits):
+        return digits
+    return ""
 
 
 def _looks_like_name(value):

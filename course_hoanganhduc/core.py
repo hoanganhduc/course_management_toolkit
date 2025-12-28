@@ -113,6 +113,7 @@ def _build_menu_sections():
             ("Test AI services (Gemini/HuggingFace)", "52"),
             ("List AI models for provider", "53"),
             ("Detect local AI models (Ollama)", "64"),
+            ("List Google Classroom courses", "65"),
             ("Sync students with Google Classroom", "49"),
             ("Backup config.json", "57"),
             ("Restore config.json", "58"),
@@ -616,6 +617,9 @@ def main():
     gclass_group.add_argument('--google-token-path', '-gtp', type=str, default=None,
                               help="Path to Google Classroom token pickle file",
                               dest="google_token_path")
+    gclass_group.add_argument('--list-google-courses', '-lgc', action='store_true',
+                              help="List Google Classroom courses for the current account",
+                              dest="list_google_courses")
 
     automation_group = parser.add_argument_group("Automation")
     automation_group.add_argument('--run-weekly-automation', action='store_true',
@@ -716,7 +720,7 @@ def main():
             config = {}
         config["CONFIG_VERSION"] = __version__
         # Save to default location only if different.
-        default_config_path = get_default_config_path(course_code=args.course_code, verbose=args.verbose)
+        default_config_path = sync_config_to_default(config_path, course_code=args.course_code, verbose=args.verbose)
         config_for_save = config
         try:
             with open(config_path, "r", encoding="utf-8") as f:
@@ -749,6 +753,14 @@ def main():
     # Promote config values to module-level defaults (legacy behavior).
     if config:
         _apply_config_overrides(config)
+
+    if args.google_credentials_path or args.google_token_path:
+        sync_credentials_to_default(
+            credentials_path=args.google_credentials_path,
+            token_path=args.google_token_path,
+            course_code=args.course_code,
+            verbose=args.verbose,
+        )
 
     if args.dry_run:
         _apply_config_overrides({"DRY_RUN": True})
@@ -893,6 +905,25 @@ def main():
     if args.backup_db:
         backup_dir = args.backup_db if isinstance(args.backup_db, str) else None
         backup_database(db_path=db_path, backup_dir=backup_dir, keep=args.db_backup_keep, verbose=args.verbose)
+
+    if args.list_google_courses:
+        credentials_path = args.google_credentials_path if hasattr(args, "google_credentials_path") and args.google_credentials_path else None
+        if not credentials_path:
+            credentials_path = config.get("CREDENTIALS_PATH") if isinstance(config, dict) else None
+        if not credentials_path:
+            credentials_path = get_default_credentials_path(course_code=args.course_code)
+        token_path = args.google_token_path if hasattr(args, "google_token_path") and args.google_token_path else None
+        if not token_path:
+            token_path = config.get("TOKEN_PATH") if isinstance(config, dict) else None
+        if not token_path:
+            token_path = get_default_token_path(course_code=args.course_code)
+        courses = list_google_classroom_courses(credentials_path, token_path, verbose=args.verbose)
+        if courses:
+            print("Available Google Classroom courses:")
+            for i, c in enumerate(courses, 1):
+                print(f"{i}. {c.get('name')} (ID: {c.get('id')})")
+        else:
+            print("No courses found.")
 
     students = []
     if os.path.exists(db_path):
@@ -1692,6 +1723,8 @@ def main():
         
     if args.sync_google_classroom:
         course_id = args.google_course_id if hasattr(args, "google_course_id") and args.google_course_id else None
+        if not course_id:
+            course_id = config.get("GOOGLE_CLASSROOM_COURSE_ID") if isinstance(config, dict) else None
         credentials_path = args.google_credentials_path if hasattr(args, "google_credentials_path") and args.google_credentials_path else None
         if not credentials_path:
             credentials_path = config.get("CREDENTIALS_PATH") if isinstance(config, dict) else None
@@ -1702,12 +1735,46 @@ def main():
             token_path = config.get("TOKEN_PATH") if isinstance(config, dict) else None
         if not token_path:
             token_path = get_default_token_path(course_code=args.course_code)
+        if not course_id:
+            courses = list_google_classroom_courses(credentials_path, token_path, verbose=args.verbose)
+            if not courses:
+                print("No courses found.")
+                course_id = None
+            else:
+                print("Available Google Classroom courses:")
+                for i, c in enumerate(courses, 1):
+                    print(f"{i}. {c.get('name')} (ID: {c.get('id')})")
+                while True:
+                    sel = input("Select course number: ").strip()
+                    if not sel:
+                        continue
+                    try:
+                        idx = int(sel) - 1
+                        if 0 <= idx < len(courses):
+                            course_id = courses[idx].get("id")
+                            break
+                    except Exception:
+                        continue
+        if course_id:
+            existing_course_id = config.get("GOOGLE_CLASSROOM_COURSE_ID") if isinstance(config, dict) else None
+            if course_id != existing_course_id:
+                update_config_values({"GOOGLE_CLASSROOM_COURSE_ID": course_id}, course_code=args.course_code, verbose=args.verbose)
+        if args.google_credentials_path or args.google_token_path:
+            synced = sync_credentials_to_default(
+                credentials_path=credentials_path,
+                token_path=token_path,
+                course_code=args.course_code,
+                verbose=args.verbose,
+            )
+            credentials_path = synced["credentials_path"]
+            token_path = synced["token_path"]
         added, updated = sync_students_with_google_classroom(
             students,
             db_path=db_path,
             course_id=course_id,
             credentials_path=credentials_path,
             token_path=token_path,
+            fetch_grades=True,
             verbose=args.verbose
         )
         print(f"Sync with Google Classroom completed: {added} students added, {updated} students updated.")
@@ -1937,6 +2004,20 @@ def main():
                     print(f"[LocalAI] Command: {command}")
                 if models:
                     print(f"[LocalAI] Models: {', '.join(models)}")
+            elif choice == '65':
+                credentials_path = config.get("CREDENTIALS_PATH") if isinstance(config, dict) else None
+                if not credentials_path:
+                    credentials_path = get_default_credentials_path(course_code=args.course_code)
+                token_path = config.get("TOKEN_PATH") if isinstance(config, dict) else None
+                if not token_path:
+                    token_path = get_default_token_path(course_code=args.course_code)
+                courses = list_google_classroom_courses(credentials_path, token_path, verbose=args.verbose)
+                if courses:
+                    print("Available Google Classroom courses:")
+                    for i, c in enumerate(courses, 1):
+                        print(f"{i}. {c.get('name')} (ID: {c.get('id')})")
+                else:
+                    print("No courses found.")
             elif choice == '9':
                 export_path = input_with_completion("Enter export TXT file path (or 'q' to quit): ").strip()
                 if export_path.lower() in ('q', 'quit'):
@@ -2436,7 +2517,7 @@ def main():
                 if config_path.lower() in ('q', 'quit', ''):
                     continue
                 config = load_config(config_path, verbose=args.verbose)
-                default_config_path = get_default_config_path(verbose=args.verbose)
+                default_config_path = sync_config_to_default(config_path, verbose=args.verbose)
                 with open(default_config_path, "w", encoding="utf-8") as f:
                     json.dump(config, f, ensure_ascii=False, indent=2)
                 print(f"Loaded config from {config_path}, saved to {default_config_path}")
@@ -2814,6 +2895,8 @@ def main():
                 if course_id.lower() in ('q', 'quit'):
                     continue
                 course_id = course_id if course_id else None
+                if not course_id:
+                    course_id = config.get("GOOGLE_CLASSROOM_COURSE_ID") if isinstance(config, dict) else None
                 credentials_path = input_with_completion("Enter Google Classroom credentials JSON file path (default: gclassroom_credentials.json, or 'q' to quit): ").strip()
                 if credentials_path.lower() in ('q', 'quit'):
                     continue
@@ -2824,12 +2907,44 @@ def main():
                     continue
                 if not token_path:
                     token_path = 'token.pickle'
+                if not course_id:
+                    courses = list_google_classroom_courses(credentials_path, token_path, verbose=args.verbose)
+                    if not courses:
+                        print("No courses found.")
+                        continue
+                    print("Available Google Classroom courses:")
+                    for i, c in enumerate(courses, 1):
+                        print(f"{i}. {c.get('name')} (ID: {c.get('id')})")
+                    while True:
+                        sel = input("Select course number: ").strip()
+                        if not sel:
+                            continue
+                        try:
+                            idx = int(sel) - 1
+                            if 0 <= idx < len(courses):
+                                course_id = courses[idx].get("id")
+                                break
+                        except Exception:
+                            continue
+                if course_id:
+                    existing_course_id = config.get("GOOGLE_CLASSROOM_COURSE_ID") if isinstance(config, dict) else None
+                    if course_id != existing_course_id:
+                        update_config_values({"GOOGLE_CLASSROOM_COURSE_ID": course_id}, course_code=args.course_code, verbose=args.verbose)
+                synced = sync_credentials_to_default(
+                    credentials_path=credentials_path,
+                    token_path=token_path,
+                    course_code=args.course_code,
+                    verbose=args.verbose,
+                )
+                credentials_path = synced["credentials_path"]
+                token_path = synced["token_path"]
                 added, updated = sync_students_with_google_classroom(
                     students,
                     db_path=db_path,
                     course_id=course_id,
                     credentials_path=credentials_path,
                     token_path=token_path,
+                    fetch_grades=True,
                     verbose=args.verbose
                 )
                 print(f"Sync with Google Classroom completed: {added} students added, {updated} students updated.")

@@ -46,12 +46,18 @@ Clear stored settings
    course --clear-config
    course --clear-credentials
 
+Tip: ``--google-credentials-path`` and ``--google-token-path`` copy the files into
+the default config folder with standard filenames, even if you only set them in
+a separate command before running ``--sync-google-classroom``.
+
 Configuration and file locations
 --------------------------------
 
 The tool reads settings from ``config.json`` stored in a course-specific folder
 determined by ``.course_code``. On first run, you will be prompted for a course
 code (for example, MAT3500) and it will be cached in ``.course_code``.
+When you load a config file with ``--config``, it is copied into the default
+config folder as ``config.json``.
 
 Default config locations:
 
@@ -66,6 +72,10 @@ Credential and token files live in the same folder by default:
 
 You can override paths via ``CREDENTIALS_PATH`` and ``TOKEN_PATH`` in the config
 file.
+When you provide Google Classroom credentials/token paths via CLI or the menu,
+the files are copied into the default folder with the standard names.
+You can also set ``GOOGLE_CLASSROOM_COURSE_ID`` in ``config.json`` to skip the
+course selection prompt.
 
 OCR dependencies and setup
 --------------------------
@@ -136,6 +146,7 @@ Sync Google Classroom roster into the local database:
 .. code-block:: bash
 
    course --sync-google-classroom
+
 
 Update a MAT*.xlsx file with grades from the local database:
 
