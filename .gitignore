@@ -24,3 +24,11 @@ final_grade_distribution.txt
 emails_and_names.txt
 classroom_roster.csv
 *_updated.xlsx
+run_report.txt
+weekly_reports/
+course_calendar*.txt
+course_calendar*.md
+course_calendar*.ics
+_calendar_test*/
+_calendar_test_with_makeup.txt
+grade_diff_*.csv

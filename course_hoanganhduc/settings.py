@@ -56,6 +56,8 @@ CANVAS_LMS_COURSE_ID = ""
 
 # Default course code used in config path when none is provided.
 DEFAULT_COURSE_CODE = "mat3500"
+COURSE_CODE = ""
+COURSE_NAME = ""
 
 MIDTERM_DATE = ""
 

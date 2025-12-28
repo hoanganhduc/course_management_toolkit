@@ -74,6 +74,13 @@ def cache_course_code(course_code):
         _save_cached_course_code(course_code)
 
 
+def get_cached_course_code():
+    """
+    Return the cached course code from .course_code if available.
+    """
+    return _normalize_course_code(_load_cached_course_code())
+
+
 def get_default_config_path(course_code=None, verbose=False):
     """
     Get the default config file path for the current operating system.
@@ -360,6 +367,20 @@ def load_config(config_path=None, verbose=False):
         CANVAS_LMS_API_URL
         CANVAS_LMS_API_KEY
         CANVAS_LMS_COURSE_ID
+        COURSE_CODE
+        COURSE_NAME
+        DEFAULT_RESTRICTED
+        QUALITY_MIN_CHARS
+        QUALITY_UNIQUE_CHAR_RATIO_MIN
+        QUALITY_REPEAT_CHAR_RATIO_MAX
+        QUALITY_VN_CHAR_RATIO_MIN
+        QUALITY_ALNUM_RATIO_MIN
+        QUALITY_SYMBOL_RATIO_MAX
+        QUALITY_EMPTY_LINE_RATIO_MAX
+        QUALITY_MATH_DENSITY_THRESHOLD
+        QUALITY_LENGTH_RATIO_LOW
+        QUALITY_LENGTH_RATIO_MEDIUM
+        QUALITY_LENGTH_RATIO_HIGH
         MIDTERM_DATE
         EXAM_TYPE
         CANVAS_MIDTERM_ASSIGNMENT_ID
@@ -459,6 +480,20 @@ def load_config(config_path=None, verbose=False):
         "CANVAS_LMS_API_URL",
         "CANVAS_LMS_API_KEY",
         "CANVAS_LMS_COURSE_ID",
+        "COURSE_CODE",
+        "COURSE_NAME",
+        "DEFAULT_RESTRICTED",
+        "QUALITY_MIN_CHARS",
+        "QUALITY_UNIQUE_CHAR_RATIO_MIN",
+        "QUALITY_REPEAT_CHAR_RATIO_MAX",
+        "QUALITY_VN_CHAR_RATIO_MIN",
+        "QUALITY_ALNUM_RATIO_MIN",
+        "QUALITY_SYMBOL_RATIO_MAX",
+        "QUALITY_EMPTY_LINE_RATIO_MAX",
+        "QUALITY_MATH_DENSITY_THRESHOLD",
+        "QUALITY_LENGTH_RATIO_LOW",
+        "QUALITY_LENGTH_RATIO_MEDIUM",
+        "QUALITY_LENGTH_RATIO_HIGH",
         "CANVAS_DEFAULT_ASSIGNMENT_CATEGORY",
         "MIDTERM_DATE",
         "EXAM_TYPE",

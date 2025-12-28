@@ -7356,3 +7356,468 @@ def load_override_grades_to_database(override_file="override_grades.xlsx", db_pa
     else:
         print(f"Applied overrides to {updated} student(s).")
     return updated
+
+
+# Course calendar utilities
+
+def _parse_calendar_date(value):
+    return datetime.strptime(value.strip(), "%Y-%m-%d").date()
+
+
+def _parse_calendar_time(value):
+    return datetime.strptime(value.strip(), "%H:%M").time()
+
+
+def _parse_calendar_time_range(value):
+    parts = value.split("-")
+    if len(parts) != 2:
+        raise ValueError("Time range must be HH:MM-HH:MM")
+    start = _parse_calendar_time(parts[0])
+    end = _parse_calendar_time(parts[1])
+    if end <= start:
+        raise ValueError("Session end time must be after start time.")
+    return start, end
+
+
+def _parse_calendar_session_line(line):
+    raw = line.strip()
+    if not raw:
+        return None
+    if raw.lower().startswith("session"):
+        _, _, raw = raw.partition(":")
+        raw = raw.strip()
+    if "|" in raw:
+        parts = [p.strip() for p in raw.split("|") if p.strip()]
+    else:
+        parts = [p.strip() for p in raw.split(",") if p.strip()]
+    if not parts:
+        return None
+    first = parts[0]
+    tokens = first.split()
+    if len(tokens) < 2:
+        raise ValueError(f"Invalid session line: {line}")
+    date_str = tokens[0]
+    time_range = tokens[1]
+    date_val = _parse_calendar_date(date_str)
+    start_time, end_time = _parse_calendar_time_range(time_range)
+    location = parts[1] if len(parts) > 1 else ""
+    title = parts[2] if len(parts) > 2 else "Class session"
+    return {
+        "date": date_val,
+        "start_time": start_time,
+        "end_time": end_time,
+        "location": location,
+        "title": title,
+    }
+
+
+def _parse_calendar_bool(value):
+    if value is None:
+        return False
+    return str(value).strip().lower() in ("1", "true", "yes", "y")
+
+
+def get_vietnam_fixed_holidays(year):
+    return [
+        datetime(year, 1, 1).date(),
+        datetime(year, 4, 30).date(),
+        datetime(year, 5, 1).date(),
+        datetime(year, 9, 2).date(),
+    ]
+
+
+def get_vietnam_holidays(years, extra_dates=None):
+    holidays = set()
+    for year in years:
+        for day in get_vietnam_fixed_holidays(year):
+            holidays.add(day)
+    for day in extra_dates or []:
+        holidays.add(day)
+    return holidays
+
+
+def fetch_vietnam_holidays_ai(years, method=None, verbose=False):
+    if not method:
+        return []
+    if method not in ALL_AI_METHODS:
+        if verbose:
+            print(f"[Calendar] Unknown AI method for holidays: {method}.")
+        return []
+    years_list = sorted({int(y) for y in years if y})
+    if not years_list:
+        return []
+    prompt = (
+        "List Vietnam public holidays for the years "
+        + ", ".join(str(y) for y in years_list)
+        + ". Include lunar holidays (Tet, Hung Vuong) and fixed holidays. "
+        "Return ONLY dates in YYYY-MM-DD format, one per line."
+    )
+    try:
+        response = refine_text_with_ai(prompt, method=method, verbose=verbose)
+    except Exception as exc:
+        if verbose:
+            print(f"[Calendar] Failed to fetch holidays via AI: {exc}")
+        return []
+    dates = re.findall(r"\b\d{4}-\d{2}-\d{2}\b", response or "")
+    parsed = []
+    for raw in dates:
+        try:
+            parsed.append(_parse_calendar_date(raw))
+        except Exception:
+            continue
+    if verbose:
+        print(f"[Calendar] AI returned {len(parsed)} holiday date(s).")
+    return parsed
+
+
+def _resolve_calendar_input_path(path):
+    if not path:
+        return None
+    if os.path.exists(path):
+        return path
+    if os.path.isabs(path):
+        return path
+    package_root = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
+    candidate = os.path.join(package_root, path)
+    if os.path.exists(candidate):
+        return candidate
+    return path
+
+
+def parse_course_calendar_txt(path, verbose=False):
+    sessions = []
+    holidays = []
+    weeks = 15
+    extra_week = None
+    course_code = ""
+    course_name = ""
+    resolved_path = _resolve_calendar_input_path(path)
+    with open(resolved_path, "r", encoding="utf-8") as f:
+        for raw in f:
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            lowered = line.lower()
+            if lowered.startswith("course_code") or lowered.startswith("course code"):
+                _, _, value = line.partition(":")
+                value = value.strip() or line.split("=", 1)[-1].strip()
+                course_code = value
+                continue
+            if lowered.startswith("course_name") or lowered.startswith("course name"):
+                _, _, value = line.partition(":")
+                value = value.strip() or line.split("=", 1)[-1].strip()
+                course_name = value
+                continue
+            if lowered.startswith("course"):
+                _, _, value = line.partition(":")
+                value = value.strip()
+                if " - " in value:
+                    code_part, name_part = value.split(" - ", 1)
+                    course_code = course_code or code_part.strip()
+                    course_name = course_name or name_part.strip()
+                else:
+                    course_name = course_name or value
+                continue
+            if lowered.startswith("weeks") or lowered.startswith("official_weeks"):
+                _, _, value = line.partition(":")
+                value = value.strip() or line.split("=", 1)[-1].strip()
+                if value.isdigit():
+                    weeks = int(value)
+                continue
+            if lowered.startswith("extra_week") or lowered.startswith("extra"):
+                _, _, value = line.partition(":")
+                value = value.strip() or line.split("=", 1)[-1].strip()
+                extra_week = _parse_calendar_bool(value)
+                continue
+            if lowered.startswith("holiday") or lowered.startswith("extra_holiday") or lowered.startswith("unofficial_holiday"):
+                _, _, value = line.partition(":")
+                value = value.strip() or line.split("=", 1)[-1].strip()
+                for part in value.split(","):
+                    part = part.strip()
+                    if part:
+                        holidays.append(_parse_calendar_date(part))
+                continue
+            session = _parse_calendar_session_line(line)
+            if session:
+                sessions.append(session)
+    if verbose:
+        print(f"[Calendar] Loaded {len(sessions)} session(s) from {resolved_path}")
+    return {
+        "sessions": sessions,
+        "weeks": weeks,
+        "extra_week": extra_week,
+        "holidays": holidays,
+        "course_code": course_code,
+        "course_name": course_name,
+    }
+
+
+def prompt_course_calendar_manual(course_code_default=None, course_name_default=None, verbose=False):
+    course_code_prompt = "Course code"
+    if course_code_default:
+        course_code_prompt += f" [{course_code_default}]"
+    course_code_prompt += ": "
+    course_code = input(course_code_prompt).strip() or (course_code_default or "")
+    course_name_prompt = "Course name"
+    if course_name_default:
+        course_name_prompt += f" [{course_name_default}]"
+    course_name_prompt += ": "
+    course_name = input(course_name_prompt).strip() or (course_name_default or "")
+    weeks_raw = input("Number of official weeks [15]: ").strip()
+    weeks = int(weeks_raw) if weeks_raw.isdigit() else 15
+    extra_raw = input("Allow one make-up week if holidays occur? (y/n) [y]: ").strip().lower()
+    extra_week = False if extra_raw in ("n", "no") else True
+    count_raw = input("Number of sessions in the first week: ").strip()
+    if not count_raw.isdigit():
+        raise ValueError("Please provide a valid number of sessions.")
+    count = int(count_raw)
+    sessions = []
+    for idx in range(1, count + 1):
+        date_raw = input(f"Session {idx} date (YYYY-MM-DD): ").strip()
+        start_raw = input(f"Session {idx} start time (HH:MM): ").strip()
+        end_raw = input(f"Session {idx} end time (HH:MM): ").strip()
+        location = input(f"Session {idx} location (optional): ").strip()
+        title = input(f"Session {idx} title (optional) [Class session]: ").strip() or "Class session"
+        start_time = _parse_calendar_time(start_raw)
+        end_time = _parse_calendar_time(end_raw)
+        if end_time <= start_time:
+            raise ValueError("Session end time must be after start time.")
+        sessions.append({
+            "date": _parse_calendar_date(date_raw),
+            "start_time": start_time,
+            "end_time": end_time,
+            "location": location,
+            "title": title,
+        })
+    holidays = []
+    default_method = DEFAULT_AI_METHOD if DEFAULT_AI_METHOD in ALL_AI_METHODS else ""
+    default_label = default_method or "none"
+    ai_raw = input(
+        f"Fetch holidays via AI? (gemini/huggingface/local/none) [default: {default_label}]: "
+    ).strip().lower()
+    if not ai_raw:
+        ai_raw = default_method
+    if ai_raw and ai_raw != "none":
+        ai_holidays = ai_raw
+    add_holiday = input("Add extra holiday dates? (y/n) [n]: ").strip().lower()
+    if add_holiday in ("y", "yes"):
+        while True:
+            holiday_raw = input("Holiday date (YYYY-MM-DD, blank to stop): ").strip()
+            if not holiday_raw:
+                break
+            holidays.append(_parse_calendar_date(holiday_raw))
+    if verbose:
+        print(f"[Calendar] Collected {len(sessions)} session(s) from manual input")
+    return {
+        "sessions": sessions,
+        "weeks": weeks,
+        "extra_week": extra_week,
+        "holidays": holidays,
+        "course_code": course_code,
+        "course_name": course_name,
+    }
+
+
+def build_course_calendar(first_week_sessions, weeks=15, extra_week=None, holidays=None, verbose=False):
+    if not first_week_sessions:
+        raise ValueError("No first-week sessions provided.")
+    if weeks <= 0:
+        raise ValueError("Number of weeks must be positive.")
+    allow_extra_week = True if extra_week is None else bool(extra_week)
+    total_weeks = weeks
+    years = set()
+    for session in first_week_sessions:
+        years.add(session["date"].year)
+        years.add((session["date"] + timedelta(days=7 * (weeks + 1))).year)
+    holiday_set = get_vietnam_holidays(years, holidays)
+    events = []
+    skipped = 0
+    for session in first_week_sessions:
+        for week_idx in range(weeks):
+            day = session["date"] + timedelta(days=7 * week_idx)
+            start_dt = datetime.combine(day, session["start_time"])
+            end_dt = datetime.combine(day, session["end_time"])
+            title = session.get("title", "Class session")
+            if day in holiday_set:
+                if verbose:
+                    print(f"[Calendar] Skipping holiday session on {day}")
+                skipped += 1
+                title = f"{title} [cancel]"
+            events.append({
+                "date": day,
+                "start_dt": start_dt,
+                "end_dt": end_dt,
+                "location": session.get("location", ""),
+                "title": title,
+                "week": week_idx + 1,
+            })
+    if skipped and allow_extra_week:
+        makeup_week = weeks
+        total_weeks += 1
+        for session in first_week_sessions:
+            day = session["date"] + timedelta(days=7 * makeup_week)
+            if day in holiday_set:
+                if verbose:
+                    print(f"[Calendar] Skipping holiday make-up session on {day}")
+                continue
+            start_dt = datetime.combine(day, session["start_time"])
+            end_dt = datetime.combine(day, session["end_time"])
+            events.append({
+                "date": day,
+                "start_dt": start_dt,
+                "end_dt": end_dt,
+                "location": session.get("location", ""),
+                "title": session.get("title", "Class session"),
+                "week": makeup_week + 1,
+            })
+    events.sort(key=lambda e: (e["start_dt"], e["title"]))
+    if verbose:
+        extra_note = " (make-up week added)" if skipped and allow_extra_week else ""
+        print(f"[Calendar] Built {len(events)} session(s) across {total_weeks} week(s){extra_note}")
+    return events
+
+
+def _ics_escape(value):
+    if value is None:
+        return ""
+    return str(value).replace("\\", "\\\\").replace(";", "\;").replace(",", "\,")
+
+def _calendar_event_title(event, course_title=None):
+    base_title = event.get("title") or "Class session"
+    if course_title:
+        if base_title.startswith(course_title):
+            return base_title
+        return f"{course_title} - {base_title}"
+    return base_title
+
+
+def export_course_calendar_ics(events, output_path, course_name=None, verbose=False):
+    now = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    lines = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//course//calendar//EN",
+    ]
+    for event in events:
+        uid_source = f"{event['start_dt'].isoformat()}-{event.get('location','')}-{event.get('title','')}"
+        uid = hashlib.md5(uid_source.encode("utf-8")).hexdigest() + "@course"
+        summary = _calendar_event_title(event, course_name)
+        lines.extend([
+            "BEGIN:VEVENT",
+            f"UID:{uid}",
+            f"DTSTAMP:{now}",
+            f"DTSTART:{event['start_dt'].strftime('%Y%m%dT%H%M%S')}",
+            f"DTEND:{event['end_dt'].strftime('%Y%m%dT%H%M%S')}",
+            f"SUMMARY:{_ics_escape(summary)}",
+        ])
+        location = event.get("location")
+        if location:
+            lines.append(f"LOCATION:{_ics_escape(location)}")
+        lines.append("END:VEVENT")
+    lines.append("END:VCALENDAR")
+    os.makedirs(os.path.dirname(os.path.abspath(output_path)) or ".", exist_ok=True)
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+    if verbose:
+        print(f"[Calendar] Wrote iCal to {output_path}")
+    return output_path
+
+
+def export_course_calendar_txt(events, output_path, course_name=None, verbose=False):
+    lines = []
+    if course_name:
+        lines.append(f"Course: {course_name}")
+    lines.append(f"Total sessions: {len(events)}")
+    lines.append("")
+    for event in events:
+        date_str = event["date"].strftime("%Y-%m-%d")
+        time_str = f"{event['start_dt'].strftime('%H:%M')}-{event['end_dt'].strftime('%H:%M')}"
+        title = _calendar_event_title(event, course_name)
+        location = event.get("location")
+        loc_text = f" @ {location}" if location else ""
+        lines.append(f"{date_str} (Week {event['week']}): {time_str} - {title}{loc_text}")
+    os.makedirs(os.path.dirname(os.path.abspath(output_path)) or ".", exist_ok=True)
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+    if verbose:
+        print(f"[Calendar] Wrote TXT to {output_path}")
+    return output_path
+
+
+def export_course_calendar_markdown(events, output_path, course_name=None, verbose=False):
+    lines = []
+    if course_name:
+        lines.append(f"# {course_name} calendar")
+    else:
+        lines.append("# Course calendar")
+    lines.append("")
+    lines.append("| Date | Week | Time | Title | Location |")
+    lines.append("| --- | --- | --- | --- | --- |")
+    for event in events:
+        date_str = event["date"].strftime("%Y-%m-%d")
+        time_str = f"{event['start_dt'].strftime('%H:%M')}-{event['end_dt'].strftime('%H:%M')}"
+        title = _calendar_event_title(event, course_name)
+        location = event.get("location") or ""
+        lines.append(f"| {date_str} | {event['week']} | {time_str} | {title} | {location} |")
+    os.makedirs(os.path.dirname(os.path.abspath(output_path)) or ".", exist_ok=True)
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+    if verbose:
+        print(f"[Calendar] Wrote Markdown to {output_path}")
+    return output_path
+
+
+def export_course_calendar_all(events, output_dir=None, base_name=None, course_name=None, verbose=False):
+    output_dir = output_dir or os.getcwd()
+    base_name = base_name or "course_calendar"
+    txt_path = os.path.join(output_dir, f"{base_name}.txt")
+    md_path = os.path.join(output_dir, f"{base_name}.md")
+    ics_path = os.path.join(output_dir, f"{base_name}.ics")
+    export_course_calendar_txt(events, txt_path, course_name=course_name, verbose=verbose)
+    export_course_calendar_markdown(events, md_path, course_name=course_name, verbose=verbose)
+    export_course_calendar_ics(events, ics_path, course_name=course_name, verbose=verbose)
+    return {"txt": txt_path, "md": md_path, "ics": ics_path}
+
+
+def build_and_export_course_calendar(input_path=None, weeks=None, extra_week=None, output_dir=None, base_name=None, course_code=None, course_name=None, extra_holidays=None, verbose=False):
+    if input_path:
+        payload = parse_course_calendar_txt(input_path, verbose=verbose)
+    else:
+        payload = prompt_course_calendar_manual(
+            course_code_default=course_code or COURSE_CODE or get_cached_course_code(),
+            course_name_default=course_name or COURSE_NAME,
+            verbose=verbose,
+        )
+    sessions = payload.get("sessions", [])
+    file_weeks = payload.get("weeks", 15)
+    file_extra = payload.get("extra_week", False)
+    holidays = payload.get("holidays", [])
+    if extra_holidays:
+        holidays.extend(extra_holidays)
+    if not course_code:
+        course_code = payload.get("course_code") or COURSE_CODE or get_cached_course_code() or ""
+    if not course_name:
+        course_name = payload.get("course_name") or COURSE_NAME or ""
+    if weeks is None:
+        weeks = file_weeks
+    if extra_week is None:
+        extra_week = file_extra
+    course_code = str(course_code).strip()
+    course_name = str(course_name).strip()
+    if not course_code:
+        raise ValueError("Course code is required. Provide --calendar-course-code, COURSE_CODE in config, or include course_code: in the input file.")
+    if not course_name:
+        raise ValueError("Course name is required. Provide --calendar-course-name, COURSE_NAME in config, or include course_name: in the input file.")
+    course_title = f"{course_code} - {course_name}"
+    if DEFAULT_AI_METHOD in ALL_AI_METHODS:
+        years = {s["date"].year for s in sessions}
+        years.add(datetime.now().year)
+        holidays.extend(fetch_vietnam_holidays_ai(years, method=DEFAULT_AI_METHOD, verbose=verbose))
+    events = build_course_calendar(
+        first_week_sessions=sessions,
+        weeks=weeks,
+        extra_week=extra_week,
+        holidays=holidays,
+        verbose=verbose,
+    )
+    return export_course_calendar_all(events, output_dir=output_dir, base_name=base_name, course_name=course_title, verbose=verbose)

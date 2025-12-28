@@ -26,6 +26,7 @@ Utilities for managing course rosters, grading, OCR extraction, and Canvas/Googl
 - [Common workflows](#common-workflows)
 - [Configuration](#configuration)
 - [Weekly automation guide](#weekly-automation-guide)
+- [Course calendar builder](#course-calendar-builder)
 - [Override grades](#override-grades)
   - [Notes](#notes)
   - [External tools (optional)](#external-tools-optional)
@@ -243,6 +244,45 @@ Optional settings:
 - `LOG_DIR`, `LOG_LEVEL`, `LOG_MAX_BYTES`, `LOG_BACKUP_COUNT` for rotating logs.
 - `DB_BACKUP_KEEP`, `CONFIG_BACKUP_KEEP` for backup retention.
 - `GRADE_AUDIT_ENABLED`, `GRADE_AUDIT_FIELDS` to control grade audit history stored in the database.
+- `COURSE_CODE`, `COURSE_NAME` for calendar titles when not provided via CLI or input files.
+
+## Course calendar builder
+
+Build a course calendar from first-week sessions and export TXT/Markdown/ICS files. If the input file is omitted,
+the tool prompts for dates and times interactively.
+
+Example (input file):
+
+```text
+course_code: MAT3508
+course_name: Discrete Mathematics
+weeks: 15
+extra_week: yes
+holiday: 2026-01-01
+holiday: 2026-02-17
+session: 2026-01-05 08:00-10:00 | Room 101 | Lecture
+session: 2026-01-07 08:00-10:00 | Room 101 | Lecture
+```
+
+Notes:
+- Course code and course name are required for calendar titles. Provide them in the input file, config (`COURSE_CODE`, `COURSE_NAME`), CLI (`--calendar-course-code`, `--calendar-course-name`), or cache the course code in `.course_code`.
+- Fixed Vietnamese holidays (1/1, 4/30, 5/1, 9/2) are automatically excluded.
+- Add lunar holidays such as Tet or Hung Vuong via `holiday:` lines or interactive input.
+- Add unofficial holidays via `unofficial_holiday:` or `extra_holiday:` lines (comma-separated dates).
+- Holidays are auto-fetched via AI using the default provider.
+- A make-up week is added only when holidays skip sessions.
+- Start time must be earlier than end time.
+- Sample input: `sample/course_calendar_sample_input.txt` (triggers a make-up week).
+- Unofficial-holiday sample: `sample/course_calendar_with_unofficial_holidays.txt`.
+- Add unofficial holidays with `--calendar-extra-holidays 2026-03-10,2026-04-05`.
+
+```bash
+course --build-course-calendar --calendar-input first_week.txt --calendar-course-code MAT3508 --calendar-course-name "Discrete Mathematics"
+course --build-course-calendar
+```
+
+Outputs: `course_calendar.txt`, `course_calendar.md`, `course_calendar.ics` in the chosen output directory.
+Use `--calendar-output-dir` and `--calendar-output-base` to customize the location and base filename.
 
 ## Override grades
 
@@ -250,6 +290,8 @@ Place `override_grades.xlsx` in the working directory (see `sample/override_grad
 Required columns: `Mã Sinh Viên` or `Họ và Tên`, plus at least one of `CC`/`GK`/`CK` (order does not matter). `STT` and `Lý do` are optional.
 Common header aliases are accepted, for example `MSSV`, `Mã SV`, `Họ tên`, `Midterm` (Giữa kỳ), `Final` (Cuối kỳ), `CC` (Chuyên cần), `Reason` (Lý do).
 Non-empty CC/GK/CK cells override computed grades, and `Lý do` is appended to the final evaluation output when present.
+When using Canvas gradebook CSVs, `Unposted Final Score` is used if `Final Score` is missing or all-zero for CC/GK/CK.
+Assignment-group scores are omitted from the final evaluation report when all component scores are 0.
 To refine the per-student report with AI, set `REPORT_REFINE_METHOD` to `gemini`, `huggingface`, or `local` in config (requires the corresponding API key for remote providers). The report includes both the default model and the model actually used when AI refinement runs.
 Local LLM settings (defaults to Ollama):
 - `LOCAL_LLM_COMMAND` (default: `ollama`)

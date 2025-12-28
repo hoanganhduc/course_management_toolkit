@@ -151,6 +151,9 @@ def _build_menu_sections():
             ("Restore students database", "55"),
             ("Validate student data and export report", "56"),
         ]),
+        ("Course Planning", [
+            ("Build course calendar (TXT/MD/ICS)", "71"),
+        ]),
         ("Student Exports", [
             ("Export student list to Excel file", "4"),
             ("Export all student emails to TXT file", "5"),
@@ -822,6 +825,35 @@ def main():
     automation_group.add_argument('--workflow-teacher-canvas-id', type=str,
                                   help="Teacher Canvas ID placeholder for workflow",
                                   dest="workflow_teacher_canvas_id", metavar="CANVAS_ID")
+    calendar_group = parser.add_argument_group("Course Calendar")
+    calendar_group.add_argument('--build-course-calendar', action='store_true',
+                               help="Build course calendar and export to TXT/MD/ICS",
+                               dest="build_course_calendar")
+    calendar_group.add_argument('--calendar-input', type=str,
+                               help="TXT file with first-week schedule and optional holidays",
+                               dest="calendar_input", metavar="PATH")
+    calendar_group.add_argument('--calendar-weeks', type=int, default=None,
+                               help="Number of official weeks (default: 15)",
+                               dest="calendar_weeks", metavar="WEEKS")
+    calendar_group.add_argument('--calendar-extra-week', action='store_true', default=None,
+                               help="Allow one make-up week when holidays skip sessions",
+                               dest="calendar_extra_week")
+    calendar_group.add_argument('--calendar-course-code', type=str,
+                               help="Course code for calendar title",
+                               dest="calendar_course_code", metavar="COURSE_CODE")
+    calendar_group.add_argument('--calendar-course-name', type=str,
+                               help="Course name for calendar summaries",
+                               dest="calendar_course_name", metavar="NAME")
+    calendar_group.add_argument('--calendar-output-dir', type=str,
+                               help="Output directory for calendar exports (default: cwd)",
+                               dest="calendar_output_dir", metavar="DIR")
+    calendar_group.add_argument('--calendar-output-base', type=str,
+                               help="Output base name for calendar files (default: course_calendar)",
+                               dest="calendar_output_base", metavar="BASENAME")
+    calendar_group.add_argument('--calendar-extra-holidays', type=str,
+                               help="Comma-separated extra holiday dates (YYYY-MM-DD,YYYY-MM-DD)",
+                               dest="calendar_extra_holidays", metavar="DATES")
+
     parser.add_argument('--list-cli-aliases', action='store_true',
                         help="List auto-generated short aliases for long-only CLI flags",
                         dest="list_cli_aliases")
@@ -940,8 +972,6 @@ def main():
 
     if getattr(args, "no_restricted", False):
         DEFAULT_RESTRICTED = False
-    else:
-        DEFAULT_RESTRICTED = True
 
     if args.backup_config:
         backup_dir = args.backup_config if isinstance(args.backup_config, str) else None
@@ -1039,6 +1069,39 @@ def main():
                 print(f"[WeeklyLocal] Archived weekly artifacts to {report_dir}")
         if args.verbose:
             print(summary.get("summary", "Weekly automation complete."))
+
+    if args.build_course_calendar:
+        output_dir = args.calendar_output_dir or os.getcwd()
+        base_name = args.calendar_output_base or "course_calendar"
+        input_path = args.calendar_input or None
+        calendar_weeks = args.calendar_weeks
+        course_code = args.calendar_course_code or args.course_code or get_cached_course_code() or ""
+        course_name = args.calendar_course_name or ""
+        extra_holidays = []
+        if args.calendar_extra_holidays:
+            for raw in args.calendar_extra_holidays.split(","):
+                raw = raw.strip()
+                if not raw:
+                    continue
+                try:
+                    extra_holidays.append(datetime.strptime(raw, "%Y-%m-%d").date())
+                except Exception:
+                    print(f"[Calendar] Invalid extra holiday date: {raw} (expected YYYY-MM-DD)")
+        paths = build_and_export_course_calendar(
+            input_path=input_path,
+            weeks=calendar_weeks,
+            extra_week=args.calendar_extra_week,
+            output_dir=output_dir,
+            base_name=base_name,
+            course_code=course_code,
+            course_name=course_name,
+            extra_holidays=extra_holidays,
+            verbose=args.verbose,
+        )
+        print("Calendar exports written:")
+        for fmt, path in paths.items():
+            print(f"- {fmt}: {path}")
+
 
     if args.restore_db:
         restore_database(db_path=db_path, backup_path=args.restore_db, verbose=args.verbose)
@@ -3306,5 +3369,47 @@ def main():
                     category=category or "",
                 )
                 print(f"Workflow written to {workflow_path}")
+
+            elif choice == '71':
+                input_path = input_with_completion("Calendar input file (blank for manual): ").strip()
+                if input_path.lower() in ('q', 'quit'):
+                    continue
+                weeks_raw = input("Number of official weeks [15]: ").strip()
+                weeks = int(weeks_raw) if weeks_raw.isdigit() else None
+                extra_raw = input("Allow one make-up week if holidays occur? (y/n) [y]: ").strip().lower()
+                extra_week = None
+                if extra_raw in ("y", "yes"):
+                    extra_week = True
+                elif extra_raw in ("n", "no"):
+                    extra_week = False
+                holiday_raw = input("Extra holiday dates (YYYY-MM-DD, comma-separated) [none]: ").strip()
+                extra_holidays = []
+                if holiday_raw:
+                    for item in holiday_raw.split(","):
+                        item = item.strip()
+                        if not item:
+                            continue
+                        try:
+                            extra_holidays.append(datetime.strptime(item, "%Y-%m-%d").date())
+                        except Exception:
+                            print(f"[Calendar] Invalid extra holiday date: {item} (expected YYYY-MM-DD)")
+                output_dir = input_with_completion("Output directory (blank for current): ").strip()
+                base_name = input("Output base name [course_calendar]: ").strip() or "course_calendar"
+                course_code = input("Course code (optional): ").strip()
+                course_name = input("Course name (optional): ").strip()
+                paths = build_and_export_course_calendar(
+                    input_path=input_path or None,
+                    weeks=weeks,
+                    extra_week=extra_week,
+                    output_dir=output_dir or os.getcwd(),
+                    base_name=base_name,
+                    course_code=course_code or "",
+                    course_name=course_name or "",
+                    extra_holidays=extra_holidays,
+                    verbose=args.verbose,
+                )
+                print("Calendar exports written:")
+                for fmt, path in paths.items():
+                    print(f"- {fmt}: {path}")
             else:
                 print("Invalid option.")

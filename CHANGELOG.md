@@ -1,19 +1,19 @@
 ﻿# Changelog
 
-## [0.1.1] - 2025-12-27
+## [0.1.1] - 2025-12-28
 - Added multi-file glob support for import/update CLI commands.
-- Added student detail sort methods for exports and reports.
+- Added student detail sort methods and clearer export/report formatting.
 - Normalized Canvas/Google Classroom sync scores to a 10-point scale when possible.
-- MAT*.xlsx roster imports now ignore score columns (CC, GK, CK, totals).
-- Improved student detail formatting and Classroom total score output.
-- Improved MAT Excel updates by inferring missing student IDs from email when needed (VNU University of Science, Hanoi emails only).
+- MAT*.xlsx roster imports ignore score columns (CC, GK, CK, totals).
+- MAT Excel updates can infer missing student IDs from VNU University of Science, Hanoi emails.
 - Added resubmission grading workflow with optional keep-old-grade default.
-- Resubmission grading now lists only assignments needing regrade and excludes Roll Call Attendance.
-- Canvas sync now stores submission comments and rubric evaluations per assignment in the database.
-- Removed Canvas gradebook download (Canvas API not available).
-- Added auto-generated short aliases for long-only CLI flags.
-- Added `--list-cli-aliases` to display auto-generated short aliases.
-- Updated documentation to cover new sync and import behavior.
+- Canvas sync stores submission comments and rubric evaluations.
+- Canvas grade parsing falls back to Unposted Final Score when Final Score is empty/zero (CC/GK/CK).
+- Final evaluation reports omit assignment-group scores when all component scores are 0.
+- Added course calendar builder (TXT/Markdown/ICS) with holiday exclusions, unofficial holidays, and make-up week logic.
+- Course calendar titles include course code/name and canceled sessions are tagged.
+- Added auto-generated short aliases for long-only CLI flags and `--list-cli-aliases`.
+- Documentation and samples updated for new sync, calendar, and local AI tooling.
 
 ## [0.1.0] - 2025-12-27
 - Packaged the original script as a Python CLI with install helpers and standardized flags.
