@@ -135,6 +135,36 @@ def _print_cli_aliases(parser):
                 print(f"  {long_opt}: {'; '.join(parts)}")
 
 
+def _format_cli_aliases(parser):
+    auto_aliases = _generate_short_aliases(parser)
+    if not parser._action_groups:
+        return ""
+    lines = ["", "Auto-generated short aliases:"]
+    for group in parser._action_groups:
+        title = group.title or "Other"
+        rows = []
+        for action in group._group_actions:
+            long_opts = [opt for opt in action.option_strings if opt.startswith("--")]
+            if not long_opts:
+                continue
+            long_opt = long_opts[0]
+            auto_shorts = []
+            if long_opt in auto_aliases.values():
+                for alias, target in auto_aliases.items():
+                    if target == long_opt:
+                        auto_shorts.append(alias)
+            if not auto_shorts:
+                continue
+            rows.append((long_opt, sorted(set(auto_shorts))))
+        if not rows:
+            continue
+        lines.append(f"[{title}]")
+        for long_opt, auto_shorts in sorted(rows, key=lambda x: x[0]):
+            lines.append(f"  {long_opt}: {', '.join(auto_shorts)}")
+    lines.append("Use --list-cli-aliases to see auto and manual aliases.")
+    return "\n".join(lines)
+
+
 def _build_menu_sections():
     return [
         ("Student Database", [
@@ -153,6 +183,7 @@ def _build_menu_sections():
         ]),
         ("Course Planning", [
             ("Build course calendar (TXT/MD/ICS)", "71"),
+            ("Import course calendar (ICS) to Canvas", "72"),
         ]),
         ("Student Exports", [
             ("Export student list to Excel file", "4"),
@@ -644,6 +675,12 @@ def main():
     canvas_group.add_argument('--download-dest-dir', '-dd', type=str, help="Destination directory for downloaded Canvas assignment files", dest="download_dest_dir", metavar="DIR")
     canvas_group.add_argument('--comment-canvas-submission', '-cs', action='store_true', help="Add a comment to a Canvas assignment submission", dest="comment_canvas_submission")
     canvas_group.add_argument('--add-canvas-announcement', '-aa', action='store_true', help="Create a new announcement in Canvas course", dest="add_canvas_announcement")
+    canvas_group.add_argument('--announcement-title', type=str, help="Title for Canvas announcement", dest="announcement_title", metavar="TITLE")
+    canvas_group.add_argument('--announcement-message', type=str, help="Short message for Canvas announcement", dest="announcement_message", metavar="MESSAGE")
+    canvas_group.add_argument('--announcement-file', type=str, help="TXT file with announcement body", dest="announcement_file", metavar="PATH")
+    canvas_group.add_argument('--announcement-refine', type=str, choices=['gemini', 'huggingface', 'local', 'none'],
+                              help="Refine announcement text with AI",
+                              dest="announcement_refine", metavar="METHOD")
     canvas_group.add_argument('--invite-canvas-email', '-ie', type=str, help="Invite a single user to Canvas course by email", dest="invite_canvas_email")
     canvas_group.add_argument('--invite-canvas-name', type=str, help="Name for Canvas invite (for single user)", dest="invite_canvas_name")
     canvas_group.add_argument('--invite-canvas-role', '-ir', type=str, default="student",
@@ -853,10 +890,22 @@ def main():
     calendar_group.add_argument('--calendar-extra-holidays', type=str,
                                help="Comma-separated extra holiday dates (YYYY-MM-DD,YYYY-MM-DD)",
                                dest="calendar_extra_holidays", metavar="DATES")
+    calendar_group.add_argument('--import-canvas-calendar-ics', type=str,
+                               help="Import an iCal (.ics) file and create Canvas calendar events",
+                               dest="import_canvas_calendar_ics", metavar="PATH")
+    calendar_group.add_argument('--skip-duplicates', action='store_true',
+                               help="Skip Canvas calendar events that match existing entries",
+                               dest="skip_duplicates")
+    calendar_group.add_argument('--force', action='store_true',
+                               help="Force Canvas calendar import (do not skip duplicates)",
+                               dest="force")
 
     parser.add_argument('--list-cli-aliases', action='store_true',
                         help="List auto-generated short aliases for long-only CLI flags",
                         dest="list_cli_aliases")
+
+    parser.epilog = _format_cli_aliases(parser)
+    parser.formatter_class = argparse.RawTextHelpFormatter
 
     if '--list-cli-aliases' in sys.argv:
         _print_cli_aliases(parser)
@@ -1101,6 +1150,24 @@ def main():
         print("Calendar exports written:")
         for fmt, path in paths.items():
             print(f"- {fmt}: {path}")
+
+    if args.import_canvas_calendar_ics:
+        skip_duplicates = args.skip_duplicates or not args.force
+        result = import_canvas_calendar_from_ics(
+            args.import_canvas_calendar_ics,
+            api_url=CANVAS_LMS_API_URL,
+            api_key=CANVAS_LMS_API_KEY,
+            course_id=CANVAS_LMS_COURSE_ID,
+            dry_run=args.dry_run,
+            skip_duplicates=skip_duplicates,
+            verbose=args.verbose,
+        )
+        print(
+            "Canvas calendar import: "
+            f"{result.get('created', 0)} created, "
+            f"{result.get('skipped', 0)} skipped, "
+            f"{result.get('failed', 0)} failed."
+        )
 
 
     if args.restore_db:
@@ -1362,12 +1429,18 @@ def main():
 
     if args.add_canvas_announcement:
         course_id = args.canvas_course_id if hasattr(args, "canvas_course_id") and args.canvas_course_id else CANVAS_LMS_COURSE_ID
+        refine = args.announcement_refine
+        if refine == "none":
+            refine = None
         add_canvas_announcement(
-            title=None,
-            message=None,
+            title=args.announcement_title,
+            message=args.announcement_message,
+            message_path=args.announcement_file,
+            refine=refine,
             course_id=course_id,
             api_url=CANVAS_LMS_API_URL,
             api_key=CANVAS_LMS_API_KEY,
+            dry_run=args.dry_run,
             verbose=args.verbose
         )
 
@@ -2424,12 +2497,22 @@ def main():
                     continue
                 if not course_id:
                     course_id = CANVAS_LMS_COURSE_ID
+                announce_title = input("Announcement title: ").strip()
+                message_file = input_with_completion("Message TXT file (blank for manual input): ").strip()
+                announce_message = None
+                if not message_file:
+                    announce_message = input("Short announcement message: ").strip()
+                refine_raw = input("Refine with AI? (none/gemini/huggingface/local) [none]: ").strip().lower()
+                refine = None if not refine_raw or refine_raw == "none" else refine_raw
                 add_canvas_announcement(
-                    title=None,
-                    message=None,
+                    title=announce_title,
+                    message=announce_message,
+                    message_path=message_file or None,
+                    refine=refine,
                     api_url=CANVAS_LMS_API_URL,
                     api_key=CANVAS_LMS_API_KEY,
                     course_id=course_id,
+                    dry_run=args.dry_run,
                     verbose=args.verbose
                 )
             elif choice == '21':
@@ -3411,5 +3494,26 @@ def main():
                 print("Calendar exports written:")
                 for fmt, path in paths.items():
                     print(f"- {fmt}: {path}")
+            elif choice == '72':
+                ics_path = input_with_completion("iCal (.ics) file to import: ").strip()
+                if not ics_path:
+                    print("No iCal file provided.")
+                    continue
+                skip_dups_raw = input("Skip duplicates? (y/n) [y]: ").strip().lower()
+                skip_dups = False if skip_dups_raw in ("n", "no") else True
+                result = import_canvas_calendar_from_ics(
+                    ics_path,
+                    api_url=CANVAS_LMS_API_URL,
+                    api_key=CANVAS_LMS_API_KEY,
+                    course_id=CANVAS_LMS_COURSE_ID,
+                    skip_duplicates=skip_dups,
+                    verbose=args.verbose,
+                )
+                print(
+                    "Canvas calendar import: "
+                    f"{result.get('created', 0)} created, "
+                    f"{result.get('skipped', 0)} skipped, "
+                    f"{result.get('failed', 0)} failed."
+                )
             else:
                 print("Invalid option.")

@@ -15,6 +15,8 @@ Version 0.1.1 (2025-12-27)
 - Final evaluation reports omit assignment-group scores when all component scores are 0.
 - Added course calendar builder (TXT/Markdown/ICS) with holiday exclusions, unofficial holidays, and make-up week logic.
 - Course calendar titles include course code/name and canceled sessions are tagged.
+- Added Canvas calendar import from iCal (.ics) files with dry-run and duplicate skipping.
+- Improved Canvas announcement flow with short input, AI refinement, and confirmation before posting.
 - Added auto-generated short aliases for long-only CLI flags.
 - Added ``--list-cli-aliases`` to display auto-generated short aliases.
 - Documentation and samples updated for new sync, calendar, and local AI tooling.

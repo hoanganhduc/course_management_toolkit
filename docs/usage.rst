@@ -45,6 +45,8 @@ Clear stored settings
 
    course --clear-config
    course --clear-credentials
+   course -ccfg
+   course -ccred
 
 Tip: ``--google-credentials-path`` and ``--google-token-path`` copy the files into
 the default config folder with standard filenames, even if you only set them in
@@ -140,6 +142,7 @@ Sync Canvas roster into the local database:
 .. code-block:: bash
 
    course --sync-canvas
+   course -sc
 
 Notes:
 
@@ -150,12 +153,14 @@ List auto-generated CLI short aliases:
 .. code-block:: bash
 
    course --list-cli-aliases
+   course -lca
 
 Sync Google Classroom roster into the local database:
 
 .. code-block:: bash
 
    course --sync-google-classroom
+   course -sgc
 
 Notes:
 
@@ -168,24 +173,29 @@ Grade resubmissions (lists assignments that need regrading, excludes Roll Call A
 
    course --grade-resubmission
    course --grade-resubmission --keep-old-grade
+   course -grs
+   course -grs --keep-old-grade
 
 Update a MAT*.xlsx file with grades from the local database:
 
 .. code-block:: bash
 
    course --update-mat-excel MAT3500-3-Toan-roi-rac-4TC.xlsx
+   course -ume MAT3500-3-Toan-roi-rac-4TC.xlsx
 
 Export a roster to CSV:
 
 .. code-block:: bash
 
    course --export-roster
+   course -ero
 
 Preview an import (no write):
 
 .. code-block:: bash
 
    course --preview-import students.xlsx
+   course -pi students.xlsx
 
 Notes:
 
@@ -196,18 +206,21 @@ Export an anonymized roster:
 .. code-block:: bash
 
    course --export-anonymized
+   course -ean
 
 Generate a weekly workflow template:
 
 .. code-block:: bash
 
    course --generate-weekly-workflow
+   course -gww
 
 Run weekly automation:
 
 .. code-block:: bash
 
    course --run-weekly-automation --weekly-assignment-id 123456 --weekly-teacher-canvas-id 987654
+   course -rwa --weekly-assignment-id 123456 --weekly-teacher-canvas-id 987654
 
 If ``--weekly-assignment-id`` is omitted, the tool scans ``weekly_reports/`` to list
 assignments already processed and then runs on closed assignments not yet in the reports.
@@ -217,6 +230,7 @@ Run weekly automation locally (no GitHub repo needed):
 .. code-block:: bash
 
    course --run-weekly-local --weekly-assignment-id 123456 --weekly-local-root "C:\\path\\to\\course-folder"
+   course -rwl --weekly-assignment-id 123456 --weekly-local-root "C:\\path\\to\\course-folder"
 
 Weekly automation guide
 -----------------------
@@ -266,14 +280,22 @@ Notes:
 - Holidays are auto-fetched via AI using the default provider.
 - A make-up week is added only when holidays skip sessions.
 - Start time must be earlier than end time.
-- Sample input: ``sample/course_calendar_sample_input.txt`` (triggers a make-up week).
-- Unofficial-holiday sample: ``sample/course_calendar_with_unofficial_holidays.txt``.
+- Sample input: ``sample/calendar/course_calendar_sample_input.txt`` (triggers a make-up week).
+- Unofficial-holiday sample: ``sample/calendar/course_calendar_with_unofficial_holidays.txt``.
 - Add unofficial holidays with ``--calendar-extra-holidays 2026-03-10,2026-04-05``.
 
 Usage::
 
   course --build-course-calendar --calendar-input first_week.txt --calendar-course-code MAT3508 --calendar-course-name "Discrete Mathematics"
   course --build-course-calendar
+  course -bcc --calendar-input first_week.txt --calendar-course-code MAT3508 --calendar-course-name "Discrete Mathematics"
+  course -bcc
+
+Import an existing iCal file into Canvas (requires ``CANVAS_LMS_API_URL``, ``CANVAS_LMS_API_KEY``, ``CANVAS_LMS_COURSE_ID``)::
+
+  course --import-canvas-calendar-ics course_calendar.ics --skip-duplicates --dry-run
+  course -icci course_calendar.ics --skip-duplicates -dr
+  # Use --force to import without duplicate checks.
 
 Outputs: ``course_calendar.txt``, ``course_calendar.md``, ``course_calendar.ics`` in the chosen output directory.
 Use ``--calendar-output-dir`` and ``--calendar-output-base`` to customize the location and base filename.
@@ -286,6 +308,10 @@ Backup and restore
    course --restore-db
    course --backup-config
    course --restore-config
+   course -bd
+   course -rd
+   course -bc
+   course -rc
 
 Data validation report
 ----------------------
@@ -293,6 +319,7 @@ Data validation report
 .. code-block:: bash
 
    course --validate-data
+   course -vd
 
 Dry-run mode
 ------------
@@ -302,6 +329,7 @@ Preview changes without writing files:
 .. code-block:: bash
 
    course --update-mat-excel MAT3500-3-Toan-roi-rac-4TC.xlsx --dry-run --export-grade-diff
+   course -ume MAT3500-3-Toan-roi-rac-4TC.xlsx -dr --export-grade-diff
 
 Student detail sort order (for ``--all-details`` and ``--export-all-details``):
 
@@ -310,6 +338,9 @@ Student detail sort order (for ``--all-details`` and ``--export-all-details``):
    course --export-all-details students.txt --student-sort-method first_last
    course --export-all-details students.txt --student-sort-method last_first
    course --export-all-details students.txt --student-sort-method id
+   course -E students.txt --student-sort-method first_last
+   course -E students.txt --student-sort-method last_first
+   course -E students.txt --student-sort-method id
 
 You can also set ``STUDENT_SORT_METHOD`` in ``config.json`` (first_last, last_first, id).
 
@@ -330,10 +361,28 @@ Backup retention is controlled by:
 
 A brief per-run summary is appended to ``run_report.txt`` in the working directory.
 
+Canvas announcements
+--------------------
+
+Create an announcement from a short message (manual input or a TXT file), optionally refine with AI, preview, and post::
+
+  course --add-canvas-announcement --announcement-title "Week 3" --announcement-message "Please submit by Friday"
+  course --add-canvas-announcement --announcement-title "Reminder" --announcement-file announcement.txt --announcement-refine gemini
+  course -aa --announcement-title "Week 3" --announcement-message "Please submit by Friday"
+  course -aa --announcement-title "Reminder" --announcement-file announcement.txt --announcement-refine gemini
+
+Use ``--dry-run`` to preview without posting. Omit ``--announcement-refine`` to post the original text without AI.
+
+Sample inputs/outputs:
+- ``sample/announcements/announcement_input.txt``
+- ``sample/announcements/announcement_refined_output.txt``
+- ``sample/announcements/announcement_input_vi.txt``
+- ``sample/announcements/announcement_refined_output_vi.txt``
+
 Override grades
 ----------------
 
-Place ``override_grades.xlsx`` in the working directory (see ``sample/override_grades.xlsx`` for the format).
+Place ``override_grades.xlsx`` in the working directory (see ``sample/overrides/override_grades.xlsx`` for the format).
 Required columns: ``Mã Sinh Viên`` or ``Họ và Tên``, plus at least one of ``CC``/``GK``/``CK`` (order does not matter). ``STT`` and ``Lý do`` are optional.
 Common header aliases are accepted, for example ``MSSV``, ``Mã SV``, ``Họ tên``, ``Midterm`` (Giữa kỳ), ``Final`` (Cuối kỳ), ``CC`` (Chuyên cần), ``Reason`` (Lý do).
 Non-empty CC/GK/CK cells override computed grades, and ``Lý do`` is appended to the final evaluation output when present.
@@ -353,6 +402,11 @@ Local LLM settings (defaults to Ollama):
 - ``LOCAL_LLM_GGUF_DIR`` (default: ``C:\llm``, scanned recursively for ``.gguf`` files)
 Runtime overrides: ``--local-llm-command``, ``--local-llm-model``, ``--local-llm-args``, ``--local-llm-gguf-dir``.
 
+Installing local AI models (examples):
+- Ollama: https://ollama.com/ then run ``ollama pull llama3.2:3b`` and set ``LOCAL_LLM_COMMAND=ollama``, ``LOCAL_LLM_MODEL=llama3.2:3b``.
+- llama.cpp: build ``llama-cli`` (https://github.com/ggerganov/llama.cpp), set ``LOCAL_LLM_COMMAND`` to the ``llama-cli`` path and ``LOCAL_LLM_ARGS`` to include ``-m <path-to-gguf>``.
+Use ``--announcement-refine local`` or set ``REPORT_REFINE_METHOD=local`` to use the local model.
+
 
 AI model verification and listing
 ---------------------------------
@@ -362,30 +416,35 @@ Verify credentials and connectivity:
 .. code-block:: bash
 
    course --test-ai
+   course -tai
 
 Verify the local model:
 
 .. code-block:: bash
 
    course --test-ai local
+   course -tai local
 
 Detect locally installed models (Ollama or llama.cpp compatible):
 
 .. code-block:: bash
 
    course --detect-local-ai
+   course -dla
 
 Test a specific model name:
 
 .. code-block:: bash
 
    course --test-ai gemini --test-ai-model gemini-2.5-flash
+   course -tai gemini -tam gemini-2.5-flash
 
 List available models:
 
 .. code-block:: bash
 
    course --list-ai-models gemini
+   course -lam gemini
 
 When an AI call is rate-limited, the tool retries and may switch to a different available model with similar capabilities.
 

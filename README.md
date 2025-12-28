@@ -74,12 +74,14 @@ Update a MAT*.xlsx file with grades from the local database:
 
 ```bash
 course --update-mat-excel MAT3500-3-Toan-roi-rac-4TC.xlsx
+course -ume MAT3500-3-Toan-roi-rac-4TC.xlsx
 ```
 
 Sync Canvas roster into the local database:
 
 ```bash
 course --sync-canvas
+course -sc
 ```
 
 Notes:
@@ -89,12 +91,14 @@ List auto-generated CLI short aliases:
 
 ```bash
 course --list-cli-aliases
+course -lca
 ```
 
 Sync Google Classroom roster into the local database:
 
 ```bash
 course --sync-google-classroom
+course -sgc
 ```
 
 Notes:
@@ -106,6 +110,8 @@ Grade resubmissions (lists assignments that need regrading, excludes Roll Call A
 ```bash
 course --grade-resubmission
 course --grade-resubmission --keep-old-grade
+course -grs
+course -grs --keep-old-grade
 ```
 
 Export a roster to CSV:
@@ -115,12 +121,14 @@ Canvas/Google Classroom operations, AI-assisted checks, and weekly reporting.
 
 ```bash
 course --export-roster
+course -ero
 ```
 
 Preview an import without writing to the database:
 
 ```bash
 course --preview-import students.xlsx
+course -pi students.xlsx
 ```
 
 Notes:
@@ -130,18 +138,21 @@ Export an anonymized roster:
 
 ```bash
 course --export-anonymized
+course -ean
 ```
 
 Generate a weekly GitHub Actions workflow template:
 
 ```bash
 course --generate-weekly-workflow
+course -gww
 ```
 
 Run weekly automation for a closed assignment (downloads, checks, grades, reminders):
 
 ```bash
 course --run-weekly-automation --weekly-assignment-id 123456 --weekly-teacher-canvas-id 987654
+course -rwa --weekly-assignment-id 123456 --weekly-teacher-canvas-id 987654
 ```
 
 If you omit ``--weekly-assignment-id``, the tool scans ``weekly_reports/`` for
@@ -153,6 +164,7 @@ Run weekly automation locally (no GitHub repo needed). Reports are archived unde
 
 ```bash
 course --run-weekly-local --weekly-assignment-id 123456 --weekly-local-root "C:\path\to\course-folder"
+course -rwl --weekly-assignment-id 123456 --weekly-local-root "C:\path\to\course-folder"
 ```
 
 Weekly report folders include evidence and outputs such as:
@@ -167,6 +179,8 @@ Clear stored configuration or credentials:
 ```bash
 course --clear-config
 course --clear-credentials
+course -ccfg
+course -ccred
 ```
 
 Tip: `--google-credentials-path` and `--google-token-path` copy the files into the default config folder with standard filenames, even if you only set them in a separate command before running `--sync-google-classroom`.
@@ -178,18 +192,24 @@ course --backup-db
 course --restore-db
 course --backup-config
 course --restore-config
+course -bd
+course -rd
+course -bc
+course -rc
 ```
 
 Validate student data and export a report:
 
 ```bash
 course --validate-data
+course -vd
 ```
 
 Preview updates without writing files:
 
 ```bash
 course --update-mat-excel MAT3500-3-Toan-roi-rac-4TC.xlsx --dry-run --export-grade-diff
+course -ume MAT3500-3-Toan-roi-rac-4TC.xlsx -dr --export-grade-diff
 ```
 
 Student detail sort order (for `--all-details` and `--export-all-details`):
@@ -198,6 +218,9 @@ Student detail sort order (for `--all-details` and `--export-all-details`):
 course --export-all-details students.txt --student-sort-method first_last
 course --export-all-details students.txt --student-sort-method last_first
 course --export-all-details students.txt --student-sort-method id
+course -E students.txt --student-sort-method first_last
+course -E students.txt --student-sort-method last_first
+course -E students.txt --student-sort-method id
 ```
 
 You can also set `STUDENT_SORT_METHOD` in `config.json` (first_last, last_first, id).
@@ -272,21 +295,31 @@ Notes:
 - Holidays are auto-fetched via AI using the default provider.
 - A make-up week is added only when holidays skip sessions.
 - Start time must be earlier than end time.
-- Sample input: `sample/course_calendar_sample_input.txt` (triggers a make-up week).
-- Unofficial-holiday sample: `sample/course_calendar_with_unofficial_holidays.txt`.
+- Sample input: `sample/calendar/course_calendar_sample_input.txt` (triggers a make-up week).
+- Unofficial-holiday sample: `sample/calendar/course_calendar_with_unofficial_holidays.txt`.
 - Add unofficial holidays with `--calendar-extra-holidays 2026-03-10,2026-04-05`.
 
 ```bash
 course --build-course-calendar --calendar-input first_week.txt --calendar-course-code MAT3508 --calendar-course-name "Discrete Mathematics"
 course --build-course-calendar
+course -bcc --calendar-input first_week.txt --calendar-course-code MAT3508 --calendar-course-name "Discrete Mathematics"
+course -bcc
 ```
+
+Import an existing iCal file into Canvas (requires `CANVAS_LMS_API_URL`, `CANVAS_LMS_API_KEY`, `CANVAS_LMS_COURSE_ID`):
+
+```bash
+course --import-canvas-calendar-ics course_calendar.ics --skip-duplicates --dry-run
+course -icci course_calendar.ics --skip-duplicates -dr
+```
+Use `--force` to import without duplicate checks.
 
 Outputs: `course_calendar.txt`, `course_calendar.md`, `course_calendar.ics` in the chosen output directory.
 Use `--calendar-output-dir` and `--calendar-output-base` to customize the location and base filename.
 
 ## Override grades
 
-Place `override_grades.xlsx` in the working directory (see `sample/override_grades.xlsx` for the format).
+Place `override_grades.xlsx` in the working directory (see `sample/overrides/override_grades.xlsx` for the format).
 Required columns: `Mã Sinh Viên` or `Họ và Tên`, plus at least one of `CC`/`GK`/`CK` (order does not matter). `STT` and `Lý do` are optional.
 Common header aliases are accepted, for example `MSSV`, `Mã SV`, `Họ tên`, `Midterm` (Giữa kỳ), `Final` (Cuối kỳ), `CC` (Chuyên cần), `Reason` (Lý do).
 Non-empty CC/GK/CK cells override computed grades, and `Lý do` is appended to the final evaluation output when present.
@@ -299,13 +332,36 @@ Local LLM settings (defaults to Ollama):
 - `LOCAL_LLM_ARGS` (optional extra CLI args)
 - `LOCAL_LLM_GGUF_DIR` (default: `C:\llm`, scanned recursively for `.gguf` files)
 Runtime overrides: `--local-llm-command`, `--local-llm-model`, `--local-llm-args`, `--local-llm-gguf-dir`.
-To verify AI connectivity, run `course --test-ai` (or choose the menu entry) and check the status for each model. Use `--test-ai-model` to test a specific model name, or `--test-ai-gemini-model`/`--test-ai-huggingface-model` when testing `--test-ai all`. For local models, run `course --test-ai local`.
-To detect locally installed models (Ollama or llama.cpp compatible), run `course --detect-local-ai`.
-To list available Gemini models for your API key, run `course --list-ai-models gemini` (or choose the menu entry). Hugging Face lists the top public text-generation models (up to 50).
+Installing local AI models (examples):
+- Ollama: https://ollama.com/ then run `ollama pull llama3.2:3b` and set `LOCAL_LLM_COMMAND=ollama`, `LOCAL_LLM_MODEL=llama3.2:3b`.
+- llama.cpp: build `llama-cli` (https://github.com/ggerganov/llama.cpp), set `LOCAL_LLM_COMMAND` to the `llama-cli` path and `LOCAL_LLM_ARGS` to include `-m <path-to-gguf>`.
+Use `--announcement-refine local` or set `REPORT_REFINE_METHOD=local` to use the local model.
+To verify AI connectivity, run `course --test-ai` (or `course -tai`) and check the status for each model. Use `--test-ai-model` (or `-tam`) to test a specific model name, or `--test-ai-gemini-model`/`--test-ai-huggingface-model` when testing `--test-ai all`. For local models, run `course --test-ai local` (or `course -tai local`).
+To detect locally installed models (Ollama or llama.cpp compatible), run `course --detect-local-ai` (or `course -dla`).
+To list available Gemini models for your API key, run `course --list-ai-models gemini` (or `course -lam gemini`). Hugging Face lists the top public text-generation models (up to 50).
 When an AI call is rate-limited, the tool retries and may switch to a different available model with similar capabilities.
 Submission quality checks (meaningfulness) can be tuned via config keys: `QUALITY_MIN_CHARS`, `QUALITY_UNIQUE_CHAR_RATIO_MIN`, `QUALITY_REPEAT_CHAR_RATIO_MAX`, `QUALITY_VN_CHAR_RATIO_MIN`, `QUALITY_ALNUM_RATIO_MIN`, `QUALITY_SYMBOL_RATIO_MAX`, `QUALITY_EMPTY_LINE_RATIO_MAX`, `QUALITY_MATH_DENSITY_THRESHOLD`, `QUALITY_LENGTH_RATIO_LOW`, `QUALITY_LENGTH_RATIO_MEDIUM`, `QUALITY_LENGTH_RATIO_HIGH`.
 When updating MAT Excel files, use `--export-grade-diff` to save a CSV of old vs new values; database grade changes are tracked in `Grade Audit` when enabled.
 A brief per-run summary is appended to `run_report.txt` in the working directory.
+
+## Canvas announcements
+
+Create an announcement from a short message (manual input or a TXT file), optionally refine with AI, preview, and post:
+
+```bash
+course --add-canvas-announcement --announcement-title "Week 3" --announcement-message "Please submit by Friday"
+course --add-canvas-announcement --announcement-title "Reminder" --announcement-file announcement.txt --announcement-refine gemini
+course -aa --announcement-title "Week 3" --announcement-message "Please submit by Friday"
+course -aa --announcement-title "Reminder" --announcement-file announcement.txt --announcement-refine gemini
+```
+
+Use `--dry-run` to preview without posting. Omit `--announcement-refine` to post the original text without AI.
+
+Sample inputs/outputs:
+- `sample/announcements/announcement_input.txt`
+- `sample/announcements/announcement_refined_output.txt`
+- `sample/announcements/announcement_input_vi.txt`
+- `sample/announcements/announcement_refined_output_vi.txt`
 
 ## Notes
 
@@ -402,11 +458,11 @@ make.bat html
 
 ## Samples
 
-See `sample/index.md` for anonymized input examples:
-- `sample/MAT-examples.xlsx`
-- `sample/override_grades.xlsx`
-- `sample/config.sample.json`
-- `sample/credentials.sample.json`
+See `sample/index.md` for anonymized input examples organized by category:
+- `sample/mat/MAT-examples.xlsx`
+- `sample/overrides/override_grades.xlsx`
+- `sample/config/config.sample.json`
+- `sample/config/credentials.sample.json`
 
 ## License
 
