@@ -447,6 +447,7 @@ def load_config(config_path=None, verbose=False):
         "LOG_LEVEL",
         "LOG_MAX_BYTES",
         "LOG_BACKUP_COUNT",
+        "STUDENT_SORT_METHOD",
         "DB_BACKUP_KEEP",
         "CONFIG_BACKUP_KEEP",
         "GRADE_AUDIT_ENABLED",

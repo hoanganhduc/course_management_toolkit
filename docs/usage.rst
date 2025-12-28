@@ -141,12 +141,33 @@ Sync Canvas roster into the local database:
 
    course --sync-canvas
 
+Notes:
+
+- Canvas sync now stores submission comments and rubric evaluations per assignment in the database.
+
+List auto-generated CLI short aliases:
+
+.. code-block:: bash
+
+   course --list-cli-aliases
+
 Sync Google Classroom roster into the local database:
 
 .. code-block:: bash
 
    course --sync-google-classroom
 
+Notes:
+
+- Canvas and Google Classroom score sync normalizes grades to a 10-point scale when max points are available.
+- Student ID inference for MAT Excel updates only works with VNU University of Science, Hanoi email format.
+
+Grade resubmissions (lists assignments that need regrading, excludes Roll Call Attendance, and prompts per student unless default is enabled). When keeping old grade, the newer submission is assigned the most recent graded score from the submission history:
+
+.. code-block:: bash
+
+   course --grade-resubmission
+   course --grade-resubmission --keep-old-grade
 
 Update a MAT*.xlsx file with grades from the local database:
 
@@ -165,6 +186,10 @@ Preview an import (no write):
 .. code-block:: bash
 
    course --preview-import students.xlsx
+
+Notes:
+
+- MAT*.xlsx imports ignore score columns (CC, GK, CK, totals); only roster fields are imported.
 
 Export an anonymized roster:
 
@@ -240,6 +265,16 @@ Preview changes without writing files:
 .. code-block:: bash
 
    course --update-mat-excel MAT3500-3-Toan-roi-rac-4TC.xlsx --dry-run --export-grade-diff
+
+Student detail sort order (for ``--all-details`` and ``--export-all-details``):
+
+.. code-block:: bash
+
+   course --export-all-details students.txt --student-sort-method first_last
+   course --export-all-details students.txt --student-sort-method last_first
+   course --export-all-details students.txt --student-sort-method id
+
+You can also set ``STUDENT_SORT_METHOD`` in ``config.json`` (first_last, last_first, id).
 
 Logging
 -------

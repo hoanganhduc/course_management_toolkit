@@ -81,12 +81,31 @@ Sync Canvas roster into the local database:
 course --sync-canvas
 ```
 
+Notes:
+- Canvas sync now stores submission comments and rubric evaluations per assignment in the database.
+
+List auto-generated CLI short aliases:
+
+```bash
+course --list-cli-aliases
+```
+
 Sync Google Classroom roster into the local database:
 
 ```bash
 course --sync-google-classroom
 ```
 
+Notes:
+- Canvas and Google Classroom score sync normalizes grades to a 10-point scale when max points are available.
+- Student ID inference for MAT Excel updates only works with VNU University of Science, Hanoi email format.
+
+Grade resubmissions (lists assignments that need regrading, excludes Roll Call Attendance, and prompts per student unless default is enabled). When keeping old grade, the newer submission is assigned the most recent graded score from the submission history:
+
+```bash
+course --grade-resubmission
+course --grade-resubmission --keep-old-grade
+```
 
 Export a roster to CSV:
 
@@ -102,6 +121,9 @@ Preview an import without writing to the database:
 ```bash
 course --preview-import students.xlsx
 ```
+
+Notes:
+- MAT*.xlsx imports ignore score columns (CC, GK, CK, totals); only roster fields are imported.
 
 Export an anonymized roster:
 
@@ -168,6 +190,16 @@ Preview updates without writing files:
 ```bash
 course --update-mat-excel MAT3500-3-Toan-roi-rac-4TC.xlsx --dry-run --export-grade-diff
 ```
+
+Student detail sort order (for `--all-details` and `--export-all-details`):
+
+```bash
+course --export-all-details students.txt --student-sort-method first_last
+course --export-all-details students.txt --student-sort-method last_first
+course --export-all-details students.txt --student-sort-method id
+```
+
+You can also set `STUDENT_SORT_METHOD` in `config.json` (first_last, last_first, id).
 
 ## Configuration
 
@@ -330,7 +362,6 @@ make.bat html
 
 See `sample/index.md` for anonymized input examples:
 - `sample/MAT-examples.xlsx`
-- `sample/canvas_gradebook.csv`
 - `sample/override_grades.xlsx`
 - `sample/config.sample.json`
 - `sample/credentials.sample.json`

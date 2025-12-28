@@ -1537,6 +1537,21 @@ def calculate_cc_ck_gk(student, gradebook_csv_path="canvas_gradebook.csv", overr
         except Exception:
             return 0.0
 
+    def to_scale_10_optional(val):
+        if val is None or (isinstance(val, float) and pd.isna(val)):
+            return None
+        if isinstance(val, str) and not val.strip():
+            return None
+        try:
+            v = float(val)
+            if pd.isna(v):
+                return None
+            if v > 10:
+                return round(v / 10, 2)
+            return v
+        except Exception:
+            return None
+
     def normalize_text(s):
         if s is None:
             return ""
@@ -1618,6 +1633,25 @@ def calculate_cc_ck_gk(student, gradebook_csv_path="canvas_gradebook.csv", overr
                 return col
         return None
 
+    def find_unposted_col(columns, primary_keywords, exclude_keywords=None):
+        normalized_cols = [(col, normalize_text(col)) for col in columns]
+        exclude_keywords = exclude_keywords or []
+        for col, ncol in normalized_cols:
+            if any(bad in ncol for bad in disallowed_score_keywords):
+                continue
+            if any(ex in ncol for ex in exclude_keywords):
+                continue
+            if any(k in ncol for k in primary_keywords) and "unposted final score" in ncol:
+                return col
+        return None
+
+    def pick_score(final_val, unposted_val):
+        if final_val is None:
+            return unposted_val if unposted_val is not None else 0.0
+        if final_val == 0.0 and unposted_val not in (None, 0.0):
+            return unposted_val
+        return final_val
+
     # If gradebook_csv_path is provided, use it to extract scores
     if gradebook_csv_path:
         try:
@@ -1644,40 +1678,82 @@ def calculate_cc_ck_gk(student, gradebook_csv_path="canvas_gradebook.csv", overr
 
             # Detect CC column robustly
             cc_col = find_best_col(df.columns, cc_keywords, prefer_final=True)
+            cc_unposted_col = find_unposted_col(df.columns, cc_keywords)
 
             # Fallback known component columns (Canvas groups)
             diem_danh_col = find_best_col(df.columns, ["diem danh", "attendance"], prefer_final=True) or "Điểm danh Final Score"
+            diem_danh_unposted_col = find_unposted_col(df.columns, ["diem danh", "attendance"])
             quiz_col = find_best_col(df.columns, ["quiz"], prefer_final=True) or "Quiz Final Score"
+            quiz_unposted_col = find_unposted_col(df.columns, ["quiz"])
             bai_tap_col = find_best_col(df.columns, ["bai tap", "assignment"], prefer_final=True) or "Bài tập Final Score"
+            bai_tap_unposted_col = find_unposted_col(df.columns, ["bai tap", "assignment"])
 
             # Compute CC unless overridden.
             if override_cc is not None:
                 CC = override_cc
                 if verbose:
                     print("[OverrideGrades] Using override CC from override_grades.xlsx.")
-            elif cc_col:
-                CC = to_scale_10(row.get(cc_col, 0.0))
+            elif cc_col or cc_unposted_col:
+                cc_final = to_scale_10_optional(row.get(cc_col, None)) if cc_col else None
+                cc_unposted = to_scale_10_optional(row.get(cc_unposted_col, None)) if cc_unposted_col else None
+                CC = pick_score(cc_final, cc_unposted)
+                if verbose and cc_final in (None, 0.0) and cc_unposted not in (None, 0.0):
+                    print("[calculate_cc_ck_gk] Using unposted CC score from gradebook.")
             else:
-                diem_danh = to_scale_10(row.get(diem_danh_col, 0.0))
-                quiz = to_scale_10(row.get(quiz_col, 0.0))
-                bai_tap = to_scale_10(row.get(bai_tap_col, 0.0))
+                diem_danh = pick_score(
+                    to_scale_10_optional(row.get(diem_danh_col, None)),
+                    to_scale_10_optional(row.get(diem_danh_unposted_col, None)),
+                )
+                quiz = pick_score(
+                    to_scale_10_optional(row.get(quiz_col, None)),
+                    to_scale_10_optional(row.get(quiz_unposted_col, None)),
+                )
+                bai_tap = pick_score(
+                    to_scale_10_optional(row.get(bai_tap_col, None)),
+                    to_scale_10_optional(row.get(bai_tap_unposted_col, None)),
+                )
                 CC = round(0.25 * diem_danh + 0.25 * quiz + 0.5 * bai_tap, 1)
 
             # Detect GK/CK columns robustly
             gk_col = find_best_col(df.columns, gk_keywords, prefer_final=True) or "Giữa kỳ Final Score"
+            gk_unposted_col = find_unposted_col(df.columns, gk_keywords, exclude_keywords=gk_exclude_keywords)
             ck_col = find_best_col(df.columns, ck_keywords, prefer_final=True, exclude_keywords=ck_exclude_keywords) or "Cuối kỳ Final Score"
+            ck_unposted_col = find_unposted_col(df.columns, ck_keywords, exclude_keywords=ck_exclude_keywords)
 
-            GK = override_gk if override_gk is not None else to_scale_10(row.get(gk_col, 0.0))
-            CK = override_ck if override_ck is not None else to_scale_10(row.get(ck_col, 0.0))
+            if override_gk is not None:
+                GK = override_gk
+            else:
+                gk_final = to_scale_10_optional(row.get(gk_col, None))
+                gk_unposted = to_scale_10_optional(row.get(gk_unposted_col, None))
+                GK = pick_score(gk_final, gk_unposted)
+                if verbose and gk_final in (None, 0.0) and gk_unposted not in (None, 0.0):
+                    print("[calculate_cc_ck_gk] Using unposted GK score from gradebook.")
+            if override_ck is not None:
+                CK = override_ck
+            else:
+                ck_final = to_scale_10_optional(row.get(ck_col, None))
+                ck_unposted = to_scale_10_optional(row.get(ck_unposted_col, None))
+                CK = pick_score(ck_final, ck_unposted)
+                if verbose and ck_final in (None, 0.0) and ck_unposted not in (None, 0.0):
+                    print("[calculate_cc_ck_gk] Using unposted CK score from gradebook.")
             if verbose and override_gk is not None:
                 print("[OverrideGrades] Using override GK from override_grades.xlsx.")
             if verbose and override_ck is not None:
                 print("[OverrideGrades] Using override CK from override_grades.xlsx.")
 
             details = {
-                "diem_danh": to_scale_10(row.get(diem_danh_col, 0.0)),
-                "quiz": to_scale_10(row.get(quiz_col, 0.0)),
-                "bai_tap": to_scale_10(row.get(bai_tap_col, 0.0)),
+                "diem_danh": pick_score(
+                    to_scale_10_optional(row.get(diem_danh_col, None)),
+                    to_scale_10_optional(row.get(diem_danh_unposted_col, None)),
+                ),
+                "quiz": pick_score(
+                    to_scale_10_optional(row.get(quiz_col, None)),
+                    to_scale_10_optional(row.get(quiz_unposted_col, None)),
+                ),
+                "bai_tap": pick_score(
+                    to_scale_10_optional(row.get(bai_tap_col, None)),
+                    to_scale_10_optional(row.get(bai_tap_unposted_col, None)),
+                ),
                 "GK": GK,
                 "CK": CK,
                 "CC": CC,
@@ -1725,18 +1801,35 @@ def calculate_cc_ck_gk(student, gradebook_csv_path="canvas_gradebook.csv", overr
             print("[OverrideGrades] Using override CC from override_grades.xlsx.")
     else:
         CC = None
+        cc_final_attr = None
+        cc_unposted_attr = None
         for attr in student.__dict__:
             nattr = normalize_text(attr)
-            if any(k in nattr for k in cc_keywords) and any(fk in nattr for fk in final_keywords):
-                CC = to_scale_10(getattr(student, attr))
-                break
-
-        # If CC not found in attributes, calculate from components
+            if any(k in nattr for k in cc_keywords):
+                if "unposted final score" in nattr:
+                    if not cc_unposted_attr:
+                        cc_unposted_attr = attr
+                elif any(fk in nattr for fk in final_keywords):
+                    if not cc_final_attr:
+                        cc_final_attr = attr
+        if cc_final_attr or cc_unposted_attr:
+            cc_final = to_scale_10_optional(getattr(student, cc_final_attr, None)) if cc_final_attr else None
+            cc_unposted = to_scale_10_optional(getattr(student, cc_unposted_attr, None)) if cc_unposted_attr else None
+            CC = pick_score(cc_final, cc_unposted)
         if CC is None or CC == 0.0:
             # Try multiple variants
-            diem_danh = to_scale_10(getattr(student, "Điểm danh Final Score", None)) or to_scale_10(getattr(student, "Attendance Final Score", None))
-            quiz = to_scale_10(getattr(student, "Quiz Final Score", None))
-            bai_tap = to_scale_10(getattr(student, "Bài tập Final Score", None)) or to_scale_10(getattr(student, "Assignment Final Score", None))
+            diem_danh = pick_score(
+                to_scale_10_optional(getattr(student, "??i???m danh Final Score", None)) or to_scale_10_optional(getattr(student, "Attendance Final Score", None)),
+                to_scale_10_optional(getattr(student, "??i???m danh Unposted Final Score", None)) or to_scale_10_optional(getattr(student, "Attendance Unposted Final Score", None)),
+            )
+            quiz = pick_score(
+                to_scale_10_optional(getattr(student, "Quiz Final Score", None)),
+                to_scale_10_optional(getattr(student, "Quiz Unposted Final Score", None)),
+            )
+            bai_tap = pick_score(
+                to_scale_10_optional(getattr(student, "BA?i t??-p Final Score", None)) or to_scale_10_optional(getattr(student, "Assignment Final Score", None)),
+                to_scale_10_optional(getattr(student, "BA?i t??-p Unposted Final Score", None)) or to_scale_10_optional(getattr(student, "Assignment Unposted Final Score", None)),
+            )
             CC = round(0.25 * (diem_danh or 0) + 0.25 * (quiz or 0) + 0.5 * (bai_tap or 0), 1)
 
     if override_gk is not None:
@@ -1750,7 +1843,9 @@ def calculate_cc_ck_gk(student, gradebook_csv_path="canvas_gradebook.csv", overr
             if midterm_id:
                 GK = getattr(student, f"Assignment: {midterm_id}", None)
             if GK is None:
-                GK = getattr(student, "Midterm Final Score", None)
+                gk_final = to_scale_10_optional(getattr(student, "Midterm Final Score", None))
+                gk_unposted = to_scale_10_optional(getattr(student, "Midterm Unposted Final Score", None))
+                GK = pick_score(gk_final, gk_unposted)
 
     if override_ck is not None:
         CK = override_ck
@@ -1763,16 +1858,27 @@ def calculate_cc_ck_gk(student, gradebook_csv_path="canvas_gradebook.csv", overr
             if final_id:
                 CK = getattr(student, f"Assignment: {final_id}", None)
             if CK is None:
-                CK = getattr(student, "Final Final Score", None)
+                ck_final = to_scale_10_optional(getattr(student, "Final Final Score", None))
+                ck_unposted = to_scale_10_optional(getattr(student, "Final Unposted Final Score", None))
+                CK = pick_score(ck_final, ck_unposted)
 
     CC = 0.0 if CC is None or (isinstance(CC, float) and pd.isna(CC)) else CC
     CK = 0.0 if CK is None or (isinstance(CK, float) and pd.isna(CK)) else CK
     GK = 0.0 if GK is None or (isinstance(GK, float) and pd.isna(GK)) else GK
 
     details = {
-        "diem_danh": to_scale_10(getattr(student, "Điểm danh Final Score", None)) or to_scale_10(getattr(student, "Attendance Final Score", None)),
-        "quiz": to_scale_10(getattr(student, "Quiz Final Score", None)),
-        "bai_tap": to_scale_10(getattr(student, "Bài tập Final Score", None)) or to_scale_10(getattr(student, "Assignment Final Score", None)),
+        "diem_danh": pick_score(
+            to_scale_10_optional(getattr(student, "??i???m danh Final Score", None)) or to_scale_10_optional(getattr(student, "Attendance Final Score", None)),
+            to_scale_10_optional(getattr(student, "??i???m danh Unposted Final Score", None)) or to_scale_10_optional(getattr(student, "Attendance Unposted Final Score", None)),
+        ),
+        "quiz": pick_score(
+            to_scale_10_optional(getattr(student, "Quiz Final Score", None)),
+            to_scale_10_optional(getattr(student, "Quiz Unposted Final Score", None)),
+        ),
+        "bai_tap": pick_score(
+            to_scale_10_optional(getattr(student, "BA?i t??-p Final Score", None)) or to_scale_10_optional(getattr(student, "Assignment Final Score", None)),
+            to_scale_10_optional(getattr(student, "BA?i t??-p Unposted Final Score", None)) or to_scale_10_optional(getattr(student, "Assignment Unposted Final Score", None)),
+        ),
         "GK": GK,
         "CK": CK,
         "CC": CC,
@@ -2035,10 +2141,22 @@ def update_mat_excel_grades(file_path, students, output_path=None, diff_output_p
         result_lines.append(f"CC (Chuy\u00ean c\u1ea7n): {CC}")
         result_lines.append(f"GK (Gi\u1eefa k\u1ef3 / Midterm): {GK}")
         result_lines.append(f"CK (Cu\u1ed1i k\u1ef3 / Final): {CK}")
-        result_lines.append("Assignment group scores (\u0110i\u1ec3m th\u00e0nh ph\u1ea7n):")
-        result_lines.append(f"  Attendance (\u0110i\u1ec3m danh): {details['diem_danh']}")
-        result_lines.append(f"  Quiz (Tr\u1eafc nghi\u1ec7m): {details['quiz']}")
-        result_lines.append(f"  Assignment (B\u00e0i t\u1eadp): {details['bai_tap']}")
+        group_scores = [details.get("diem_danh"), details.get("quiz"), details.get("bai_tap")]
+        has_group_scores = False
+        for score in group_scores:
+            try:
+                if score is not None and not pd.isna(score) and float(score) != 0.0:
+                    has_group_scores = True
+                    break
+            except Exception:
+                if score:
+                    has_group_scores = True
+                    break
+        if has_group_scores:
+            result_lines.append("Assignment group scores (\u0110i\u1ec3m th\u00e0nh ph\u1ea7n):")
+            result_lines.append(f"  Attendance (\u0110i\u1ec3m danh): {details['diem_danh']}")
+            result_lines.append(f"  Quiz (Tr\u1eafc nghi\u1ec7m): {details['quiz']}")
+            result_lines.append(f"  Assignment (B\u00e0i t\u1eadp): {details['bai_tap']}")
         if override_fields:
             result_lines.append(f"Overridden scores (\u0110i\u1ec3m \u0111\u01b0\u1ee3c ghi \u0111\u00e8): {', '.join(override_fields)}")
         if override_reason:
@@ -2358,6 +2476,27 @@ def read_students_from_excel_csv(file_path, db_path=None, verbose=False, preview
     df = df.dropna(axis=0, how='all')
 
     df = normalize_columns(df, verbose=verbose)
+
+    if is_mat_file:
+        mat_drop_cols = {
+            "Attendance", "Midterm", "Final", "Participation", "Assignment", "Quiz",
+            "Total", "Total Score", "Total Score (DB)", "Total Score (Canvas)", "Total Final Score",
+            "Total Grade", "Total Final Grade",
+            "CC", "GK", "CK",
+            "Tổng điểm", "Điểm học phần", "Điểm tổng", "Điểm tổng kết", "Tổng kết",
+        }
+        mat_drop_cols_lower = {str(c).strip().lower() for c in mat_drop_cols}
+        drop_cols = []
+        for col in df.columns:
+            col_lower = str(col).strip().lower()
+            if col in mat_drop_cols or col_lower in mat_drop_cols_lower:
+                drop_cols.append(col)
+        if drop_cols:
+            df = df.drop(columns=drop_cols)
+            if verbose:
+                print(f"[ExcelCSV] Dropped score columns for MAT*.xlsx import: {drop_cols}")
+            else:
+                print(f"Dropped {len(drop_cols)} score columns for MAT*.xlsx import.")
 
     def render_import_preview():
         columns = list(df.columns)
@@ -3389,7 +3528,7 @@ def en_to_vn_field(field, verbose=False):
         print(f"Notice: No Vietnamese mapping for field '{field}', using original.")
     return vn_field
 
-def print_all_student_details(students, db_path=None, verbose=False):
+def print_all_student_details(students, db_path=None, verbose=False, sort_method=None):
     """
     Print details of all students, separated by a series of '-'.
     Field names are translated into Vietnamese.
@@ -3422,11 +3561,12 @@ def print_all_student_details(students, db_path=None, verbose=False):
         "Tổng điểm (DB)": "Total Score (DB)",
         "Tổng điểm (Canvas)": "Total Score (Canvas)",
     }
-    for idx, s in enumerate(students, 1):
+    sorted_students = sorted(students, key=lambda s: _get_student_sort_key(s, sort_method))
+    for idx, s in enumerate(sorted_students, 1):
         if verbose:
-            print(f"[print_all_student_details] Sinh viên {idx}/{len(students)}:")
+            print(f"[print_all_student_details] Sinh viên {idx}/{len(sorted_students)}:")
         else:
-            print(f"Sinh viên {idx}/{len(students)}:")
+            print(f"Sinh viên {idx}/{len(sorted_students)}:")
         data = s.__dict__
         preferred_keys = [
             "Họ và Tên", "Name",
@@ -3447,7 +3587,7 @@ def print_all_student_details(students, db_path=None, verbose=False):
             if key in data and key not in seen:
                 ordered_keys.append(key)
                 seen.add(key)
-        remaining_keys = [k for k in data.keys() if k not in seen and k not in ("Grades", "Submissions")]
+        remaining_keys = [k for k in data.keys() if k not in seen and k not in ("Grades", "Submissions", "Canvas Submission Comments", "Canvas Rubric Evaluations")]
         for key in sorted(remaining_keys):
             ordered_keys.append(key)
         for k in ordered_keys:
@@ -3498,6 +3638,41 @@ def print_all_student_details(students, db_path=None, verbose=False):
             for title in sorted(submissions.keys()):
                 state = submissions.get(title)
                 print(f"  - {title}: {state}")
+        comments = data.get("Canvas Submission Comments")
+        if isinstance(comments, dict):
+            print("Canvas submission comments (Nhận xét bài nộp Canvas):")
+            for title in sorted(comments.keys()):
+                items = comments.get(title) or []
+                print(f"  - {title}: {len(items)} comment(s)")
+                for item in items:
+                    author = item.get("author_name") if isinstance(item, dict) else None
+                    content = item.get("comment") if isinstance(item, dict) else str(item)
+                    posted_at = item.get("posted_at") if isinstance(item, dict) else None
+                    meta = f" ({posted_at})" if posted_at else ""
+                    label = author or "Unknown"
+                    print(f"      * {label}{meta}: {content}")
+        rubrics = data.get("Canvas Rubric Evaluations")
+        if isinstance(rubrics, dict):
+            print("Canvas rubric evaluations (Đánh giá rubrics Canvas):")
+            for title in sorted(rubrics.keys()):
+                rubric = rubrics.get(title)
+                if isinstance(rubric, dict):
+                    print(f"  - {title}: {len(rubric)} criterion")
+                    for key, info in rubric.items():
+                        points = info.get("points") if isinstance(info, dict) else None
+                        rating = info.get("rating") if isinstance(info, dict) else None
+                        comment = info.get("comments") if isinstance(info, dict) else None
+                        parts = []
+                        if points is not None:
+                            parts.append(f"points={points}")
+                        if rating:
+                            parts.append(f"rating={rating}")
+                        if comment:
+                            parts.append(f"comment={comment}")
+                        detail = "; ".join(parts) if parts else str(info)
+                        print(f"      * {key}: {detail}")
+                else:
+                    print(f"  - {title}: {rubric}")
         print('-' * 40)
 
 def export_to_excel(students, file_path=None, db_path=None, verbose=False):
@@ -3819,7 +3994,7 @@ def export_emails_and_names_to_txt(students, file_path=None, db_path=None, verbo
         verbose=verbose,
     )
 
-def export_all_details_to_txt(students, file_path=None, db_path=None, verbose=False):
+def export_all_details_to_txt(students, file_path=None, db_path=None, verbose=False, sort_method=None):
     # If db_path is provided, load students from database
     if db_path:
         students = load_database(db_path)
@@ -3851,8 +4026,9 @@ def export_all_details_to_txt(students, file_path=None, db_path=None, verbose=Fa
             "Tổng điểm (DB)": "Total Score (DB)",
             "Tổng điểm (Canvas)": "Total Score (Canvas)",
         }
-        for idx, s in enumerate(students, 1):
-            f.write(f"Sinh viên {idx}/{len(students)}:\n")
+        sorted_students = sorted(students, key=lambda s: _get_student_sort_key(s, sort_method))
+        for idx, s in enumerate(sorted_students, 1):
+            f.write(f"Sinh viên {idx}/{len(sorted_students)}:\n")
             data = s.__dict__
             preferred_keys = [
                 "Họ và Tên", "Name",
@@ -3873,7 +4049,7 @@ def export_all_details_to_txt(students, file_path=None, db_path=None, verbose=Fa
                 if key in data and key not in seen:
                     ordered_keys.append(key)
                     seen.add(key)
-            remaining_keys = [k for k in data.keys() if k not in seen and k not in ("Grades", "Submissions")]
+            remaining_keys = [k for k in data.keys() if k not in seen and k not in ("Grades", "Submissions", "Canvas Submission Comments", "Canvas Rubric Evaluations")]
             for key in sorted(remaining_keys):
                 ordered_keys.append(key)
             for k in ordered_keys:
@@ -3924,6 +4100,41 @@ def export_all_details_to_txt(students, file_path=None, db_path=None, verbose=Fa
                 for title in sorted(submissions.keys()):
                     state = submissions.get(title)
                     f.write(f"  - {title}: {state}\n")
+            comments = data.get("Canvas Submission Comments")
+            if isinstance(comments, dict):
+                f.write("Canvas submission comments (Nhận xét bài nộp Canvas):\n")
+                for title in sorted(comments.keys()):
+                    items = comments.get(title) or []
+                    f.write(f"  - {title}: {len(items)} comment(s)\n")
+                    for item in items:
+                        author = item.get("author_name") if isinstance(item, dict) else None
+                        content = item.get("comment") if isinstance(item, dict) else str(item)
+                        posted_at = item.get("posted_at") if isinstance(item, dict) else None
+                        meta = f" ({posted_at})" if posted_at else ""
+                        label = author or "Unknown"
+                        f.write(f"      * {label}{meta}: {content}\n")
+            rubrics = data.get("Canvas Rubric Evaluations")
+            if isinstance(rubrics, dict):
+                f.write("Canvas rubric evaluations (Đánh giá rubrics Canvas):\n")
+                for title in sorted(rubrics.keys()):
+                    rubric = rubrics.get(title)
+                    if isinstance(rubric, dict):
+                        f.write(f"  - {title}: {len(rubric)} criterion\n")
+                        for key, info in rubric.items():
+                            points = info.get("points") if isinstance(info, dict) else None
+                            rating = info.get("rating") if isinstance(info, dict) else None
+                            comment = info.get("comments") if isinstance(info, dict) else None
+                            parts = []
+                            if points is not None:
+                                parts.append(f"points={points}")
+                            if rating:
+                                parts.append(f"rating={rating}")
+                            if comment:
+                                parts.append(f"comment={comment}")
+                            detail = "; ".join(parts) if parts else str(info)
+                            f.write(f"      * {key}: {detail}\n")
+                    else:
+                        f.write(f"  - {title}: {rubric}\n")
             f.write('-' * 40 + '\n')
     if verbose:
         print(f"[ExportAllDetails] Exported all student details to {file_path}")
@@ -6895,6 +7106,28 @@ def _infer_student_id_from_email(email):
     if _looks_like_student_id(digits):
         return digits
     return ""
+
+
+def _get_student_sort_key(student, method=None):
+    method = (method or STUDENT_SORT_METHOD or "first_last").strip().lower()
+    name = str(getattr(student, "Name", "")).strip()
+    parts = [p for p in name.split() if p]
+    first = parts[-1] if parts else ""
+    family = " ".join(parts[:-1]) if len(parts) > 1 else ""
+    sid = _normalize_student_id(getattr(student, "Student ID", "")) or ""
+    if method in ("id", "student_id"):
+        return (sid, _normalize_vietnamese_name(name))
+    if method in ("last_first", "family_first"):
+        return (
+            _normalize_vietnamese_name(family),
+            _normalize_vietnamese_name(first),
+            _normalize_vietnamese_name(name),
+        )
+    return (
+        _normalize_vietnamese_name(first),
+        _normalize_vietnamese_name(family),
+        _normalize_vietnamese_name(name),
+    )
 
 
 def _looks_like_name(value):

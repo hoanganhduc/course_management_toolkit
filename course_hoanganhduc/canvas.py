@@ -243,6 +243,24 @@ def sync_students_with_canvas(students, db_path=None, course_id=None, api_url=CA
         (added_count, updated_count): Counts of students added and updated
     """
     try:
+        def _scale_score_to_ten(score, max_points=None):
+            try:
+                if score is None:
+                    return None
+                score_val = float(score)
+            except Exception:
+                return score
+            if max_points not in (None, 0):
+                try:
+                    max_val = float(max_points)
+                    if max_val > 0:
+                        return round(score_val / max_val * 10, 2)
+                except Exception:
+                    pass
+            if score_val > 10:
+                return round(score_val / 10, 2)
+            return score_val
+
         if course_id is None:
             course_id = CANVAS_LMS_COURSE_ID
         if verbose:
@@ -487,6 +505,8 @@ def sync_students_with_canvas(students, db_path=None, course_id=None, api_url=CA
                 print("Warning: Could not fetch assignments.")
 
         assignment_scores_by_canvas_id = {}
+        assignment_comments_by_canvas_id = {}
+        assignment_rubrics_by_canvas_id = {}
         if important_assignments:
             if verbose:
                 print(f"[SyncCanvas] Fetching submissions for {len(important_assignments)} assignments...")
@@ -495,7 +515,7 @@ def sync_students_with_canvas(students, db_path=None, course_id=None, api_url=CA
                     assignment = course.get_assignment(assignment_id)
                     assignment_info = important_assignments[assignment_id]
 
-                    for submission in tqdm(assignment.get_submissions(include=["user"]),
+                    for submission in tqdm(assignment.get_submissions(include=["user", "submission_comments", "rubric_assessment"]),
                                          desc=f"Processing {assignment_info['name']} submissions"):
                         user_id = getattr(submission, "user_id", None)
                         score = getattr(submission, "score", None)
@@ -508,6 +528,26 @@ def sync_students_with_canvas(students, db_path=None, course_id=None, api_url=CA
                                 "score": score,
                                 "points_possible": assignment_info["points_possible"]
                             }
+                        if user_id:
+                            comments = getattr(submission, "submission_comments", None)
+                            if comments:
+                                if user_id not in assignment_comments_by_canvas_id:
+                                    assignment_comments_by_canvas_id[user_id] = {}
+                                normalized_comments = []
+                                for comment in comments:
+                                    if isinstance(comment, dict):
+                                        normalized_comments.append({
+                                            "author_id": comment.get("author_id"),
+                                            "author_name": comment.get("author_name"),
+                                            "comment": comment.get("comment"),
+                                            "posted_at": comment.get("posted_at"),
+                                        })
+                                assignment_comments_by_canvas_id[user_id][assignment_id] = normalized_comments
+                            rubric = getattr(submission, "rubric_assessment", None)
+                            if rubric:
+                                if user_id not in assignment_rubrics_by_canvas_id:
+                                    assignment_rubrics_by_canvas_id[user_id] = {}
+                                assignment_rubrics_by_canvas_id[user_id][assignment_id] = rubric
             except Exception as e:
                 if verbose:
                     print(f"[SyncCanvas] Warning: Error fetching assignment submissions: {e}")
@@ -549,13 +589,18 @@ def sync_students_with_canvas(students, db_path=None, course_id=None, api_url=CA
                                 "final_grade": "Total Final Grade",
                             }.get(grade_field)
                             if field_name:
+                                if grade_field == "final_score":
+                                    grade_value = _scale_score_to_ten(grade_value, 100)
                                 if getattr(matched_student, field_name, None) != grade_value:
                                     setattr(matched_student, field_name, grade_value)
                                     changed = True
 
                 if canvas_id and group_scores_by_canvas_id.get(int(canvas_id)):
                     for group_name, scores_data in group_scores_by_canvas_id[int(canvas_id)].items():
-                        final_score = scores_data.get('final_score', 0)
+                        final_score = _scale_score_to_ten(
+                            scores_data.get('final_score', 0),
+                            scores_data.get('final_possible', 0),
+                        )
                         final_field = f"{group_name} Final Score"
                         if getattr(matched_student, final_field, None) != final_score:
                             setattr(matched_student, final_field, final_score)
@@ -564,11 +609,34 @@ def sync_students_with_canvas(students, db_path=None, course_id=None, api_url=CA
                 if canvas_id and assignment_scores_by_canvas_id.get(int(canvas_id)):
                     for assignment_id, assignment_data in assignment_scores_by_canvas_id[int(canvas_id)].items():
                         name = assignment_data["name"]
-                        score = assignment_data["score"]
+                        score = _scale_score_to_ten(
+                            assignment_data["score"],
+                            assignment_data.get("points_possible", 0),
+                        )
                         field = f"Assignment: {name}"
                         if getattr(matched_student, field, None) != score:
                             setattr(matched_student, field, score)
                             changed = True
+
+                if canvas_id and assignment_comments_by_canvas_id.get(int(canvas_id)):
+                    existing_comments = getattr(matched_student, "Canvas Submission Comments", None) or {}
+                    updated_comments = dict(existing_comments)
+                    for assignment_id, comments in assignment_comments_by_canvas_id[int(canvas_id)].items():
+                        name = important_assignments.get(assignment_id, {}).get("name", str(assignment_id))
+                        updated_comments[name] = comments
+                    if updated_comments != existing_comments:
+                        setattr(matched_student, "Canvas Submission Comments", updated_comments)
+                        changed = True
+
+                if canvas_id and assignment_rubrics_by_canvas_id.get(int(canvas_id)):
+                    existing_rubrics = getattr(matched_student, "Canvas Rubric Evaluations", None) or {}
+                    updated_rubrics = dict(existing_rubrics)
+                    for assignment_id, rubric in assignment_rubrics_by_canvas_id[int(canvas_id)].items():
+                        name = important_assignments.get(assignment_id, {}).get("name", str(assignment_id))
+                        updated_rubrics[name] = rubric
+                    if updated_rubrics != existing_rubrics:
+                        setattr(matched_student, "Canvas Rubric Evaluations", updated_rubrics)
+                        changed = True
 
                 if changed:
                     updated_count += 1
@@ -588,18 +656,40 @@ def sync_students_with_canvas(students, db_path=None, course_id=None, api_url=CA
                                 "final_grade": "Total Final Grade",
                             }.get(grade_field)
                             if field_name:
+                                if grade_field == "final_score":
+                                    grade_value = _scale_score_to_ten(grade_value, 100)
                                 new_student_data[field_name] = grade_value
 
                 if canvas_id and group_scores_by_canvas_id.get(int(canvas_id)):
                     for group_name, scores_data in group_scores_by_canvas_id[int(canvas_id)].items():
-                        new_student_data[f"{group_name} Final Score"] = scores_data.get('final_score', 0)
+                        new_student_data[f"{group_name} Final Score"] = _scale_score_to_ten(
+                            scores_data.get('final_score', 0),
+                            scores_data.get('final_possible', 0),
+                        )
 
                 if canvas_id and assignment_scores_by_canvas_id.get(int(canvas_id)):
                     for assignment_id, assignment_data in assignment_scores_by_canvas_id[int(canvas_id)].items():
                         name = assignment_data["name"]
-                        score = assignment_data["score"]
+                        score = _scale_score_to_ten(
+                            assignment_data["score"],
+                            assignment_data.get("points_possible", 0),
+                        )
                         field = f"Assignment: {name}"
                         new_student_data[field] = score
+
+                if canvas_id and assignment_comments_by_canvas_id.get(int(canvas_id)):
+                    comments = {}
+                    for assignment_id, items in assignment_comments_by_canvas_id[int(canvas_id)].items():
+                        name = important_assignments.get(assignment_id, {}).get("name", str(assignment_id))
+                        comments[name] = items
+                    new_student_data["Canvas Submission Comments"] = comments
+
+                if canvas_id and assignment_rubrics_by_canvas_id.get(int(canvas_id)):
+                    rubrics = {}
+                    for assignment_id, rubric in assignment_rubrics_by_canvas_id[int(canvas_id)].items():
+                        name = important_assignments.get(assignment_id, {}).get("name", str(assignment_id))
+                        rubrics[name] = rubric
+                    new_student_data["Canvas Rubric Evaluations"] = rubrics
 
                 students.append(Student(**new_student_data))
                 if canvas_id:
@@ -5817,6 +5907,327 @@ def list_students_with_multiple_submissions_on_time(
             print(f"[MultipleSubmissions] Error: {e}")
         else:
             print(f"Error: {e}")
+        return []
+
+def grade_resubmissions(
+    api_url=CANVAS_LMS_API_URL,
+    api_key=CANVAS_LMS_API_KEY,
+    course_id=CANVAS_LMS_COURSE_ID,
+    assignment_ids=None,
+    keep_old_grade=False,
+    verbose=False
+):
+    """
+    For each assignment, find resubmissions after a graded attempt and prompt to regrade them.
+
+    If assignment_ids is None, prompt to select from assignments with submissions.
+    """
+    def _fetch_assignment_submissions(aid):
+        submissions = []
+        url = f"{api_url}/api/v1/courses/{course_id}/assignments/{aid}/submissions"
+        headers = {"Authorization": f"Bearer {api_key}"}
+        params = {
+            "include[]": ["submission_history", "user"],
+            "per_page": 100
+        }
+        while url:
+            resp = requests.get(url, headers=headers, params=params)
+            resp.raise_for_status()
+            submissions.extend(resp.json() or [])
+            next_url = None
+            link_header = resp.headers.get("Link")
+            if link_header:
+                for part in link_header.split(","):
+                    if 'rel="next"' in part:
+                        next_url = part.split(";")[0].strip().strip("<>")
+                        break
+            url = next_url
+            params = None
+        return submissions
+
+    def _parse_selection(selection, total):
+        selected = set()
+        for part in selection.split(","):
+            part = part.strip()
+            if not part:
+                continue
+            if "-" in part:
+                start, end = part.split("-", 1)
+                if start.isdigit() and end.isdigit():
+                    for i in range(int(start), int(end) + 1):
+                        if 1 <= i <= total:
+                            selected.add(i)
+            elif part.isdigit():
+                i = int(part)
+                if 1 <= i <= total:
+                    selected.add(i)
+        return sorted(selected)
+
+    def _prompt_grade(old_grade, force_keep_old=False):
+        if keep_old_grade or force_keep_old:
+            return old_grade, False
+        raw = input(f"New grade (blank=keep {old_grade}, k=keep, s=skip, q=quit): ").strip()
+        if not raw:
+            return old_grade, False
+        if raw.lower() in ("k", "keep"):
+            return old_grade, False
+        if raw.lower() in ("s", "skip"):
+            return None, False
+        if raw.lower() in ("q", "quit"):
+            return None, True
+        try:
+            return float(raw), False
+        except Exception:
+            return None, False
+
+    def _get_entry_score(entry):
+        if not isinstance(entry, dict):
+            return None
+        for key in ("score", "entered_score"):
+            value = entry.get(key)
+            if value is not None:
+                return value
+        return None
+
+    def _get_entry_time(entry, key):
+        raw = entry.get(key) if isinstance(entry, dict) else None
+        if not raw:
+            return None
+        try:
+            return datetime.strptime(raw, "%Y-%m-%dT%H:%M:%SZ")
+        except Exception:
+            return None
+
+    try:
+        canvas = Canvas(api_url, api_key)
+        course = canvas.get_course(course_id)
+        if assignment_ids:
+            assignment_ids = {str(aid).strip() for aid in assignment_ids if str(aid).strip()}
+        else:
+            assignments = []
+            for assignment in course.get_assignments():
+                if not getattr(assignment, "has_submitted_submissions", False):
+                    continue
+                name = getattr(assignment, "name", "") or ""
+                if name.strip().lower() == "roll call attendance":
+                    continue
+                assignments.append({
+                    "id": getattr(assignment, "id", None),
+                    "name": name,
+                    "due_at": getattr(assignment, "due_at", None)
+                })
+            if not assignments:
+                print("No assignments found with resubmissions.")
+                return []
+            filtered = []
+            for assignment in assignments:
+                aid = assignment.get("id")
+                if not aid:
+                    continue
+                try:
+                    submissions = _fetch_assignment_submissions(aid)
+                except Exception:
+                    continue
+                need_regrade = 0
+                for sub in submissions:
+                    history = sub.get("submission_history") if isinstance(sub, dict) else None
+                    if not isinstance(history, list) or len(history) < 2:
+                        continue
+                    sorted_hist = sorted(history, key=lambda item: _get_entry_time(item, "submitted_at") or datetime.min)
+                    last_graded = None
+                    for h in sorted_hist:
+                        score = _get_entry_score(h)
+                        submitted_at = _get_entry_time(h, "submitted_at")
+                        graded_at = _get_entry_time(h, "graded_at")
+                        if score is not None and submitted_at and graded_at and graded_at > submitted_at:
+                            last_graded = h
+                    if not last_graded:
+                        continue
+                    latest = sorted_hist[-1]
+                    latest_submitted = _get_entry_time(latest, "submitted_at")
+                    latest_graded = _get_entry_time(latest, "graded_at")
+                    latest_score = _get_entry_score(latest)
+                    if latest_score is not None and latest_graded and latest_submitted and latest_graded > latest_submitted:
+                        continue
+                    last_attempt = last_graded.get("attempt")
+                    latest_attempt = latest.get("attempt")
+                    if latest_attempt is not None and last_attempt is not None:
+                        try:
+                            if int(latest_attempt) <= int(last_attempt):
+                                continue
+                        except Exception:
+                            pass
+                    need_regrade += 1
+                if need_regrade > 0:
+                    assignment["need_regrade"] = need_regrade
+                    filtered.append(assignment)
+            assignments = filtered
+            if not assignments:
+                print("No assignments found with resubmissions.")
+                return []
+            def _due_key(a):
+                raw = a.get("due_at")
+                if raw:
+                    try:
+                        return datetime.strptime(raw, "%Y-%m-%dT%H:%M:%SZ")
+                    except Exception:
+                        return datetime.max
+                return datetime.max
+            assignments.sort(key=_due_key)
+            print("Assignments with resubmissions:")
+            for idx, a in enumerate(assignments, 1):
+                due = a.get("due_at") or "No due date"
+                regrade_count = a.get("need_regrade")
+                count_info = f", Need regrade: {regrade_count}" if regrade_count is not None else ""
+                print(f"{idx}. {a['name']} (ID: {a['id']}, Due: {due}{count_info})")
+            sel = input("Select assignments (e.g. 1,3-5 or 'a' for all, 'q' to quit): ").strip().lower()
+            if sel in ("q", "quit"):
+                return []
+            if sel in ("a", "all", ""):
+                assignment_ids = {str(a["id"]) for a in assignments}
+            else:
+                indices = _parse_selection(sel, len(assignments))
+                assignment_ids = {str(assignments[i - 1]["id"]) for i in indices}
+
+        updated = []
+        resub_candidates = 0
+        graded_candidates = 0
+        apply_keep_old_all = keep_old_grade
+        if not apply_keep_old_all:
+            keep_all_raw = input("Use latest graded score for ungraded resubmissions for all assignments? (y/n) [n]: ").strip().lower()
+            apply_keep_old_all = keep_all_raw in ("y", "yes")
+        for aid in assignment_ids:
+            try:
+                assignment = course.get_assignment(aid)
+            except Exception as e:
+                if verbose:
+                    print(f"[Resubmissions] Warning: could not load assignment {aid}: {e}")
+                continue
+            try:
+                submissions = _fetch_assignment_submissions(aid)
+            except Exception as e:
+                if verbose:
+                    print(f"[Resubmissions] Warning: failed to list submissions for {aid}: {e}")
+                continue
+            resub_needed = 0
+            resub_work_items = []
+            if verbose:
+                history_sizes = [len(sub.get("submission_history") or []) for sub in submissions if isinstance(sub, dict)]
+                with_history = sum(1 for size in history_sizes if size > 1)
+                print(f"[Resubmissions] Assignment {aid}: {len(submissions)} submissions, {with_history} with history > 1.")
+            for sub in submissions:
+                history = sub.get("submission_history") if isinstance(sub, dict) else None
+                if not isinstance(history, list) or len(history) < 2:
+                    continue
+                if verbose:
+                    student_id = sub.get("user_id") if isinstance(sub, dict) else None
+                    student_name = None
+                    if isinstance(sub, dict):
+                        student_name = sub.get("user", {}).get("name")
+                    print(f"[Resubmissions] Submission history for {student_name or student_id}:")
+                    for idx, entry in enumerate(history, 1):
+                        submitted_at = entry.get("submitted_at")
+                        graded_at = entry.get("graded_at")
+                        score = _get_entry_score(entry)
+                        attempt = entry.get("attempt")
+                        print(f"  {idx}. attempt={attempt} submitted_at={submitted_at} graded_at={graded_at} score={score}")
+                def _sort_key(item):
+                    ts = _get_entry_time(item, "submitted_at")
+                    return ts or datetime.min
+                sorted_hist = sorted(history, key=_sort_key)
+                last_graded = None
+                for h in sorted_hist:
+                    score = _get_entry_score(h)
+                    submitted_at = _get_entry_time(h, "submitted_at")
+                    graded_at = _get_entry_time(h, "graded_at")
+                    if score is not None and submitted_at and graded_at and graded_at > submitted_at:
+                        last_graded = h
+                if not last_graded:
+                    continue
+                graded_candidates += 1
+                graded_at = _get_entry_time(last_graded, "graded_at")
+                if not graded_at:
+                    continue
+                resub_entry = None
+                latest = sorted_hist[-1]
+                latest_submitted = _get_entry_time(latest, "submitted_at")
+                latest_graded = _get_entry_time(latest, "graded_at")
+                if _get_entry_score(latest) is not None and latest_graded and latest_submitted and latest_graded > latest_submitted:
+                    continue
+                last_attempt = last_graded.get("attempt")
+                latest_attempt = latest.get("attempt")
+                if latest_attempt is not None and last_attempt is not None:
+                    try:
+                        if int(latest_attempt) <= int(last_attempt):
+                            continue
+                    except Exception:
+                        pass
+                for h in reversed(sorted_hist):
+                    submitted_at = _get_entry_time(h, "submitted_at")
+                    if submitted_at and submitted_at > graded_at:
+                        resub_entry = h
+                        break
+                if not resub_entry:
+                    continue
+                resub_needed += 1
+                resub_candidates += 1
+                old_grade = _get_entry_score(last_graded)
+                if old_grade is None:
+                    continue
+                resub_work_items.append((sub, old_grade, resub_entry))
+            if verbose:
+                print(f"[Resubmissions] Assignment {aid}: {resub_needed} need regrade after filtering.")
+            if not resub_work_items:
+                continue
+            assignment_keep_old = apply_keep_old_all
+            if not apply_keep_old_all:
+                keep_raw = input("Use latest graded score for ungraded resubmissions in this assignment? (y/n) [n]: ").strip().lower()
+                assignment_keep_old = keep_raw in ("y", "yes")
+            for sub, old_grade, resub_entry in resub_work_items:
+                student_id = sub.get("user_id") if isinstance(sub, dict) else None
+                student_name = None
+                if isinstance(sub, dict):
+                    student_name = sub.get("user", {}).get("name")
+                if not student_name:
+                    user_info = getattr(sub, "user", None)
+                    if isinstance(user_info, dict):
+                        student_name = user_info.get("name")
+                if verbose:
+                    resub_time = _get_entry_time(resub_entry, "submitted_at")
+                    resub_str = resub_time.strftime("%Y-%m-%d %H:%M:%S") if resub_time else "unknown"
+                    print(f"[Resubmissions] {student_name or student_id} resubmitted after grade {old_grade} at {resub_str}.")
+                new_grade, should_quit = _prompt_grade(old_grade, force_keep_old=assignment_keep_old)
+                if should_quit:
+                    return updated
+                if new_grade is None:
+                    continue
+                try:
+                    url = f"{api_url}/api/v1/courses/{course_id}/assignments/{aid}/submissions/{student_id}"
+                    headers = {"Authorization": f"Bearer {api_key}"}
+                    payload = {"submission": {"posted_grade": new_grade}}
+                    resp = requests.put(url, headers=headers, json=payload)
+                    if resp.ok:
+                        updated.append({"assignment_id": aid, "student_id": student_id, "grade": new_grade})
+                        if verbose:
+                            print(f"[Resubmissions] Updated {student_name or student_id} to {new_grade}.")
+                    else:
+                        if verbose:
+                            print(f"[Resubmissions] Failed to update {student_name or student_id}: {resp.status_code} {resp.text}")
+                except Exception as e:
+                    if verbose:
+                        print(f"[Resubmissions] Failed to update {student_name or student_id}: {e}")
+        if verbose:
+            print(f"[Resubmissions] Candidates with graded attempts: {graded_candidates}.")
+            print(f"[Resubmissions] Candidates with resubmissions after grade: {resub_candidates}.")
+            print(f"[Resubmissions] Updated {len(updated)} resubmission grade(s).")
+        else:
+            print(f"Updated {len(updated)} resubmission grade(s).")
+        return updated
+    except Exception as e:
+        if verbose:
+            print(f"[Resubmissions] Error: {e}")
+        else:
+            print(f"Error applying resubmission grades: {e}")
         return []
 
 def list_and_export_canvas_rubrics(

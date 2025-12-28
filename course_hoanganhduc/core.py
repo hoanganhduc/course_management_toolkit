@@ -3,6 +3,7 @@
 # Course Management Script
 
 import argparse
+import glob
 import json
 import os
 import sys
@@ -36,6 +37,102 @@ def _apply_config_overrides(config):
         for key, value in config.items():
             if hasattr(module, key):
                 setattr(module, key, value)
+
+def _generate_short_aliases(parser):
+    used = set()
+    for action in parser._actions:
+        for opt in action.option_strings:
+            if opt.startswith("-") and not opt.startswith("--"):
+                used.add(opt)
+    aliases = {}
+    for action in parser._actions:
+        long_opts = [opt for opt in action.option_strings if opt.startswith("--")]
+        short_opts = [opt for opt in action.option_strings if opt.startswith("-") and not opt.startswith("--")]
+        if not long_opts or short_opts:
+            continue
+        long_name = long_opts[0][2:]
+        parts = [p for p in long_name.split("-") if p]
+        if not parts:
+            continue
+        base = "".join(p[0] for p in parts)
+        candidate = "-" + base
+        if candidate in used:
+            tail = parts[-1]
+            for i in range(1, len(tail)):
+                candidate = "-" + base + tail[i]
+                if candidate not in used:
+                    break
+            if candidate in used:
+                n = 2
+                while True:
+                    candidate = f"-{base}{n}"
+                    if candidate not in used:
+                        break
+                    n += 1
+        used.add(candidate)
+        aliases[candidate] = long_opts[0]
+    return aliases
+
+def _apply_short_aliases(parser, argv):
+    aliases = _generate_short_aliases(parser)
+    if not aliases:
+        return argv
+    updated = []
+    for arg in argv:
+        mapped = aliases.get(arg)
+        if mapped:
+            updated.append(mapped)
+            continue
+        replaced = False
+        for alias, target in aliases.items():
+            prefix = alias + "="
+            if arg.startswith(prefix):
+                updated.append(target + arg[len(alias):])
+                replaced = True
+                break
+        if replaced:
+            continue
+        updated.append(arg)
+    return updated
+
+def _print_cli_aliases(parser):
+    auto_aliases = _generate_short_aliases(parser)
+    if not parser._action_groups:
+        print("No CLI aliases found.")
+        return
+    print("CLI short aliases by section:")
+    for group in parser._action_groups:
+        title = group.title or "Other"
+        rows = []
+        for action in group._group_actions:
+            long_opts = [opt for opt in action.option_strings if opt.startswith("--")]
+            if not long_opts:
+                continue
+            long_opt = long_opts[0]
+            short_opts = [opt for opt in action.option_strings if opt.startswith("-") and not opt.startswith("--")]
+            auto_shorts = []
+            if long_opt in auto_aliases.values():
+                for alias, target in auto_aliases.items():
+                    if target == long_opt:
+                        auto_shorts.append(alias)
+            if not short_opts:
+                if not auto_shorts:
+                    continue
+                rows.append((long_opt, [], sorted(set(auto_shorts))))
+                continue
+            rows.append((long_opt, sorted(set(short_opts)), sorted(set(auto_shorts))))
+        if not rows:
+            continue
+        print(f"\n[{title}]")
+        for long_opt, shorts, auto_shorts in sorted(rows, key=lambda x: x[0]):
+            manual = [s for s in shorts if s not in auto_shorts]
+            parts = []
+            if manual:
+                parts.append(", ".join(manual))
+            if auto_shorts:
+                parts.append(", ".join(auto_shorts) + " (auto)")
+            if parts:
+                print(f"  {long_opt}: {'; '.join(parts)}")
 
 
 def _build_menu_sections():
@@ -107,6 +204,7 @@ def _build_menu_sections():
             ("Change Canvas assignment lock dates", "47"),
             ("Create Canvas groups of students", "45"),
             ("Delete empty Canvas groups", "50"),
+            ("Grade resubmissions (reuse or override grades)", "66"),
         ]),
         ("Configuration and Integrations", [
             ("Load config from JSON file and save to default location", "36"),
@@ -148,6 +246,30 @@ def _flatten_menu_sections(sections):
             display_to_action[display_code] = action
             code_to_index[display_code] = len(entries) - 1
     return entries, item_indices, display_to_action, code_to_index
+
+
+def _expand_cli_paths(values):
+    if not values:
+        return []
+    if isinstance(values, (list, tuple)):
+        raw_values = values
+    else:
+        raw_values = [values]
+    expanded = []
+    for raw in raw_values:
+        if raw is None:
+            continue
+        parts = [part.strip() for part in str(raw).split(",") if part.strip()]
+        for part in parts:
+            if any(ch in part for ch in ("*", "?", "[")):
+                matches = glob.glob(part)
+                if matches:
+                    expanded.extend(matches)
+                else:
+                    expanded.append(part)
+            else:
+                expanded.append(part)
+    return expanded
 
 
 def _enable_ansi():
@@ -396,6 +518,9 @@ def main():
                               choices=["gemini", "huggingface", "local", "all"],
                               help="List available AI models for a provider ('gemini', 'huggingface', 'local', or 'all')",
                               dest="list_ai_models", metavar="AI_SERVICE")
+    config_group.add_argument('--student-sort-method', type=str,
+                              help="Student sort method for detail outputs (first_last, last_first, id)",
+                              dest="student_sort_method", metavar="METHOD")
     config_group.add_argument('--local-llm-command', type=str,
                               help="Command to run the local LLM (default: ollama)",
                               dest="local_llm_command", metavar="CMD")
@@ -603,6 +728,12 @@ def main():
     canvas_admin_group.add_argument('--delete-empty-canvas-groups', '-deg', action='store_true',
                                     help="Delete all empty groups (groups with no members) from a Canvas course group set",
                                     dest="delete_empty_canvas_groups")
+    canvas_admin_group.add_argument('--grade-resubmission', '-grs', nargs='*',
+                                    help="List resubmissions and regrade them (optionally provide assignment IDs)",
+                                    dest="grade_resubmission", metavar="ASSIGNMENT_IDS")
+    canvas_admin_group.add_argument('--keep-old-grade', action='store_true',
+                                    help="Keep previous grade for resubmissions without prompting",
+                                    dest="keep_old_grade")
 
     gclass_group = parser.add_argument_group("Google Classroom")
     gclass_group.add_argument('--sync-google-classroom', '-sgc', action='store_true',
@@ -691,8 +822,15 @@ def main():
     automation_group.add_argument('--workflow-teacher-canvas-id', type=str,
                                   help="Teacher Canvas ID placeholder for workflow",
                                   dest="workflow_teacher_canvas_id", metavar="CANVAS_ID")
+    parser.add_argument('--list-cli-aliases', action='store_true',
+                        help="List auto-generated short aliases for long-only CLI flags",
+                        dest="list_cli_aliases")
 
-    args = parser.parse_args()
+    if '--list-cli-aliases' in sys.argv:
+        _print_cli_aliases(parser)
+        raise SystemExit(0)
+
+    args = parser.parse_args(_apply_short_aliases(parser, sys.argv[1:]))
 
     # Persist course code early so config resolution is consistent for this run.
     if args.course_code:
@@ -772,6 +910,8 @@ def main():
         _apply_config_overrides({"LOG_MAX_BYTES": args.log_max_bytes})
     if args.log_backups:
         _apply_config_overrides({"LOG_BACKUP_COUNT": args.log_backups})
+    if args.student_sort_method:
+        _apply_config_overrides({"STUDENT_SORT_METHOD": args.student_sort_method})
     if args.local_llm_command:
         _apply_config_overrides({"LOCAL_LLM_COMMAND": args.local_llm_command})
     if args.local_llm_model:
@@ -941,9 +1081,17 @@ def main():
         )
 
     if args.add_file:
-        new_students = read_students_from_excel_csv(args.add_file, db_path=db_path, verbose=args.verbose)
-        students = load_database(db_path, verbose=args.verbose)
-        print(f"Current number of students in database: {len(students)}.")
+        add_files = _expand_cli_paths(args.add_file)
+        processed = False
+        for add_file in add_files:
+            if not os.path.exists(add_file):
+                print(f"File not found: {add_file}")
+                continue
+            read_students_from_excel_csv(add_file, db_path=db_path, verbose=args.verbose)
+            processed = True
+        if processed:
+            students = load_database(db_path, verbose=args.verbose)
+            print(f"Current number of students in database: {len(students)}.")
 
     if args.save:
         save_database(students, db_path=db_path, verbose=args.verbose, audit_source="manual-save")
@@ -956,7 +1104,13 @@ def main():
         export_emails_to_txt(students, args.export_emails, db_path=db_path, verbose=args.verbose)
 
     if args.export_all_details:
-        export_all_details_to_txt(students, args.export_all_details, db_path=db_path, verbose=args.verbose)
+        export_all_details_to_txt(
+            students,
+            args.export_all_details,
+            db_path=db_path,
+            verbose=args.verbose,
+            sort_method=args.student_sort_method or STUDENT_SORT_METHOD,
+        )
 
     if args.load_override_grades:
         override_path = args.load_override_grades if isinstance(args.load_override_grades, str) else "override_grades.xlsx"
@@ -1034,7 +1188,12 @@ def main():
         print_student_details(students, args.details, db_path=db_path, verbose=args.verbose)
 
     if args.all_details:
-        print_all_student_details(students, db_path=db_path, verbose=args.verbose)
+        print_all_student_details(
+            students,
+            db_path=db_path,
+            verbose=args.verbose,
+            sort_method=args.student_sort_method or STUDENT_SORT_METHOD,
+        )
 
     if args.add_blackboard_counts:
         pdf_path = args.add_blackboard_counts
@@ -1265,6 +1424,18 @@ def main():
         else:
             print("No students found with >=2 submissions and first on time.")
 
+    if getattr(args, "grade_resubmission", None) is not None:
+        course_id = args.canvas_course_id if hasattr(args, "canvas_course_id") and args.canvas_course_id else CANVAS_LMS_COURSE_ID
+        assignment_ids = args.grade_resubmission or None
+        grade_resubmissions(
+            api_url=CANVAS_LMS_API_URL,
+            api_key=CANVAS_LMS_API_KEY,
+            course_id=course_id,
+            assignment_ids=assignment_ids,
+            keep_old_grade=getattr(args, "keep_old_grade", False),
+            verbose=args.verbose
+        )
+
     # New: List and export Canvas rubrics
     if getattr(args, "list_canvas_rubrics", False) or getattr(args, "export_canvas_rubrics", None):
         course_id = args.canvas_course_id if hasattr(args, "canvas_course_id") and args.canvas_course_id else CANVAS_LMS_COURSE_ID
@@ -1362,9 +1533,7 @@ def main():
 
     # New: Update MAT*.xlsx files with grades from database
     if getattr(args, "update_mat_excel", None):
-        mat_files = args.update_mat_excel
-        if not isinstance(mat_files, list):
-            mat_files = [mat_files]
+        mat_files = _expand_cli_paths(args.update_mat_excel)
         if isinstance(args.export_grade_diff, str):
             diff_path = args.export_grade_diff
         elif args.export_grade_diff:
@@ -1884,7 +2053,11 @@ def main():
                     continue
                 print_student_details(students, identifier, verbose=args.verbose)
             elif choice == '8':
-                print_all_student_details(students, verbose=args.verbose)
+                sort_method = input(
+                    "Sort method (first_last/last_first/id) [default from config]: "
+                ).strip().lower()
+                sort_method = sort_method or STUDENT_SORT_METHOD
+                print_all_student_details(students, verbose=args.verbose, sort_method=sort_method)
             elif choice == '51':
                 override_path = input_with_completion(
                     "Enter override_grades.xlsx path (leave blank for ./override_grades.xlsx, or 'q' to quit): "
@@ -2022,7 +2195,11 @@ def main():
                 export_path = input_with_completion("Enter export TXT file path (or 'q' to quit): ").strip()
                 if export_path.lower() in ('q', 'quit'):
                     continue
-                export_all_details_to_txt(students, export_path, verbose=args.verbose)
+                sort_method = input(
+                    "Sort method (first_last/last_first/id) [default from config]: "
+                ).strip().lower()
+                sort_method = sort_method or STUDENT_SORT_METHOD
+                export_all_details_to_txt(students, export_path, verbose=args.verbose, sort_method=sort_method)
             elif choice == '10':
                 pdf_path = input_with_completion("Enter PDF file path (or 'q' to quit): ").strip()
                 if pdf_path.lower() in ('q', 'quit'):
@@ -2529,7 +2706,7 @@ def main():
                 if diff_path.lower() in ('q', 'quit'):
                     continue
                 diff_path = diff_path or None
-                mat_file_list = [f.strip() for f in mat_files.split(",") if f.strip()]
+                mat_file_list = _expand_cli_paths(mat_files)
                 for mat_file in mat_file_list:
                     if not os.path.exists(mat_file):
                         print(f"File not found: {mat_file}")
@@ -2978,6 +3155,22 @@ def main():
                         print(f"[DeleteGroups] Error: {e}")
                     else:
                         print(f"Error deleting empty groups: {e}")
+            elif choice == '66':
+                course_id = input("Enter Canvas course ID (leave blank for default, or 'q' to quit): ").strip()
+                if course_id.lower() in ('q', 'quit'):
+                    continue
+                if not course_id:
+                    course_id = CANVAS_LMS_COURSE_ID
+                keep_old_raw = input("Default to keeping old grade? (y/n) [n]: ").strip().lower()
+                keep_old_grade = keep_old_raw in ("y", "yes")
+                grade_resubmissions(
+                    api_url=CANVAS_LMS_API_URL,
+                    api_key=CANVAS_LMS_API_KEY,
+                    course_id=course_id,
+                    assignment_ids=None,
+                    keep_old_grade=keep_old_grade,
+                    verbose=args.verbose
+                )
             elif choice == '61':
                 assignment_id = input("Assignment ID (leave blank to auto-detect, or 'q' to quit): ").strip()
                 if assignment_id.lower() in ('q', 'quit'):

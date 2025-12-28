@@ -144,6 +144,24 @@ def sync_students_with_google_classroom(students, db_path=None, course_id=None, 
     Returns (added_count, updated_count).
     """
     try:
+        def _scale_score_to_ten(score, max_points=None):
+            try:
+                if score is None:
+                    return None
+                score_val = float(score)
+            except Exception:
+                return score
+            if max_points not in (None, 0):
+                try:
+                    max_val = float(max_points)
+                    if max_val > 0:
+                        return round(score_val / max_val * 10, 2)
+                except Exception:
+                    pass
+            if score_val > 10:
+                return round(score_val / 10, 2)
+            return score_val
+
         # load current DB list only if no students were passed in
         if (students is None or students == []) and db_path and os.path.exists(db_path):
             try:
@@ -364,7 +382,11 @@ def sync_students_with_google_classroom(students, db_path=None, course_id=None, 
                             # maxPoints often available on coursework object
                             max_points = cw.get("maxPoints")
                             if grade is not None:
-                                grades[title] = {"grade": grade, "max_points": max_points}
+                                scaled = _scale_score_to_ten(grade, max_points)
+                                if max_points not in (None, 0) or (isinstance(grade, (int, float)) and grade > 10):
+                                    grades[title] = {"grade": scaled, "max_points": 10}
+                                else:
+                                    grades[title] = {"grade": scaled, "max_points": max_points}
                             submissions[title] = state
                     except Exception:
                         # ignore per-assignment errors but continue
