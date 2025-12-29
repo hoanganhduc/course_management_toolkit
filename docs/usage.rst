@@ -119,6 +119,8 @@ Verify:
    tesseract --version
    pdftoppm -h
 
+Note: Post-OCR AI refinement is disabled; improve scan quality or switch OCR engines if text quality is poor.
+
 Canvas and Google Classroom setup
 ---------------------------------
 
@@ -367,11 +369,11 @@ Canvas announcements
 Create an announcement from a short message (manual input or a TXT file), optionally refine with AI, preview, and post::
 
   course --add-canvas-announcement --announcement-title "Week 3" --announcement-message "Please submit by Friday"
-  course --add-canvas-announcement --announcement-title "Reminder" --announcement-file announcement.txt --announcement-refine gemini
+  course --add-canvas-announcement --announcement-title "Reminder" --announcement-file announcement.txt --refine gemini
   course -aa --announcement-title "Week 3" --announcement-message "Please submit by Friday"
-  course -aa --announcement-title "Reminder" --announcement-file announcement.txt --announcement-refine gemini
+  course -aa --announcement-title "Reminder" --announcement-file announcement.txt --refine gemini
 
-Use ``--dry-run`` to preview without posting. Omit ``--announcement-refine`` to post the original text without AI.
+Use ``--dry-run`` to preview without posting. Omit ``--refine`` to post the original text without AI.
 
 Sample inputs/outputs:
 - ``sample/announcements/announcement_input.txt``
@@ -405,7 +407,7 @@ Runtime overrides: ``--local-llm-command``, ``--local-llm-model``, ``--local-llm
 Installing local AI models (examples):
 - Ollama: https://ollama.com/ then run ``ollama pull llama3.2:3b`` and set ``LOCAL_LLM_COMMAND=ollama``, ``LOCAL_LLM_MODEL=llama3.2:3b``.
 - llama.cpp: build ``llama-cli`` (https://github.com/ggerganov/llama.cpp), set ``LOCAL_LLM_COMMAND`` to the ``llama-cli`` path and ``LOCAL_LLM_ARGS`` to include ``-m <path-to-gguf>``.
-Use ``--announcement-refine local`` or set ``REPORT_REFINE_METHOD=local`` to use the local model.
+Use ``--refine local`` or set ``REPORT_REFINE_METHOD=local`` to use the local model.
 
 
 AI model verification and listing

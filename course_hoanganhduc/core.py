@@ -168,8 +168,8 @@ def _format_cli_aliases(parser):
 def _build_menu_sections():
     return [
         ("Student Database", [
-            ("Import students from Excel or CSV file", "1"),
-            ("Preview import from Excel/CSV (no write)", "59"),
+            ("Import students from Excel, CSV, or PDF file", "1"),
+            ("Dry-run preview import (Excel/CSV/PDF, no write)", "59"),
             ("Save current students to database", "2"),
             ("Load students from database", "3"),
             ("Search for students by keyword (name, student id, email, etc.)", "6"),
@@ -216,6 +216,7 @@ def _build_menu_sections():
             ("Create a Canvas announcement", "20"),
             ("Invite a single user to Canvas course by email", "21"),
             ("Invite multiple users to Canvas course from a TXT file", "22"),
+            ("Import students (CSV/XLSX/PDF) and invite if not enrolled", "73"),
             ("Find and notify students who have not completed required peer reviews", "23"),
             ("Sync Canvas course members to local database", "24"),
             ("Grade Canvas assignment submissions", "25"),
@@ -516,6 +517,9 @@ def main():
     general_group.add_argument('--log-backups', type=int,
                                help="Number of rotated log files to keep",
                                dest="log_backups", metavar="COUNT")
+    general_group.add_argument('--refine', type=str, choices=['gemini', 'huggingface', 'local', 'none'], default=None,
+                               help="Refine generated messages/announcements with AI",
+                               dest="refine", metavar="METHOD")
 
     config_group = parser.add_argument_group("Configuration")
     config_group.add_argument('--config', '-cfg', '-c', type=str, help="Load config from JSON file and save to default location", dest="config", metavar="CONFIG")
@@ -573,13 +577,10 @@ def main():
 
     db_group = parser.add_argument_group("Student Database")
     db_group.add_argument('--db', '-db', '-D', type=str, help="Database file name (default: students.db, saved in script folder)", dest="db", metavar="DB")
-    db_group.add_argument('--add-file', '-a', type=str, help="Import students from Excel or CSV file into the database", dest="add_file", metavar="FILE")
-    db_group.add_argument('--preview-import', type=str,
-                          help="Preview Excel/CSV import (no write)",
-                          dest="preview_import", metavar="FILE")
-    db_group.add_argument('--preview-rows', type=int, default=5,
-                          help="Number of rows to show with --preview-import (default: 5)",
-                          dest="preview_rows", metavar="COUNT")
+    db_group.add_argument('--add-file', '-a', type=str, help="Import students from Excel, CSV, or PDF file into the database", dest="add_file", metavar="FILE")
+    db_group.add_argument('--dry-run-rows', type=int, default=5,
+                          help="Number of preview rows to show with --dry-run + --add-file (default: 5)",
+                          dest="dry_run_rows", metavar="COUNT")
     db_group.add_argument('--save', '-s', action='store_true', help="Save current students to database file", dest="save")
     db_group.add_argument('--load', '-l', action='store_true', help="Load students from database file", dest="load")
     db_group.add_argument('--search', '-S', type=str, help="Search for students by keyword (name, student id, email, etc.)", dest="search", metavar="QUERY")
@@ -645,9 +646,6 @@ def main():
     ocr_group.add_argument('--simple-text', '-T', action='store_true',
                            help="Extract simple text (no layout) from PDF OCR",
                            dest="simple_text")
-    ocr_group.add_argument('--refine', '-R', type=str, choices=['gemini', 'huggingface', 'local'], default=None,
-                           help="Refine extracted text using AI ('gemini', 'huggingface', or 'local')",
-                           dest="refine")
 
     exam_group = parser.add_argument_group("Exams (Multichoice)")
     exam_group.add_argument('--extract-multichoice-solutions', '-ems', type=str,
@@ -678,15 +676,21 @@ def main():
     canvas_group.add_argument('--announcement-title', type=str, help="Title for Canvas announcement", dest="announcement_title", metavar="TITLE")
     canvas_group.add_argument('--announcement-message', type=str, help="Short message for Canvas announcement", dest="announcement_message", metavar="MESSAGE")
     canvas_group.add_argument('--announcement-file', type=str, help="TXT file with announcement body", dest="announcement_file", metavar="PATH")
-    canvas_group.add_argument('--announcement-refine', type=str, choices=['gemini', 'huggingface', 'local', 'none'],
-                              help="Refine announcement text with AI",
-                              dest="announcement_refine", metavar="METHOD")
     canvas_group.add_argument('--invite-canvas-email', '-ie', type=str, help="Invite a single user to Canvas course by email", dest="invite_canvas_email")
     canvas_group.add_argument('--invite-canvas-name', type=str, help="Name for Canvas invite (for single user)", dest="invite_canvas_name")
     canvas_group.add_argument('--invite-canvas-role', '-ir', type=str, default="student",
                               help="Role for Canvas invite (student/teacher/ta, default: student)",
                               dest="invite_canvas_role")
     canvas_group.add_argument('--invite-canvas-file', '-if', type=str, help="Invite multiple users to Canvas course from a TXT file or string of pairs/emails", dest="invite_canvas_file")
+    canvas_group.add_argument('--invite', action='store_true',
+                              help="Invite students after --add-file import (skips those already enrolled)",
+                              dest="invite")
+    canvas_group.add_argument('--invite-role', '--invite-rote', type=str, default="student",
+                              help="Role for --invite (student/teacher/ta, default: student)",
+                              dest="invite_role", metavar="ROLE")
+    canvas_group.add_argument('--invite-section', type=str, default=None,
+                              help="Default Canvas section name for --invite (optional)",
+                              dest="invite_section", metavar="SECTION")
     canvas_group.add_argument('--notify-incomplete-reviews', '-nr', action='store_true',
                               help="Find and notify students who have not completed required peer reviews for a Canvas assignment",
                               dest="notify_incomplete_reviews")
@@ -1201,15 +1205,6 @@ def main():
     if args.load:
         print(f"Loaded {len(students)} students from database.")
 
-    if args.preview_import:
-        read_students_from_excel_csv(
-            args.preview_import,
-            db_path=None,
-            verbose=args.verbose,
-            preview_only=True,
-            preview_rows=args.preview_rows,
-        )
-
     if args.add_file:
         add_files = _expand_cli_paths(args.add_file)
         processed = False
@@ -1217,11 +1212,69 @@ def main():
             if not os.path.exists(add_file):
                 print(f"File not found: {add_file}")
                 continue
-            read_students_from_excel_csv(add_file, db_path=db_path, verbose=args.verbose)
-            processed = True
+            try:
+                if args.dry_run:
+                    ext = os.path.splitext(add_file)[1].lower()
+                    if ext in {".csv", ".xlsx", ".xls"}:
+                        read_students_from_excel_csv(
+                            add_file,
+                            db_path=None,
+                            verbose=args.verbose,
+                            preview_only=True,
+                            preview_rows=args.dry_run_rows,
+                        )
+                    elif ext == ".pdf":
+                        read_students_from_pdf(
+                            add_file,
+                            db_path=None,
+                            lang=args.ocr_lang if hasattr(args, "ocr_lang") and args.ocr_lang else "auto",
+                            service=args.ocr_service if hasattr(args, "ocr_service") and args.ocr_service else DEFAULT_OCR_METHOD,
+                            verbose=args.verbose,
+                        )
+                    else:
+                        print(f"Unsupported file type for dry-run import: {add_file}")
+                        continue
+                else:
+                    import_students_from_file(
+                        add_file,
+                        db_path=db_path,
+                        verbose=args.verbose,
+                        ocr_service=args.ocr_service if hasattr(args, "ocr_service") and args.ocr_service else DEFAULT_OCR_METHOD,
+                        ocr_lang=args.ocr_lang if hasattr(args, "ocr_lang") and args.ocr_lang else "auto",
+                    )
+                processed = True
+            except Exception as exc:
+                print(f"Failed to import students from {add_file}: {exc}")
         if processed:
-            students = load_database(db_path, verbose=args.verbose)
-            print(f"Current number of students in database: {len(students)}.")
+            if args.dry_run:
+                print("Dry-run enabled: no database changes were saved.")
+            else:
+                students = load_database(db_path, verbose=args.verbose)
+                print(f"Current number of students in database: {len(students)}.")
+
+    if args.invite:
+        if args.dry_run:
+            print("Dry-run enabled: skipping Canvas invites.")
+        elif not args.add_file:
+            print("Use --invite together with --add-file to import and invite students.")
+        else:
+            if not students and os.path.exists(db_path):
+                students = load_database(db_path, verbose=args.verbose)
+            added_emails = ensure_student_emails(students, verbose=args.verbose)
+            if added_emails and os.path.exists(db_path):
+                save_database(students, db_path=db_path, verbose=args.verbose, audit_source="import-invite-email")
+            course_id = args.canvas_course_id if hasattr(args, "canvas_course_id") and args.canvas_course_id else CANVAS_LMS_COURSE_ID
+            role = args.invite_role if hasattr(args, "invite_role") and args.invite_role else "student"
+            section = args.invite_section if hasattr(args, "invite_section") and args.invite_section else None
+            invite_students_if_not_enrolled(
+                students,
+                course_id=course_id,
+                role=role,
+                section=section,
+                api_url=CANVAS_LMS_API_URL,
+                api_key=CANVAS_LMS_API_KEY,
+                verbose=args.verbose,
+            )
 
     if args.save:
         save_database(students, db_path=db_path, verbose=args.verbose, audit_source="manual-save")
@@ -1342,7 +1395,6 @@ def main():
             service=args.ocr_service if hasattr(args, "ocr_service") and args.ocr_service else "ocrspace",
             lang=args.ocr_lang if hasattr(args, "ocr_lang") and args.ocr_lang else "auto",
             simple_text=args.simple_text if hasattr(args, "simple_text") else False,
-            refine=args.refine if hasattr(args, "refine") else None,
             verbose=args.verbose
         )
 
@@ -1423,13 +1475,13 @@ def main():
             api_key=CANVAS_LMS_API_KEY,
             course_id=course_id,
             category=CANVAS_DEFAULT_ASSIGNMENT_CATEGORY,
-            refine=args.refine if hasattr(args, "refine") else None,
+            refine=args.refine if args.refine not in (None, "none") else None,
             verbose=args.verbose
         )
 
     if args.add_canvas_announcement:
         course_id = args.canvas_course_id if hasattr(args, "canvas_course_id") and args.canvas_course_id else CANVAS_LMS_COURSE_ID
-        refine = args.announcement_refine
+        refine = args.refine
         if refine == "none":
             refine = None
         add_canvas_announcement(
@@ -1485,7 +1537,7 @@ def main():
             api_url=CANVAS_LMS_API_URL,
             api_key=CANVAS_LMS_API_KEY,
             course_id=course_id,
-            refine=args.refine if hasattr(args, "refine") else None,
+            refine=args.refine if args.refine not in (None, "none") else None,
             category=CANVAS_DEFAULT_ASSIGNMENT_CATEGORY,
             verbose=args.verbose
         )
@@ -1518,14 +1570,13 @@ def main():
     # New: Fetch and reply to Canvas messages
     if args.fetch_canvas_messages:
         course_id = args.canvas_course_id if hasattr(args, "canvas_course_id") and args.canvas_course_id else CANVAS_LMS_COURSE_ID
-        refine = args.refine if hasattr(args, "refine") else None
         fetch_and_reply_canvas_messages(
             api_url=CANVAS_LMS_API_URL,
             api_key=CANVAS_LMS_API_KEY,
             course_id=course_id,
             only_unread=False,
             reply_text=None,
-            refine=refine,
+            refine=args.refine if args.refine not in (None, "none") else None,
             max_messages=3,
             verbose=args.verbose
         )
@@ -1533,12 +1584,11 @@ def main():
     # New: Edit Canvas pages
     if getattr(args, "edit_canvas_pages", False):
         course_id = args.canvas_course_id if hasattr(args, "canvas_course_id") and args.canvas_course_id else CANVAS_LMS_COURSE_ID
-        refine = args.refine if hasattr(args, "refine") else None
         list_and_update_canvas_pages(
             api_url=CANVAS_LMS_API_URL,
             api_key=CANVAS_LMS_API_KEY,
             course_id=course_id,
-            refine=refine,
+            refine=args.refine if args.refine not in (None, "none") else None,
             verbose=args.verbose
         )
         
@@ -1636,13 +1686,11 @@ def main():
         pdf_path = args.extract_multichoice_answers
         ocr_service = args.ocr_service if hasattr(args, "ocr_service") and args.ocr_service else DEFAULT_OCR_METHOD
         lang = args.ocr_lang if hasattr(args, "ocr_lang") and args.ocr_lang else "auto"
-        refine = args.refine if hasattr(args, "refine") else None
         verbose = args.verbose if hasattr(args, "verbose") else False
         answers = read_multichoice_answers_from_scanned_pdf(
             pdf_path,
             ocr_service=ocr_service,
             lang=lang,
-            refine=refine,
             verbose=verbose
         )
         print("Extracted multichoice exam answers:")
@@ -1746,7 +1794,6 @@ def main():
         dest_dir = args.download_dest_dir if hasattr(args, "download_dest_dir") and args.download_dest_dir else os.path.join(DEFAULT_DOWNLOAD_FOLDER, "student_submissions")
         ocr_service = args.ocr_service if hasattr(args, "ocr_service") and args.ocr_service else DEFAULT_OCR_METHOD
         lang = args.ocr_lang if hasattr(args, "ocr_lang") and args.ocr_lang else "auto"
-        refine = args.refine if hasattr(args, "refine") else None
         similarity_threshold = 0.85
         db_path_check = db_path if os.path.exists(db_path) else None
         download_and_check_student_submissions(
@@ -1757,7 +1804,6 @@ def main():
             course_id=course_id,
             ocr_service=ocr_service,
             lang=lang,
-            refine=refine,
             similarity_threshold=similarity_threshold,
             db_path=db_path_check,
             verbose=args.verbose
@@ -2137,25 +2183,65 @@ def main():
                 choice = mapped_choice
 
             if choice == '1':
-                file_path = input_with_completion("Enter Excel/CSV file path (or 'q' to quit): ").strip()
+                file_path = input_with_completion("Enter Excel/CSV/PDF file path (or 'q' to quit): ").strip()
                 if file_path.lower() in ('q', 'quit', ''):
                     continue
-                read_students_from_excel_csv(file_path, db_path=db_path, verbose=args.verbose)
-                students = load_database(db_path, verbose=args.verbose)
-                print(f"Current number of students in database: {len(students)}.")
+                try:
+                    ocr_service = DEFAULT_OCR_METHOD
+                    ocr_lang = "auto"
+                    if os.path.splitext(file_path)[1].lower() == ".pdf":
+                        ocr_service = input("OCR service (ocrspace/tesseract/paddleocr) [ocrspace] (or 'q' to quit): ").strip().lower()
+                        if ocr_service in ('q', 'quit'):
+                            continue
+                        ocr_service = ocr_service or DEFAULT_OCR_METHOD
+                        ocr_lang = input("OCR language [auto] (or 'q' to quit): ").strip()
+                        if ocr_lang.lower() in ('q', 'quit'):
+                            continue
+                        ocr_lang = ocr_lang or "auto"
+                    import_students_from_file(
+                        file_path,
+                        db_path=db_path,
+                        verbose=args.verbose,
+                        ocr_service=ocr_service,
+                        ocr_lang=ocr_lang,
+                    )
+                    students = load_database(db_path, verbose=args.verbose)
+                    print(f"Current number of students in database: {len(students)}.")
+                except Exception as exc:
+                    print(f"Failed to import students from {file_path}: {exc}")
             elif choice == '59':
-                file_path = input_with_completion("Enter Excel/CSV file path for preview (or 'q' to quit): ").strip()
+                file_path = input_with_completion("Enter Excel/CSV/PDF file path for dry-run preview (or 'q' to quit): ").strip()
                 if file_path.lower() in ('q', 'quit', ''):
                     continue
                 rows_raw = input("Number of preview rows [5]: ").strip()
                 preview_rows = int(rows_raw) if rows_raw.isdigit() else 5
-                read_students_from_excel_csv(
-                    file_path,
-                    db_path=None,
-                    verbose=args.verbose,
-                    preview_only=True,
-                    preview_rows=preview_rows,
-                )
+                ext = os.path.splitext(file_path)[1].lower()
+                if ext in {".csv", ".xlsx", ".xls"}:
+                    read_students_from_excel_csv(
+                        file_path,
+                        db_path=None,
+                        verbose=args.verbose,
+                        preview_only=True,
+                        preview_rows=preview_rows,
+                    )
+                elif ext == ".pdf":
+                    ocr_service = input("OCR service (ocrspace/tesseract/paddleocr) [ocrspace] (or 'q' to quit): ").strip().lower()
+                    if ocr_service in ('q', 'quit'):
+                        continue
+                    ocr_service = ocr_service or DEFAULT_OCR_METHOD
+                    ocr_lang = input("OCR language [auto] (or 'q' to quit): ").strip()
+                    if ocr_lang.lower() in ('q', 'quit'):
+                        continue
+                    ocr_lang = ocr_lang or "auto"
+                    read_students_from_pdf(
+                        file_path,
+                        db_path=None,
+                        lang=ocr_lang,
+                        service=ocr_service,
+                        verbose=args.verbose,
+                    )
+                else:
+                    print("Unsupported file type for dry-run preview.")
             elif choice == '2':
                 save_database(students, db_path=db_path, verbose=args.verbose, audit_source="manual-save")
                 print("Database saved.")
@@ -2371,16 +2457,11 @@ def main():
                 if simple_text in ('q', 'quit'):
                     continue
                 simple_text = simple_text == "y"
-                refine = input("Refine extracted text with AI? (none/gemini/huggingface/local) [none] (or 'q' to quit): ").strip().lower()
-                if refine in ('q', 'quit'):
-                    continue
-                refine = refine if refine in ALL_AI_METHODS else None
                 extract_text_from_scanned_pdf(
                     pdf_path,
                     service=ocr_service,
                     lang=ocr_lang,
                     simple_text=simple_text,
-                    refine=refine,
                     verbose=args.verbose
                 )
             elif choice == '12':
@@ -2565,6 +2646,55 @@ def main():
                     verbose=args.verbose
                 )
                 print(results)
+            elif choice == '73':
+                course_id = input("Enter Canvas course ID (leave blank for default, or 'q' to quit): ").strip()
+                if course_id.lower() in ('q', 'quit'):
+                    continue
+                if not course_id:
+                    course_id = CANVAS_LMS_COURSE_ID
+                file_path = input_with_completion("Student file (CSV/XLSX/PDF) to import (or 'q' to quit): ").strip()
+                if file_path.lower() in ('q', 'quit', ''):
+                    continue
+                role = input("Role for invites (student/teacher/ta) [student]: ").strip().lower()
+                role = role if role in {"student", "teacher", "ta"} else "student"
+                default_section = input("Default Canvas section name (optional): ").strip()
+                default_section = default_section if default_section else None
+                ocr_service = DEFAULT_OCR_METHOD
+                ocr_lang = "auto"
+                if os.path.splitext(file_path)[1].lower() == ".pdf":
+                    ocr_service = input("OCR service (ocrspace/tesseract/paddleocr) [ocrspace] (or 'q' to quit): ").strip().lower()
+                    if ocr_service in ('q', 'quit'):
+                        continue
+                    ocr_service = ocr_service or DEFAULT_OCR_METHOD
+                    ocr_lang = input("OCR language [auto] (or 'q' to quit): ").strip()
+                    if ocr_lang.lower() in ('q', 'quit'):
+                        continue
+                    ocr_lang = ocr_lang or "auto"
+                try:
+                    import_students_from_file(
+                        file_path,
+                        db_path=db_path,
+                        verbose=args.verbose,
+                        ocr_service=ocr_service,
+                        ocr_lang=ocr_lang,
+                    )
+                except Exception as exc:
+                    print(f"Failed to import students from {file_path}: {exc}")
+                    continue
+                if os.path.exists(db_path):
+                    students = load_database(db_path, verbose=args.verbose)
+                added_emails = ensure_student_emails(students, verbose=args.verbose)
+                if added_emails and os.path.exists(db_path):
+                    save_database(students, db_path=db_path, verbose=args.verbose, audit_source="import-invite-email")
+                invite_students_if_not_enrolled(
+                    students,
+                    course_id=course_id,
+                    role=role,
+                    section=default_section,
+                    api_url=CANVAS_LMS_API_URL,
+                    api_key=CANVAS_LMS_API_KEY,
+                    verbose=args.verbose,
+                )
             elif choice == '23':
                 # Find and notify students who have not completed required peer reviews
                 course_id = input("Enter Canvas course ID (leave blank for default, or 'q' to quit): ").strip()
@@ -2801,17 +2931,12 @@ def main():
                 if ocr_lang in ('q', 'quit'):
                     continue
                 ocr_lang = ocr_lang or "auto"
-                refine = input("Refine extracted text with AI? (none/gemini/huggingface/local) [none] (or 'q' to quit): ").strip().lower()
-                if refine in ('q', 'quit'):
-                    continue
-                refine = refine if refine in ALL_AI_METHODS else None
                 verbose_opt = input("Enable verbose output? (y/n) [n]: ").strip().lower()
                 verbose_flag = verbose_opt == "y"
                 answers = read_multichoice_answers_from_scanned_pdf(
                     pdf_path,
                     ocr_service=ocr_service,
                     lang=ocr_lang,
-                    refine=refine,
                     verbose=verbose_flag
                 )
                 print("Extracted multichoice exam answers:")
@@ -2948,10 +3073,6 @@ def main():
                 if ocr_lang in ('q', 'quit'):
                     continue
                 ocr_lang = ocr_lang or "auto"
-                refine = input("Refine extracted text with AI? (none/gemini/huggingface/local) [none] (or 'q' to quit): ").strip().lower()
-                if refine in ('q', 'quit'):
-                    continue
-                refine = refine if refine in ALL_AI_METHODS else None
                 similarity_threshold = 0.85
                 db_path_check = db_path if os.path.exists(db_path) else None
                 download_and_check_student_submissions(
@@ -2962,7 +3083,6 @@ def main():
                     course_id=course_id,
                     ocr_service=ocr_service,
                     lang=ocr_lang,
-                    refine=refine,
                     similarity_threshold=similarity_threshold,
                     db_path=db_path_check,
                     verbose=args.verbose

@@ -1357,6 +1357,131 @@ def print_canvas_people(people, verbose=False):
             else:
                 print(f"  {s['name']} ({s['email']}), Canvas ID: {s['canvas_id']}")
 
+
+def invite_students_if_not_enrolled(
+    students,
+    course_id=CANVAS_LMS_COURSE_ID,
+    role="student",
+    section=None,
+    api_url=CANVAS_LMS_API_URL,
+    api_key=CANVAS_LMS_API_KEY,
+    verbose=False,
+):
+    """
+    Invite students to Canvas if they are not already active or invited.
+
+    Returns:
+        dict: summary with results and skip counts.
+    """
+    if not students:
+        if verbose:
+            print("[CanvasInvite] No students provided for invitation.")
+        else:
+            print("No students provided for invitation.")
+        return {"results": [], "invited": 0, "skipped_enrolled": 0, "skipped_missing": 0, "skipped_duplicate": 0}
+
+    people = list_canvas_people(api_url=api_url, api_key=api_key, course_id=course_id, verbose=verbose)
+    enrolled_emails = set()
+    for group in ("active_students", "invited_students"):
+        for entry in people.get(group, []) or []:
+            email = (entry.get("email") or "").strip().lower()
+            if email:
+                enrolled_emails.add(email)
+
+    def _get_student_email(student):
+        email_val = getattr(student, "Email", None)
+        if not email_val:
+            for key, value in getattr(student, "__dict__", {}).items():
+                if "email" in key.lower() and value:
+                    email_val = value
+                    break
+        if email_val:
+            return str(email_val).strip()
+        sid = _normalize_student_id(getattr(student, "Student ID", "") or "")
+        if sid:
+            return f"{sid}@hus.edu.vn"
+        return None
+
+    def _get_student_name(student, fallback_email=None):
+        name_val = getattr(student, "Name", None)
+        if not name_val:
+            for key, value in getattr(student, "__dict__", {}).items():
+                if "name" in key.lower() and value:
+                    name_val = value
+                    break
+        if name_val:
+            return str(name_val).strip()
+        if fallback_email and "@" in fallback_email:
+            return fallback_email.split("@")[0]
+        return "Student"
+
+    def _get_student_section(student):
+        for key in ("Canvas Section", "Section", "Class"):
+            value = getattr(student, key, None)
+            if value:
+                return str(value).strip()
+        return None
+
+    results = []
+    invited = 0
+    skipped_enrolled = 0
+    skipped_missing = 0
+    skipped_duplicate = 0
+    seen_emails = set()
+
+    for student in students:
+        email = _get_student_email(student)
+        if not email:
+            skipped_missing += 1
+            if verbose:
+                print("[CanvasInvite] Skipping student without email.")
+            continue
+        email_key = email.strip().lower()
+        if email_key in seen_emails:
+            skipped_duplicate += 1
+            continue
+        seen_emails.add(email_key)
+        if email_key in enrolled_emails:
+            skipped_enrolled += 1
+            continue
+
+        name = _get_student_name(student, fallback_email=email)
+        student_section = _get_student_section(student) or section
+        result = invite_user_to_canvas_course(
+            email=email,
+            name=name,
+            role=role,
+            section=student_section,
+            api_url=api_url,
+            api_key=api_key,
+            course_id=course_id,
+            verbose=verbose,
+        )
+        results.append(result)
+        if result.get("success"):
+            invited += 1
+
+    if verbose:
+        print(
+            "[CanvasInvite] Summary: "
+            f"{invited} invited, {skipped_enrolled} already enrolled, "
+            f"{skipped_missing} missing email, {skipped_duplicate} duplicates."
+        )
+    else:
+        print(
+            f"Invited {invited}. "
+            f"Skipped: {skipped_enrolled} enrolled, "
+            f"{skipped_missing} missing email, {skipped_duplicate} duplicates."
+        )
+
+    return {
+        "results": results,
+        "invited": invited,
+        "skipped_enrolled": skipped_enrolled,
+        "skipped_missing": skipped_missing,
+        "skipped_duplicate": skipped_duplicate,
+    }
+
 def download_canvas_assignment_submissions(
     assignment_id=None,
     dest_dir=None,
@@ -1939,7 +2064,7 @@ def compare_texts_from_pdfs_in_folder(
         ocr_service (str): OCR service to use ("ocrspace", "tesseract", "paddleocr").
         lang (str): OCR language.
         simple_text (bool): If True, extract simple text.
-        refine (str): AI refinement ("gemini", "huggingface", or None).
+        refine (str): AI refinement for generated messages ("gemini", "huggingface", or None).
         similarity_threshold (float): Threshold for considering two PDFs as similar (0-1).
         api_url (str): Canvas API base URL.
         api_key (str): Canvas API key.
@@ -2121,7 +2246,6 @@ def compare_texts_from_pdfs_in_folder(
                 service=ocr_service,
                 lang=lang,
                 simple_text=simple_text,
-                refine=refine,
                 verbose=verbose
             )
         if txt_path and os.path.exists(txt_path):
@@ -2936,7 +3060,6 @@ def detect_meaningful_level_and_notify_students(
                 service=ocr_service,
                 lang=lang,
                 simple_text=simple_text,
-                refine=refine
             )
         
         if not txt_path or not os.path.exists(txt_path):
@@ -7162,7 +7285,6 @@ def download_and_check_student_submissions(
     course_id=CANVAS_LMS_COURSE_ID,
     ocr_service=DEFAULT_OCR_METHOD,
     lang="auto",
-    refine=DEFAULT_AI_METHOD,
     similarity_threshold=0.85,
     db_path=None,
     verbose=False
@@ -7396,7 +7518,6 @@ def download_and_check_student_submissions(
                     service=ocr_service,
                     lang=lang,
                     simple_text=True,
-                    refine=refine,
                     verbose=verbose
                 )
             if txt_path and os.path.exists(txt_path):

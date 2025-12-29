@@ -17,7 +17,7 @@ from datetime import datetime
 import openpyxl
 import pytesseract
 from pdf2image import convert_from_path
-from PIL import Image
+from PIL import Image, ImageOps, ImageFilter
 import requests
 import tempfile
 import base64
@@ -2742,14 +2742,13 @@ def read_students_from_excel_csv(file_path, db_path=None, verbose=False, preview
         )
     return unique_students
 
-def read_students_from_pdf(pdf_path, db_path=None, lang="auto", service=DEFAULT_OCR_METHOD, refine=DEFAULT_AI_METHOD, verbose=False):
+def read_students_from_pdf(pdf_path, db_path=None, lang="auto", service=DEFAULT_OCR_METHOD, verbose=False):
     """
     Extract student info from a scanned PDF file using OCR.
     Returns a list of Student objects with fields: Name, Student ID, Dob, Class (if found).
     Updates the database if db_path is provided (deduplication and merge logic similar to Excel/CSV).
     Only lines matching the format: <some number> <student id> <full name> <dob> <class> are used.
     Excludes metadata lines (e.g., containing 'ĐẠI HỌC QUỐC GIA HÀ NỘI', 'TRƯỜNG ĐẠI HỌC KHOA HỌC TỰ NHIÊN', etc.).
-    The 'refine' parameter can be "gemini", "huggingface", "local", or None, indicating which AI model/service to use for text refinement.
     If verbose is True, print more details; otherwise, print only important notice.
     """
     # Step 1: Extract text from PDF using OCR
@@ -2757,7 +2756,7 @@ def read_students_from_pdf(pdf_path, db_path=None, lang="auto", service=DEFAULT_
         print(f"[PDF] Extracting text from PDF using {service}...")
     else:
         print("Extracting text from PDF...")
-    txt_path = extract_text_from_scanned_pdf(pdf_path, lang=lang, service=service, refine=refine)
+    txt_path = extract_text_from_scanned_pdf(pdf_path, lang=lang, service=service)
     if not txt_path or not os.path.exists(txt_path):
         if verbose:
             print("[PDF] Failed to extract text from PDF.")
@@ -2912,6 +2911,64 @@ def read_students_from_pdf(pdf_path, db_path=None, lang="auto", service=DEFAULT_
     if db_path:
         save_database(unique_students, db_path, verbose=verbose)
     return unique_students
+
+
+def ensure_student_emails(students, default_domain="hus.edu.vn", verbose=False):
+    """
+    Ensure each student has an email. If missing and Student ID exists, create a default email.
+
+    Returns:
+        int: number of emails added.
+    """
+    if not students:
+        return 0
+    updated = 0
+    for student in students:
+        email = getattr(student, "Email", None)
+        if not email:
+            for key, value in getattr(student, "__dict__", {}).items():
+                if "email" in key.lower() and value:
+                    email = value
+                    break
+        if email:
+            continue
+        sid = _normalize_student_id(getattr(student, "Student ID", "") or "")
+        if not sid:
+            continue
+        email = f"{sid}@{default_domain}"
+        setattr(student, "Email", email)
+        updated += 1
+        if verbose:
+            print(f"[EmailFallback] Added default email for {sid}: {email}")
+    return updated
+
+
+def import_students_from_file(
+    file_path,
+    db_path=None,
+    verbose=False,
+    ocr_service=DEFAULT_OCR_METHOD,
+    ocr_lang="auto",
+):
+    """
+    Import students from CSV/XLSX/PDF into the database (if db_path provided).
+
+    Returns:
+        list: List of Student objects after import.
+    """
+    _, ext = os.path.splitext(file_path)
+    ext = ext.lower()
+    if ext in {".csv", ".xlsx", ".xls"}:
+        return read_students_from_excel_csv(file_path, db_path=db_path, verbose=verbose)
+    if ext == ".pdf":
+        return read_students_from_pdf(
+            file_path,
+            db_path=db_path,
+            lang=ocr_lang or "auto",
+            service=ocr_service or DEFAULT_OCR_METHOD,
+            verbose=verbose,
+        )
+    raise ValueError("Unsupported file type. Use CSV, XLSX, XLS, or PDF.")
 
 def sort_students_by_firstname(students, verbose=False):
     """
@@ -4147,16 +4204,84 @@ def export_all_details_to_txt(students, file_path=None, db_path=None, verbose=Fa
         verbose=verbose,
     )
 
-def extract_text_from_scanned_pdf_ocrspace(pdf_path, txt_output_path=None, lang="auto", simple_text=False, refine=DEFAULT_AI_METHOD, verbose=False):
+def _preprocess_ocr_image(image, verbose=False):
+    try:
+        img = image.convert("L")
+        img = ImageOps.autocontrast(img)
+        img = img.filter(ImageFilter.MedianFilter(size=3))
+        img = img.filter(ImageFilter.UnsharpMask(radius=1, percent=150, threshold=3))
+        np_img = np.array(img)
+        if np_img.size == 0:
+            return img
+        hist, _ = np.histogram(np_img.flatten(), bins=256, range=(0, 256))
+        total = np_img.size
+        sum_total = np.dot(np.arange(256), hist)
+        sum_b = 0.0
+        w_b = 0.0
+        var_max = 0.0
+        threshold = 0
+        for i in range(256):
+            w_b += hist[i]
+            if w_b == 0:
+                continue
+            w_f = total - w_b
+            if w_f == 0:
+                break
+            sum_b += i * hist[i]
+            m_b = sum_b / w_b
+            m_f = (sum_total - sum_b) / w_f
+            var_between = w_b * w_f * (m_b - m_f) ** 2
+            if var_between > var_max:
+                var_max = var_between
+                threshold = i
+        bw = (np_img > threshold).astype(np.uint8) * 255
+        return Image.fromarray(bw)
+    except Exception as exc:
+        if verbose:
+            print(f"[OCRPreprocess] Failed to preprocess image: {exc}")
+        return image
+
+
+def _write_pdf_chunk(images, output_path, max_size_bytes, verbose=False):
+    if not images:
+        return None
+    scales = [1.0, 0.85, 0.7, 0.6]
+    for scale in scales:
+        if scale != 1.0:
+            resized = []
+            for img in images:
+                w, h = img.size
+                resized.append(img.resize((int(w * scale), int(h * scale)), Image.LANCZOS))
+            save_images = resized
+        else:
+            save_images = images
+        save_images = [img.convert("RGB") for img in save_images]
+        save_images[0].save(
+            output_path,
+            "PDF",
+            save_all=True,
+            append_images=save_images[1:],
+            resolution=200.0,
+        )
+        try:
+            size = os.path.getsize(output_path)
+        except Exception:
+            size = max_size_bytes + 1
+        if size <= max_size_bytes:
+            return output_path
+        if verbose:
+            print(f"[OCRPreprocess] Chunk too large at scale {scale}: {size} bytes.")
+    return output_path
+
+def extract_text_from_scanned_pdf_ocrspace(pdf_path, txt_output_path=None, lang="auto", simple_text=False, verbose=False):
 
     """
     Extract text from a scanned PDF file using the free OCR.space API.
     Splits the PDF into smaller PDFs with at least 1 page, at most 3 pages, and each chunk not exceeding 1024 KB,
     sends requests via the API, receives results, and combines all into one text file.
     Keeps the overlay exactly as in the PDF: texts on the same line must stay on the same line.
-    Requires pdf2image, PIL, and PyPDF2.
+    Requires pdf2image and PIL.
     Uses the JSON response structure to extract and combine parsed texts.
-    Optionally refines the extracted text using an AI service (refine="gemini", "huggingface", "local", or None).
     Returns the path to the text file.
     """
     lang_map = {
@@ -4186,67 +4311,35 @@ def extract_text_from_scanned_pdf_ocrspace(pdf_path, txt_output_path=None, lang=
         print(f"[OCRSpace] Using OCR language: {ocr_lang}")
         print(f"[OCRSpace] API URL: {api_url}")
 
-    with open(pdf_path, "rb") as f:
-        pdf_bytes = f.read()
-    reader = PyPDF2.PdfReader(io.BytesIO(pdf_bytes))
-    num_pages = len(reader.pages)
+    if verbose:
+        print("[OCRSpace] Converting PDF to images for preprocessing...")
+    images = convert_from_path(pdf_path, dpi=300)
+    if not images:
+        if verbose:
+            print("[OCRSpace] No pages detected in PDF.")
+        else:
+            print("No pages detected in PDF.")
+        return None
+    processed_images = [_preprocess_ocr_image(img, verbose=verbose) for img in images]
 
-    # Split PDF into chunks: each chunk has at least 1 page, at most 3 pages, and <= 1024 KB
+    # Split into chunks: each chunk has at most 3 pages and <= 1024 KB
     chunk_paths = []
     max_chunk_size = 1024 * 1024  # 1024 KB
     max_chunk_pages = 3
     with tempfile.TemporaryDirectory() as tmpdir:
+        total_pages = len(processed_images)
         i = 0
-        while i < num_pages:
-            # Try to create the largest chunk possible (up to max_chunk_pages and <= max_chunk_size)
-            chunk_found = False
-            for n_pages in range(max_chunk_pages, 0, -1):
-                if i + n_pages > num_pages:
-                    continue
-                writer = PyPDF2.PdfWriter()
-                for j in range(i, i + n_pages):
-                    writer.add_page(reader.pages[j])
-                temp_chunk_path = os.path.join(tmpdir, f"chunk_{i+1}_{i+n_pages}.pdf")
-                with open(temp_chunk_path, "wb") as out_f:
-                    writer.write(out_f)
-                size = os.path.getsize(temp_chunk_path)
-                if size <= max_chunk_size:
-                    chunk_paths.append(temp_chunk_path)
-                    if verbose:
-                        print(f"[OCRSpace] Created chunk: {temp_chunk_path} ({n_pages} page(s), {size} bytes)")
-                    i += n_pages
-                    chunk_found = True
-                    break
-            if not chunk_found:
-                # If even a single page is too large, try to reduce the size by lowering PDF image resolution
-                writer = PyPDF2.PdfWriter()
-                writer.add_page(reader.pages[i])
-                temp_chunk_path = os.path.join(tmpdir, f"chunk_{i+1}_{i+1}.pdf")
-                with open(temp_chunk_path, "wb") as out_f:
-                    writer.write(out_f)
-                size = os.path.getsize(temp_chunk_path)
-                if size > max_chunk_size:
-                    if verbose:
-                        print(f"[OCRSpace] Page {i+1} exceeds {max_chunk_size} bytes ({size} bytes). Attempting to reduce size by lowering image resolution...")
-                    # Convert page to image, then re-save as lower quality PDF
-                    try:
-                        images = convert_from_path(pdf_path, dpi=150, first_page=i+1, last_page=i+1)
-                        if images:
-                            temp_img_pdf = os.path.join(tmpdir, f"chunk_{i+1}_{i+1}_reduced.pdf")
-                            images[0].save(temp_img_pdf, "PDF", resolution=100.0)
-                            reduced_size = os.path.getsize(temp_img_pdf)
-                            if reduced_size < size:
-                                if verbose:
-                                    print(f"[OCRSpace] Reduced page {i+1} size from {size} to {reduced_size} bytes.")
-                                temp_chunk_path = temp_img_pdf
-                            else:
-                                if verbose:
-                                    print(f"[OCRSpace] Could not reduce size below original; using original page.")
-                    except Exception as e:
-                        if verbose:
-                            print(f"[OCRSpace] Failed to reduce size for page {i+1}: {e}")
-                chunk_paths.append(temp_chunk_path)
-                i += 1
+        while i < total_pages:
+            n_pages = min(max_chunk_pages, total_pages - i)
+            chunk_images = processed_images[i:i + n_pages]
+            temp_chunk_path = os.path.join(tmpdir, f"chunk_{i+1}_{i+n_pages}.pdf")
+            out_path = _write_pdf_chunk(chunk_images, temp_chunk_path, max_chunk_size, verbose=verbose)
+            if out_path:
+                if verbose:
+                    size = os.path.getsize(out_path) if os.path.exists(out_path) else 0
+                    print(f"[OCRSpace] Created chunk: {out_path} ({n_pages} page(s), {size} bytes)")
+                chunk_paths.append(out_path)
+            i += n_pages
 
         extracted_text = []
         for idx, chunk_path in enumerate(chunk_paths, 1):
@@ -4383,13 +4476,6 @@ def extract_text_from_scanned_pdf_ocrspace(pdf_path, txt_output_path=None, lang=
 
         full_text = "\n\n".join(extracted_text)
 
-        # Optionally refine the extracted text using AI
-        if refine in ALL_AI_METHODS:
-            if verbose:
-                print(f"[OCRSpace] Refining extracted text using AI service: {refine} ...")
-            else:
-                print(f"Refining extracted text using AI service: {refine} ...")
-            full_text = refine_text_with_ai(full_text, method=refine, verbose=verbose)
         if not txt_output_path:
             base = os.path.splitext(pdf_path)[0]
             txt_output_path = base + "_text_ocrspace.txt"
@@ -4403,18 +4489,16 @@ def extract_text_from_scanned_pdf_ocrspace(pdf_path, txt_output_path=None, lang=
     # Return the text file path
     return txt_output_path
 
-def extract_text_from_scanned_pdf_with_tesseract(pdf_path, txt_output_path=None, lang="vie", simple_text=False, refine=DEFAULT_AI_METHOD, verbose=False):
+def extract_text_from_scanned_pdf_with_tesseract(pdf_path, txt_output_path=None, lang="vie", simple_text=False, verbose=False):
     """
     Extract text from a scanned PDF file using Tesseract OCR.
     Converts PDF pages to images and applies OCR to extract text.
-    Optionally refines the extracted text using an AI service (refine="gemini", "huggingface", "local", or None).
 
     Args:
         pdf_path: Path to the PDF file
         txt_output_path: Path to save the extracted text (if None, will use pdf_path with suffix)
         lang: Language code for Tesseract (e.g., "vie" for Vietnamese, "eng" for English)
         simple_text: If True, output raw text without page headers
-        refine: AI service to refine text ("gemini", "huggingface", "local", or None)
         verbose: If True, print more details; otherwise, print only important notice
 
     Returns:
@@ -4444,7 +4528,8 @@ def extract_text_from_scanned_pdf_with_tesseract(pdf_path, txt_output_path=None,
             # Apply OCR to the image
             try:
                 custom_config = r'--oem 3 --psm 6'
-                text = pytesseract.image_to_string(image, lang=lang, config=custom_config)
+                processed_image = _preprocess_ocr_image(image, verbose=verbose)
+                text = pytesseract.image_to_string(processed_image, lang=lang, config=custom_config)
                 if text.strip():
                     if simple_text:
                         extracted_text.append(text.strip())
@@ -4458,14 +4543,6 @@ def extract_text_from_scanned_pdf_with_tesseract(pdf_path, txt_output_path=None,
                 continue
 
         full_text = "\n\n".join(extracted_text)
-
-        # Optionally refine the extracted text using AI
-        if refine in ALL_AI_METHODS:
-            if verbose:
-                print(f"[TesseractOCR] Refining extracted text using AI service: {refine} ...")
-            else:
-                print(f"Refining extracted text using AI service: {refine} ...")
-            full_text = refine_text_with_ai(full_text, method=refine, verbose=verbose)
 
         with open(txt_output_path, "w", encoding="utf-8") as f:
             f.write(full_text)
@@ -4483,7 +4560,7 @@ def extract_text_from_scanned_pdf_with_tesseract(pdf_path, txt_output_path=None,
             print(f"Error extracting text from PDF: {e}")
         return None
 
-def extract_text_from_scanned_pdf_with_paddleocr(pdf_path, txt_output_path=None, simple_text=False, refine=DEFAULT_AI_METHOD, verbose=False):
+def extract_text_from_scanned_pdf_with_paddleocr(pdf_path, txt_output_path=None, simple_text=False, verbose=False):
     """
     Extract text from a scanned PDF file using PaddleOCR.
     Converts PDF pages to images and applies PaddleOCR to extract text with better structure preservation.
@@ -4492,7 +4569,6 @@ def extract_text_from_scanned_pdf_with_paddleocr(pdf_path, txt_output_path=None,
         pdf_path: Path to the PDF file
         txt_output_path: Path to save the extracted text (if None, will use pdf_path with suffix)
         simple_text: If True, print raw result without any layout (no page headers)
-        refine: AI service to refine text ("gemini", "huggingface", or None)
         verbose: If True, print more details; otherwise, print only important notice
 
     Returns:
@@ -4528,7 +4604,8 @@ def extract_text_from_scanned_pdf_with_paddleocr(pdf_path, txt_output_path=None,
         for page_num, image in enumerate(tqdm(images, desc="Processing pages"), 1):
             if verbose:
                 print(f"[PaddleOCR] Processing page {page_num}/{len(images)}")
-            image_np = np.array(image)
+            processed_image = _preprocess_ocr_image(image, verbose=verbose)
+            image_np = np.array(processed_image)
             try:
                 result = ocr.predict(image_np)
                 if result is None or len(result) == 0:
@@ -4628,13 +4705,6 @@ def extract_text_from_scanned_pdf_with_paddleocr(pdf_path, txt_output_path=None,
 
         full_text = "\n\n".join(extracted_text)
 
-        if refine in ALL_AI_METHODS:
-            if verbose:
-                print(f"[PaddleOCR] Refining extracted text using AI service: {refine} ...")
-            else:
-                print(f"Refining extracted text using AI service: {refine} ...")
-            full_text = refine_text_with_ai(full_text, method=refine, verbose=verbose)
-
         with open(txt_output_path, "w", encoding="utf-8") as f:
             f.write(full_text)
 
@@ -4657,18 +4727,17 @@ def extract_text_from_scanned_pdf(
     service=DEFAULT_OCR_METHOD,
     lang="auto",
     simple_text=False,
-    refine=DEFAULT_AI_METHOD,
     verbose=False
 ):
     """
     Extract handwriting text from a scanned PDF file using the specified OCR service.
     Supported services: see ALL_OCR_METHODS.
     If simple_text=True, print raw result without any layout.
-    If refine is "gemini", "huggingface", or "local", refine the extracted text using the corresponding AI service.
+    Post-OCR refinement is not supported.
     Returns the path to the output text file (or (txt_path, page_rotations) tuple if available).
     If verbose is True, print more details; otherwise, print only important notice.
     """
-    # Dispatch OCR based on service and optionally refine the result with AI.
+    # Dispatch OCR based on service.
     if service is None:
         service = DEFAULT_OCR_METHOD
     service = service.lower()
@@ -4688,7 +4757,6 @@ def extract_text_from_scanned_pdf(
             txt_output_path=txt_output_path,
             lang=lang,
             simple_text=simple_text,
-            refine=refine,
             verbose=verbose
         )
     elif service == "tesseract":
@@ -4697,7 +4765,6 @@ def extract_text_from_scanned_pdf(
             txt_output_path=txt_output_path,
             lang="vie" if lang == "auto" else lang,
             simple_text=simple_text,
-            refine=refine,
             verbose=verbose
         )
     elif service == "paddleocr":
@@ -4705,7 +4772,6 @@ def extract_text_from_scanned_pdf(
             pdf_path,
             txt_output_path=txt_output_path,
             simple_text=simple_text,
-            refine=refine,
             verbose=verbose
         )
 
@@ -6040,7 +6106,6 @@ def read_multichoice_answers_from_scanned_pdf(
     pdf_path,
     ocr_service=DEFAULT_OCR_METHOD,
     lang="auto",
-    refine=DEFAULT_AI_METHOD,
     verbose=False,
     db_path=None
 ):
@@ -6200,9 +6265,6 @@ def read_multichoice_answers_from_scanned_pdf(
             else:
                 # fallback to tesseract
                 ocr_text = pytesseract.image_to_string(image, lang=lang if lang != "auto" else "vie")
-
-            if refine in ALL_AI_METHODS and ocr_text.strip():
-                ocr_text = refine_text_with_ai(ocr_text, method=refine, verbose=verbose)
 
             # --- Robust extraction for possibly defected text (less spaces) ---
             # Optionally extract student name (robust: allow less spaces)

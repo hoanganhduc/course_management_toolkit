@@ -335,7 +335,7 @@ Runtime overrides: `--local-llm-command`, `--local-llm-model`, `--local-llm-args
 Installing local AI models (examples):
 - Ollama: https://ollama.com/ then run `ollama pull llama3.2:3b` and set `LOCAL_LLM_COMMAND=ollama`, `LOCAL_LLM_MODEL=llama3.2:3b`.
 - llama.cpp: build `llama-cli` (https://github.com/ggerganov/llama.cpp), set `LOCAL_LLM_COMMAND` to the `llama-cli` path and `LOCAL_LLM_ARGS` to include `-m <path-to-gguf>`.
-Use `--announcement-refine local` or set `REPORT_REFINE_METHOD=local` to use the local model.
+Use `--refine local` or set `REPORT_REFINE_METHOD=local` to use the local model.
 To verify AI connectivity, run `course --test-ai` (or `course -tai`) and check the status for each model. Use `--test-ai-model` (or `-tam`) to test a specific model name, or `--test-ai-gemini-model`/`--test-ai-huggingface-model` when testing `--test-ai all`. For local models, run `course --test-ai local` (or `course -tai local`).
 To detect locally installed models (Ollama or llama.cpp compatible), run `course --detect-local-ai` (or `course -dla`).
 To list available Gemini models for your API key, run `course --list-ai-models gemini` (or `course -lam gemini`). Hugging Face lists the top public text-generation models (up to 50).
@@ -350,12 +350,12 @@ Create an announcement from a short message (manual input or a TXT file), option
 
 ```bash
 course --add-canvas-announcement --announcement-title "Week 3" --announcement-message "Please submit by Friday"
-course --add-canvas-announcement --announcement-title "Reminder" --announcement-file announcement.txt --announcement-refine gemini
+course --add-canvas-announcement --announcement-title "Reminder" --announcement-file announcement.txt --refine gemini
 course -aa --announcement-title "Week 3" --announcement-message "Please submit by Friday"
-course -aa --announcement-title "Reminder" --announcement-file announcement.txt --announcement-refine gemini
+course -aa --announcement-title "Reminder" --announcement-file announcement.txt --refine gemini
 ```
 
-Use `--dry-run` to preview without posting. Omit `--announcement-refine` to post the original text without AI.
+Use `--dry-run` to preview without posting. Omit `--refine` to post the original text without AI.
 
 Sample inputs/outputs:
 - `sample/announcements/announcement_input.txt`
@@ -435,6 +435,7 @@ Common errors and fixes:
   - Linux: `which tesseract` and `which pdftoppm` should resolve. If missing, reinstall with your package manager.
 - `pdftoppm` missing: Poppler is not installed or not on `PATH`. Reinstall Poppler and re-open your terminal.
 - `TesseractNotFoundError` in Python: the OS command is not visible to the Python process; confirm your IDE/terminal inherits the updated `PATH`.
+- Post-OCR AI refinement is disabled; improve scan quality or switch OCR engines if text quality is poor.
 
 ## Documentation
 
