@@ -311,6 +311,7 @@ def send_final_evaluations_via_canvas(
     api_url=CANVAS_LMS_API_URL,
     api_key=CANVAS_LMS_API_KEY,
     course_id=CANVAS_LMS_COURSE_ID,
+    dry_run=False,
     verbose=False
 ):
     """
@@ -322,6 +323,8 @@ def send_final_evaluations_via_canvas(
     Enhancement: if the student's name is missing in the database, extract it from the
     text filename (the part between the first underscore after the 8-digit id and
     "_results.txt"), replacing underscores with spaces.
+
+    dry_run: if True, do not send any messages and only report what would be sent.
     """
     if db_path is None:
         db_path = get_default_db_path()
@@ -354,6 +357,7 @@ def send_final_evaluations_via_canvas(
     sent = 0
     skipped = 0
     errors = 0
+    dry_run_count = 0
 
     # Capture student id and name part from filename
     pattern = re.compile(r'^(\d{8})_(.+?)_results\.txt$', re.IGNORECASE)
@@ -433,10 +437,27 @@ def send_final_evaluations_via_canvas(
         greeting += "Vui lòng kiểm tra kỹ nội dung bên dưới. Nếu có thắc mắc, sai sót về thông tin hoặc điểm số, bạn hãy phản hồi trực tiếp cho giảng viên càng sớm càng tốt.\n"
         greeting += "Chúc bạn một học kỳ tốt và kết quả học tập tiến bộ.\n"
 
+        course_code = (COURSE_CODE or get_cached_course_code() or "").strip()
+        course_name = (COURSE_NAME or "").strip()
+        if course_code:
+            course_code = course_code.upper()
+        if course_name:
+            course_name = course_name.title()
+        course_title = " - ".join(part for part in (course_code, course_name) if part)
+        subject = "Thông báo kết quả đánh giá học phần"
+        if course_title:
+            subject = f"{subject} ({course_title})"
+
         body = (
             f"{greeting}\n\n"
             f"{content}\n\n"
         )
+
+        if dry_run:
+            dry_run_count += 1
+            if verbose:
+                print(f"[SendFinals] Dry run: would send results to {sid} (Canvas ID: {recipient}) from file {fname}")
+            continue
 
         try:
             canvas.create_conversation(
@@ -457,10 +478,18 @@ def send_final_evaluations_via_canvas(
             continue
 
     summary = {"sent": sent, "skipped": skipped, "errors": errors}
+    if dry_run:
+        summary["dry_run"] = dry_run_count
     if verbose:
-        print(f"[SendFinals] Completed. Sent: {sent}, Skipped: {skipped}, Errors: {errors}")
+        if dry_run:
+            print(f"[SendFinals] Completed. Sent: {sent}, Skipped: {skipped}, Errors: {errors}, Dry-run: {dry_run_count}")
+        else:
+            print(f"[SendFinals] Completed. Sent: {sent}, Skipped: {skipped}, Errors: {errors}")
     else:
-        print(f"Done. Sent: {sent}, Skipped: {skipped}, Errors: {errors}")
+        if dry_run:
+            print(f"Done. Sent: {sent}, Skipped: {skipped}, Errors: {errors}, Dry-run: {dry_run_count}")
+        else:
+            print(f"Done. Sent: {sent}, Skipped: {skipped}, Errors: {errors}")
     return summary
 
 def sync_students_with_canvas(students, db_path=None, course_id=None, api_url=CANVAS_LMS_API_URL, api_key=CANVAS_LMS_API_KEY, verbose=False):

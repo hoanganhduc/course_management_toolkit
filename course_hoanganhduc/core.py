@@ -1824,6 +1824,7 @@ def main():
                 api_url=CANVAS_LMS_API_URL,
                 api_key=CANVAS_LMS_API_KEY,
                 course_id=course_id,
+                dry_run=args.dry_run,
                 verbose=args.verbose
             )
             if args.verbose:
@@ -3093,6 +3094,10 @@ def main():
                     final_dir = "final_evaluations"
                 course_id = input("Enter Canvas course ID (leave blank for default): ").strip() or CANVAS_LMS_COURSE_ID
                 announce = input("Create a course announcement after sending? (y/N): ").strip().lower() == "y"
+                if args.dry_run:
+                    dry_run = True
+                else:
+                    dry_run = input("Dry run (no messages sent)? (y/N): ").strip().lower() == "y"
                 try:
                     if args.verbose:
                         print(f"[FinalEvals] Sending final evaluations from '{final_dir}' to Canvas course {course_id}...")
@@ -3104,6 +3109,7 @@ def main():
                         api_url=CANVAS_LMS_API_URL,
                         api_key=CANVAS_LMS_API_KEY,
                         course_id=course_id,
+                        dry_run=dry_run,
                         verbose=args.verbose
                     )
                     print("Final evaluations processing complete.")
