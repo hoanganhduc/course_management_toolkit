@@ -268,6 +268,7 @@ Optional settings:
 - `DB_BACKUP_KEEP`, `CONFIG_BACKUP_KEEP` for backup retention.
 - `GRADE_AUDIT_ENABLED`, `GRADE_AUDIT_FIELDS` to control grade audit history stored in the database.
 - `COURSE_CODE`, `COURSE_NAME` for calendar titles when not provided via CLI or input files.
+- `WEIGHT_CC`, `WEIGHT_GK`, `WEIGHT_CK` for final total score weighting (must sum to 1.0).
 
 ## Course calendar builder
 

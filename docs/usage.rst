@@ -60,6 +60,7 @@ determined by ``.course_code``. On first run, you will be prompted for a course
 code (for example, MAT3500) and it will be cached in ``.course_code``.
 When you load a config file with ``--config``, it is copied into the default
 config folder as ``config.json``.
+Sample config: ``sample/config/config.sample.json``.
 
 Default config locations:
 
@@ -78,6 +79,9 @@ When you provide Google Classroom credentials/token paths via CLI or the menu,
 the files are copied into the default folder with the standard names.
 You can also set ``GOOGLE_CLASSROOM_COURSE_ID`` in ``config.json`` to skip the
 course selection prompt.
+
+Final evaluation weights can be configured via ``WEIGHT_CC``, ``WEIGHT_GK``,
+and ``WEIGHT_CK`` in ``config.json``. The weights must sum to 1.0.
 
 OCR dependencies and setup
 --------------------------
@@ -390,6 +394,7 @@ Common header aliases are accepted, for example ``MSSV``, ``Mã SV``, ``Họ tê
 Non-empty CC/GK/CK cells override computed grades, and ``Lý do`` is appended to the final evaluation output when present.
 When using Canvas gradebook CSVs, ``Unposted Final Score`` is used if ``Final Score`` is missing or all-zero for CC/GK/CK.
 Assignment-group scores are omitted from the final evaluation report when all component scores are 0.
+Final evaluation TXT output includes the weighted formula used for the total score.
 
 AI report refinement
 -------------------

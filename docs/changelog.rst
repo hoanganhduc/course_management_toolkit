@@ -13,6 +13,7 @@ Version 0.1.1 (2025-12-27)
 - Canvas sync stores submission comments and rubric evaluations.
 - Canvas grade parsing now falls back to Unposted Final Score when Final Score is empty/zero (CC/GK/CK).
 - Final evaluation reports omit assignment-group scores when all component scores are 0.
+- Final evaluation weights are configurable (``WEIGHT_CC``, ``WEIGHT_GK``, ``WEIGHT_CK``) and the TXT output includes the formula.
 - Added course calendar builder (TXT/Markdown/ICS) with holiday exclusions, unofficial holidays, and make-up week logic.
 - Course calendar titles include course code/name and canceled sessions are tagged.
 - Added Canvas calendar import from iCal (.ics) files with dry-run and duplicate skipping.

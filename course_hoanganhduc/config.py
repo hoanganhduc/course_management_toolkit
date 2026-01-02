@@ -370,6 +370,9 @@ def load_config(config_path=None, verbose=False):
         COURSE_CODE
         COURSE_NAME
         DEFAULT_RESTRICTED
+        WEIGHT_CC
+        WEIGHT_GK
+        WEIGHT_CK
         QUALITY_MIN_CHARS
         QUALITY_UNIQUE_CHAR_RATIO_MIN
         QUALITY_REPEAT_CHAR_RATIO_MAX
@@ -483,6 +486,9 @@ def load_config(config_path=None, verbose=False):
         "COURSE_CODE",
         "COURSE_NAME",
         "DEFAULT_RESTRICTED",
+        "WEIGHT_CC",
+        "WEIGHT_GK",
+        "WEIGHT_CK",
         "QUALITY_MIN_CHARS",
         "QUALITY_UNIQUE_CHAR_RATIO_MIN",
         "QUALITY_REPEAT_CHAR_RATIO_MAX",

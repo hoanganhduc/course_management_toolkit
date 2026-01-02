@@ -2086,6 +2086,15 @@ def update_mat_excel_grades(file_path, students, output_path=None, diff_output_p
     if not dry_run:
         os.makedirs(results_dir, exist_ok=True)
 
+    w_cc = float(WEIGHT_CC)
+    w_gk = float(WEIGHT_GK)
+    w_ck = float(WEIGHT_CK)
+    total_weight = w_cc + w_gk + w_ck
+    if abs(total_weight - 1.0) > 1e-6:
+        raise ValueError(
+            f"Invalid weights: WEIGHT_CC + WEIGHT_GK + WEIGHT_CK must sum to 1.0 (got {total_weight:.6f})."
+        )
+
     for s in students:
         sid = _normalize_student_id(getattr(s, "Student ID", ""))
         if not sid:
@@ -2104,7 +2113,13 @@ def update_mat_excel_grades(file_path, students, output_path=None, diff_output_p
         details = scores["details"]
         override_reason = scores.get("override_reason", "")
         override_fields = scores.get("override_fields", [])
-        total_score = round(0.2 * CC + 0.2 * (float(GK) if GK else 0) + 0.6 * (float(CK) if CK else 0), 1)
+        cc_value = float(CC) if CC is not None else 0.0
+        gk_value = float(GK) if GK else 0.0
+        ck_value = float(CK) if CK else 0.0
+        total_score = round(
+            (w_cc * cc_value) + (w_gk * gk_value) + (w_ck * ck_value),
+            1,
+        )
         
         # Try to find matching row by ID first, then by name
         cell_info = None
@@ -2141,6 +2156,9 @@ def update_mat_excel_grades(file_path, students, output_path=None, diff_output_p
         result_lines.append(f"CC (Chuy\u00ean c\u1ea7n): {CC}")
         result_lines.append(f"GK (Gi\u1eefa k\u1ef3 / Midterm): {GK}")
         result_lines.append(f"CK (Cu\u1ed1i k\u1ef3 / Final): {CK}")
+        result_lines.append(
+            f"Formula (Công thức): Total (Tổng điểm) = {w_cc:.2f}*CC + {w_gk:.2f}*GK + {w_ck:.2f}*CK"
+        )
         group_scores = [details.get("diem_danh"), details.get("quiz"), details.get("bai_tap")]
         has_group_scores = False
         for score in group_scores:
