@@ -1928,6 +1928,146 @@ def export_grade_diff_csv(rows, output_path, verbose=False):
     return output_path
 
 
+def generate_final_evaluations(
+    students,
+    results_dir=None,
+    override_file="override_grades.xlsx",
+    dry_run=False,
+    verbose=False,
+):
+    """Generate per-student final evaluation TXT reports.
+
+    Writes reports to `results_dir` (default: ./final_evaluations) unless `dry_run`.
+    Returns a list of dicts with CC/GK/CK/total and other metadata.
+    """
+    if results_dir is None:
+        results_dir = os.path.join(os.getcwd(), "final_evaluations")
+
+    if not dry_run:
+        os.makedirs(results_dir, exist_ok=True)
+
+    w_cc = float(WEIGHT_CC)
+    w_gk = float(WEIGHT_GK)
+    w_ck = float(WEIGHT_CK)
+    total_weight = w_cc + w_gk + w_ck
+    if abs(total_weight - 1.0) > 1e-6:
+        raise ValueError(
+            f"Invalid weights: WEIGHT_CC + WEIGHT_GK + WEIGHT_CK must sum to 1.0 (got {total_weight:.6f})."
+        )
+
+    evaluations = []
+    for s in students:
+        sid = _normalize_student_id(getattr(s, "Student ID", ""))
+        if not sid:
+            inferred_sid = _infer_student_id_from_email(getattr(s, "Email", ""))
+            if inferred_sid:
+                sid = inferred_sid
+                if not getattr(s, "Student ID", ""):
+                    setattr(s, "Student ID", sid)
+
+        name = str(getattr(s, "Name", "")).strip()
+        name_display = name.replace("/", "_").replace("\\", "_").replace(" ", "_")
+
+        scores = calculate_cc_ck_gk(s, override_file=override_file, verbose=verbose)
+        CC = scores["CC"]
+        CK = scores["CK"]
+        GK = scores["GK"]
+        details = scores["details"]
+        override_reason = scores.get("override_reason", "")
+        override_fields = scores.get("override_fields", [])
+
+        cc_value = float(CC) if CC is not None else 0.0
+        gk_value = float(GK) if GK else 0.0
+        ck_value = float(CK) if CK else 0.0
+        total_score = round(
+            (w_cc * cc_value) + (w_gk * gk_value) + (w_ck * ck_value),
+            1,
+        )
+
+        result_lines = []
+        result_lines.append(f"Student ID (Mã sinh viên): {sid}")
+        result_lines.append(f"Name (Họ và Tên): {getattr(s, 'Name', '')}")
+        result_lines.append(f"CC (Chuyên cần): {CC}")
+        result_lines.append(f"GK (Giữa kỳ / Midterm): {GK}")
+        result_lines.append(f"CK (Cuối kỳ / Final): {CK}")
+        result_lines.append(
+            f"Formula (Công thức): Total (Tổng điểm) = {w_cc:.2f}*CC + {w_gk:.2f}*GK + {w_ck:.2f}*CK"
+        )
+
+        group_scores = [details.get("diem_danh"), details.get("quiz"), details.get("bai_tap")]
+        has_group_scores = False
+        for score in group_scores:
+            try:
+                if score is not None and not pd.isna(score) and float(score) != 0.0:
+                    has_group_scores = True
+                    break
+            except Exception:
+                if score:
+                    has_group_scores = True
+                    break
+        if has_group_scores:
+            result_lines.append("Assignment group scores (Điểm thành phần):")
+            result_lines.append(f"  Attendance (Điểm danh): {details['diem_danh']}")
+            result_lines.append(f"  Quiz (Trắc nghiệm): {details['quiz']}")
+            result_lines.append(f"  Assignment (Bài tập): {details['bai_tap']}")
+        if override_fields:
+            result_lines.append(f"Overridden scores (Điểm được ghi đè): {', '.join(override_fields)}")
+        if override_reason:
+            result_lines.append(f"Override reason (Lý do ghi đè): {override_reason}")
+        result_lines.append(f"Total score (scale 10) (Tổng điểm thang 10): {total_score}")
+
+        report_text = "\n".join(result_lines)
+        _reset_last_ai_model()
+        if REPORT_REFINE_METHOD:
+            try:
+                report_text = refine_text_with_ai(report_text, method=REPORT_REFINE_METHOD, verbose=verbose)
+            except Exception as e:
+                if verbose:
+                    print(f"[ReportRefine] Failed to refine report with {REPORT_REFINE_METHOD}: {e}")
+        model_used = get_last_ai_model_used()
+        if REPORT_REFINE_METHOD and model_used:
+            report_text += f"\nAI model used (Mô hình AI): {model_used}"
+        default_model = ""
+        if REPORT_REFINE_METHOD == "gemini":
+            default_model = GEMINI_DEFAULT_MODEL
+        elif REPORT_REFINE_METHOD == "huggingface":
+            default_model = "meta-llama/llama-3.1-8b-instruct"
+        elif REPORT_REFINE_METHOD == "local":
+            default_model = LOCAL_LLM_MODEL
+        if REPORT_REFINE_METHOD and default_model:
+            report_text += f"\nDefault model (Mô hình mặc định): {default_model}"
+
+        filename_sid = sid or "unknown"
+        result_filename = f"{filename_sid}_{name_display}_results.txt"
+        result_path = os.path.join(results_dir, result_filename)
+        if not dry_run:
+            with open(result_path, "w", encoding="utf-8") as f:
+                f.write(report_text)
+
+        evaluations.append(
+            {
+                "student_id": sid,
+                "name": name,
+                "CC": CC,
+                "GK": GK,
+                "CK": CK,
+                "total_score": total_score,
+                "details": details,
+                "override_reason": override_reason,
+                "override_fields": override_fields,
+                "report_path": result_path,
+            }
+        )
+
+    if verbose:
+        if dry_run:
+            print("[FinalEvals] Dry run: skipped writing evaluation reports.")
+        else:
+            print(f"[FinalEvals] Saved {len(evaluations)} evaluation reports to {results_dir}")
+
+    return evaluations
+
+
 def update_mat_excel_grades(file_path, students, output_path=None, diff_output_path=None, verbose=False):
     """
     Update the columns CC, CK, GK (Attendance, Final, Midterm) in a MAT*.xlsx file.
@@ -2095,7 +2235,50 @@ def update_mat_excel_grades(file_path, students, output_path=None, diff_output_p
             f"Invalid weights: WEIGHT_CC + WEIGHT_GK + WEIGHT_CK must sum to 1.0 (got {total_weight:.6f})."
         )
 
-    for s in students:
+    evaluations = generate_final_evaluations(
+        students,
+        results_dir=results_dir,
+        override_file=override_file,
+        dry_run=dry_run,
+        verbose=verbose,
+    )
+
+    for ev in evaluations:
+        sid = ev.get("student_id", "")
+        name = ev.get("name", "")
+
+        # Try to find matching row by ID first, then by name
+        cell_info = None
+        match_type = None
+        if sid and sid in sid_to_cells:
+            cell_info = sid_to_cells[sid]
+            match_type = "ID"
+        elif name:
+            normalized_name = normalize_vietnamese_name(name)
+            if normalized_name in name_to_cells:
+                cell_info = name_to_cells[normalized_name]
+                match_type = "name"
+
+        if cell_info:
+            key = sid or f"NAME:{normalize_vietnamese_name(name)}"
+            sid_to_values[key] = {
+                "student_id": sid,
+                "CC": ev.get("CC"),
+                "CK": ev.get("CK"),
+                "GK": ev.get("GK"),
+                "cell_info": cell_info,
+                "match_type": match_type,
+                "name": name,
+                "override_fields": ev.get("override_fields", []),
+            }
+            if verbose:
+                print(f"[update_mat_excel_grades] Matched student {name} ({sid}) by {match_type}")
+        else:
+            if verbose:
+                print(f"[update_mat_excel_grades] Warning: Could not find Excel row for student {name} ({sid})")
+
+    # Legacy inline generation loop disabled (replaced by generate_final_evaluations)
+    for s in []:
         sid = _normalize_student_id(getattr(s, "Student ID", ""))
         if not sid:
             inferred_sid = _infer_student_id_from_email(getattr(s, "Email", ""))
@@ -2231,7 +2414,8 @@ def update_mat_excel_grades(file_path, students, output_path=None, diff_output_p
     # Step 7: Fill the corresponding cells in the new copy
     updated_count = 0
     diff_rows = []
-    for sid, value_info in sid_to_values.items():
+    for _, value_info in sid_to_values.items():
+        sid = value_info.get("student_id", "")
         cell_info = value_info["cell_info"]
         match_type = value_info["match_type"]
         name = value_info.get("name", "")

@@ -617,6 +617,9 @@ def main():
     db_group.add_argument('--export-grade-diff', nargs='?', const=True,
                           help="Export grade updates to CSV when updating MAT files (optional: output path)",
                           dest="export_grade_diff", metavar="CSV")
+    db_group.add_argument('--generate-final-evaluations', '-gfe', nargs='?', const=True,
+                          help="Generate per-student final evaluation TXT reports (optional: output dir, default: ./final_evaluations).",
+                          dest='generate_final_evaluations', metavar="DIR")
     db_group.add_argument('--export-roster', '-ero', nargs='?', const='classroom_roster.csv',
                           help="Export classroom roster to CSV file (default: classroom_roster.csv)",
                           dest="export_roster", metavar="CSV_FILE")
@@ -1740,6 +1743,20 @@ def main():
                 print(f"Dry run: MAT Excel file would be saved to: {updated_path}")
             else:
                 print(f"Updated MAT Excel file saved to: {updated_path}")
+
+    # New: Generate per-student final evaluation reports
+    if getattr(args, "generate_final_evaluations", None) is not None:
+        out_dir = args.generate_final_evaluations if isinstance(args.generate_final_evaluations, str) else os.path.join(os.getcwd(), "final_evaluations")
+        generate_final_evaluations(
+            students,
+            results_dir=out_dir,
+            dry_run=DRY_RUN,
+            verbose=args.verbose,
+        )
+        if DRY_RUN:
+            print(f"Dry run: would generate final evaluations in: {out_dir}")
+        else:
+            print(f"Final evaluations saved in: {out_dir}")
 
     # New: Sync multichoice exam evaluations to Canvas assignment
     if getattr(args, "sync_multichoice_evaluations", None) is not None:

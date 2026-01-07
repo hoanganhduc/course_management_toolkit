@@ -205,6 +205,13 @@ course --validate-data
 course -vd
 ```
 
+Generate per-student final evaluation reports (writes to `final_evaluations/` by default):
+
+```bash
+course --generate-final-evaluations
+course -gfe
+```
+
 Preview updates without writing files:
 
 ```bash
