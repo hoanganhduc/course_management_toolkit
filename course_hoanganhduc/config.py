@@ -388,6 +388,7 @@ def load_config(config_path=None, verbose=False):
         EXAM_TYPE
         CANVAS_MIDTERM_ASSIGNMENT_ID
         CANVAS_FINAL_ASSIGNMENT_ID
+        CANVAS_CC_ASSIGNMENT_ID
     """
     if config_path is None:
         config_path = get_default_config_path(verbose=verbose)
@@ -505,6 +506,7 @@ def load_config(config_path=None, verbose=False):
         "EXAM_TYPE",
         "CANVAS_MIDTERM_ASSIGNMENT_ID",
         "CANVAS_FINAL_ASSIGNMENT_ID",
+        "CANVAS_CC_ASSIGNMENT_ID",
     ]
     for key in known_keys:
         if key in config:

@@ -193,6 +193,7 @@ def _build_menu_sections():
             ("Export student roster to CSV file", "48"),
             ("Export anonymized roster to CSV file", "60"),
             ("Update MAT*.xlsx files with grades from database", "37"),
+            ("Sync MAT*.xlsx scores to Canvas assignments", "74"),
             ("Export final grade distribution", "43"),
         ]),
         ("OCR and PDFs", [
@@ -614,6 +615,12 @@ def main():
     db_group.add_argument('--update-mat-excel', '-ume', type=str, nargs='+',
                           help="Update MAT*.xlsx file(s) with grades from database (provide one or more file paths)",
                           dest="update_mat_excel", metavar="MAT_XLSX")
+    db_group.add_argument('--sync-mat-canvas', type=str, nargs='+',
+                          help="Sync CC/GK/CK scores from MAT*.xlsx to Canvas assignments (uses configured assignment IDs)",
+                          dest="sync_mat_canvas", metavar="MAT_XLSX")
+    db_group.add_argument('--sync-mat-types', type=str,
+                          help="Comma-separated list of score types to sync (CC,GK,CK). Default: all available.",
+                          dest="sync_mat_types", metavar="TYPES")
     db_group.add_argument('--export-grade-diff', nargs='?', const=True,
                           help="Export grade updates to CSV when updating MAT files (optional: output path)",
                           dest="export_grade_diff", metavar="CSV")
@@ -1743,6 +1750,24 @@ def main():
                 print(f"Dry run: MAT Excel file would be saved to: {updated_path}")
             else:
                 print(f"Updated MAT Excel file saved to: {updated_path}")
+
+    if getattr(args, "sync_mat_canvas", None):
+        mat_files = _expand_cli_paths(args.sync_mat_canvas)
+        for mat_file in mat_files:
+            if not os.path.exists(mat_file):
+                print(f"File not found: {mat_file}")
+                continue
+            print(f"Syncing MAT Excel scores to Canvas: {mat_file}")
+            sync_mat_excel_scores_to_canvas(
+                mat_file,
+                db_path=db_path,
+                api_url=CANVAS_LMS_API_URL,
+                api_key=CANVAS_LMS_API_KEY,
+                course_id=CANVAS_LMS_COURSE_ID,
+                fields=args.sync_mat_types,
+                dry_run=DRY_RUN,
+                verbose=args.verbose,
+            )
 
     # New: Generate per-student final evaluation reports
     if getattr(args, "generate_final_evaluations", None) is not None:
@@ -3012,6 +3037,29 @@ def main():
                         print(f"Dry run: MAT Excel file would be saved to: {updated_path}")
                     else:
                         print(f"Updated MAT Excel file saved to: {updated_path}")
+            elif choice == '74':
+                mat_files = input_with_completion("Enter MAT*.xlsx file path(s), separated by commas (or 'q' to quit): ").strip()
+                if mat_files.lower() in ('q', 'quit', ''):
+                    continue
+                types = input("Enter score types to sync (CC,GK,CK) or leave blank for all: ").strip()
+                if types.lower() in ('q', 'quit'):
+                    continue
+                mat_file_list = _expand_cli_paths(mat_files)
+                for mat_file in mat_file_list:
+                    if not os.path.exists(mat_file):
+                        print(f"File not found: {mat_file}")
+                        continue
+                    print(f"Syncing MAT Excel scores to Canvas: {mat_file}")
+                    sync_mat_excel_scores_to_canvas(
+                        mat_file,
+                        db_path=db_path,
+                        api_url=CANVAS_LMS_API_URL,
+                        api_key=CANVAS_LMS_API_KEY,
+                        course_id=CANVAS_LMS_COURSE_ID,
+                        fields=types or None,
+                        dry_run=DRY_RUN,
+                        verbose=args.verbose,
+                    )
             elif choice == '38':
                 exam_type = input("Enter exam type (midterm/final, default: midterm): ").strip().lower()
                 if not exam_type:

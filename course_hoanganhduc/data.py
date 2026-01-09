@@ -1523,21 +1523,29 @@ def calculate_cc_ck_gk(student, gradebook_csv_path="canvas_gradebook.csv", overr
             "override_fields": override_fields,
         }
 
-    def to_scale_10(val):
+    def _looks_percent_label(label):
+        if not label:
+            return False
+        text = str(label).strip().lower()
+        return "final score" in text or "unposted final score" in text
+
+    def to_scale_10(val, label=None):
         if val is None or (isinstance(val, float) and pd.isna(val)):
             return 0.0
         try:
             v = float(val)
             if pd.isna(v):
                 return 0.0
-            # Normalize if on 100-point scale
+            # Normalize if on 100-point scale or percent-based column
+            if _looks_percent_label(label):
+                return round(v / 10, 2)
             if v > 10:
                 return round(v / 10, 2)
             return v
         except Exception:
             return 0.0
 
-    def to_scale_10_optional(val):
+    def to_scale_10_optional(val, label=None):
         if val is None or (isinstance(val, float) and pd.isna(val)):
             return None
         if isinstance(val, str) and not val.strip():
@@ -1546,6 +1554,8 @@ def calculate_cc_ck_gk(student, gradebook_csv_path="canvas_gradebook.csv", overr
             v = float(val)
             if pd.isna(v):
                 return None
+            if _looks_percent_label(label):
+                return round(v / 10, 2)
             if v > 10:
                 return round(v / 10, 2)
             return v
@@ -1694,23 +1704,23 @@ def calculate_cc_ck_gk(student, gradebook_csv_path="canvas_gradebook.csv", overr
                 if verbose:
                     print("[OverrideGrades] Using override CC from override_grades.xlsx.")
             elif cc_col or cc_unposted_col:
-                cc_final = to_scale_10_optional(row.get(cc_col, None)) if cc_col else None
-                cc_unposted = to_scale_10_optional(row.get(cc_unposted_col, None)) if cc_unposted_col else None
+                cc_final = to_scale_10_optional(row.get(cc_col, None), cc_col) if cc_col else None
+                cc_unposted = to_scale_10_optional(row.get(cc_unposted_col, None), cc_unposted_col) if cc_unposted_col else None
                 CC = pick_score(cc_final, cc_unposted)
                 if verbose and cc_final in (None, 0.0) and cc_unposted not in (None, 0.0):
                     print("[calculate_cc_ck_gk] Using unposted CC score from gradebook.")
             else:
                 diem_danh = pick_score(
-                    to_scale_10_optional(row.get(diem_danh_col, None)),
-                    to_scale_10_optional(row.get(diem_danh_unposted_col, None)),
+                    to_scale_10_optional(row.get(diem_danh_col, None), diem_danh_col),
+                    to_scale_10_optional(row.get(diem_danh_unposted_col, None), diem_danh_unposted_col),
                 )
                 quiz = pick_score(
-                    to_scale_10_optional(row.get(quiz_col, None)),
-                    to_scale_10_optional(row.get(quiz_unposted_col, None)),
+                    to_scale_10_optional(row.get(quiz_col, None), quiz_col),
+                    to_scale_10_optional(row.get(quiz_unposted_col, None), quiz_unposted_col),
                 )
                 bai_tap = pick_score(
-                    to_scale_10_optional(row.get(bai_tap_col, None)),
-                    to_scale_10_optional(row.get(bai_tap_unposted_col, None)),
+                    to_scale_10_optional(row.get(bai_tap_col, None), bai_tap_col),
+                    to_scale_10_optional(row.get(bai_tap_unposted_col, None), bai_tap_unposted_col),
                 )
                 CC = round(0.25 * diem_danh + 0.25 * quiz + 0.5 * bai_tap, 1)
 
@@ -1723,16 +1733,16 @@ def calculate_cc_ck_gk(student, gradebook_csv_path="canvas_gradebook.csv", overr
             if override_gk is not None:
                 GK = override_gk
             else:
-                gk_final = to_scale_10_optional(row.get(gk_col, None))
-                gk_unposted = to_scale_10_optional(row.get(gk_unposted_col, None))
+                gk_final = to_scale_10_optional(row.get(gk_col, None), gk_col)
+                gk_unposted = to_scale_10_optional(row.get(gk_unposted_col, None), gk_unposted_col)
                 GK = pick_score(gk_final, gk_unposted)
                 if verbose and gk_final in (None, 0.0) and gk_unposted not in (None, 0.0):
                     print("[calculate_cc_ck_gk] Using unposted GK score from gradebook.")
             if override_ck is not None:
                 CK = override_ck
             else:
-                ck_final = to_scale_10_optional(row.get(ck_col, None))
-                ck_unposted = to_scale_10_optional(row.get(ck_unposted_col, None))
+                ck_final = to_scale_10_optional(row.get(ck_col, None), ck_col)
+                ck_unposted = to_scale_10_optional(row.get(ck_unposted_col, None), ck_unposted_col)
                 CK = pick_score(ck_final, ck_unposted)
                 if verbose and ck_final in (None, 0.0) and ck_unposted not in (None, 0.0):
                     print("[calculate_cc_ck_gk] Using unposted CK score from gradebook.")
@@ -1743,16 +1753,16 @@ def calculate_cc_ck_gk(student, gradebook_csv_path="canvas_gradebook.csv", overr
 
             details = {
                 "diem_danh": pick_score(
-                    to_scale_10_optional(row.get(diem_danh_col, None)),
-                    to_scale_10_optional(row.get(diem_danh_unposted_col, None)),
+                    to_scale_10_optional(row.get(diem_danh_col, None), diem_danh_col),
+                    to_scale_10_optional(row.get(diem_danh_unposted_col, None), diem_danh_unposted_col),
                 ),
                 "quiz": pick_score(
-                    to_scale_10_optional(row.get(quiz_col, None)),
-                    to_scale_10_optional(row.get(quiz_unposted_col, None)),
+                    to_scale_10_optional(row.get(quiz_col, None), quiz_col),
+                    to_scale_10_optional(row.get(quiz_unposted_col, None), quiz_unposted_col),
                 ),
                 "bai_tap": pick_score(
-                    to_scale_10_optional(row.get(bai_tap_col, None)),
-                    to_scale_10_optional(row.get(bai_tap_unposted_col, None)),
+                    to_scale_10_optional(row.get(bai_tap_col, None), bai_tap_col),
+                    to_scale_10_optional(row.get(bai_tap_unposted_col, None), bai_tap_unposted_col),
                 ),
                 "GK": GK,
                 "CK": CK,
@@ -1813,22 +1823,22 @@ def calculate_cc_ck_gk(student, gradebook_csv_path="canvas_gradebook.csv", overr
                     if not cc_final_attr:
                         cc_final_attr = attr
         if cc_final_attr or cc_unposted_attr:
-            cc_final = to_scale_10_optional(getattr(student, cc_final_attr, None)) if cc_final_attr else None
-            cc_unposted = to_scale_10_optional(getattr(student, cc_unposted_attr, None)) if cc_unposted_attr else None
+            cc_final = to_scale_10_optional(getattr(student, cc_final_attr, None), cc_final_attr) if cc_final_attr else None
+            cc_unposted = to_scale_10_optional(getattr(student, cc_unposted_attr, None), cc_unposted_attr) if cc_unposted_attr else None
             CC = pick_score(cc_final, cc_unposted)
         if CC is None or CC == 0.0:
             # Try multiple variants
             diem_danh = pick_score(
-                to_scale_10_optional(getattr(student, "??i???m danh Final Score", None)) or to_scale_10_optional(getattr(student, "Attendance Final Score", None)),
-                to_scale_10_optional(getattr(student, "??i???m danh Unposted Final Score", None)) or to_scale_10_optional(getattr(student, "Attendance Unposted Final Score", None)),
+                to_scale_10_optional(getattr(student, "??i???m danh Final Score", None), "??i???m danh Final Score") or to_scale_10_optional(getattr(student, "Attendance Final Score", None), "Attendance Final Score"),
+                to_scale_10_optional(getattr(student, "??i???m danh Unposted Final Score", None), "??i???m danh Unposted Final Score") or to_scale_10_optional(getattr(student, "Attendance Unposted Final Score", None), "Attendance Unposted Final Score"),
             )
             quiz = pick_score(
-                to_scale_10_optional(getattr(student, "Quiz Final Score", None)),
-                to_scale_10_optional(getattr(student, "Quiz Unposted Final Score", None)),
+                to_scale_10_optional(getattr(student, "Quiz Final Score", None), "Quiz Final Score"),
+                to_scale_10_optional(getattr(student, "Quiz Unposted Final Score", None), "Quiz Unposted Final Score"),
             )
             bai_tap = pick_score(
-                to_scale_10_optional(getattr(student, "BA?i t??-p Final Score", None)) or to_scale_10_optional(getattr(student, "Assignment Final Score", None)),
-                to_scale_10_optional(getattr(student, "BA?i t??-p Unposted Final Score", None)) or to_scale_10_optional(getattr(student, "Assignment Unposted Final Score", None)),
+                to_scale_10_optional(getattr(student, "BA?i t??-p Final Score", None), "BA?i t??-p Final Score") or to_scale_10_optional(getattr(student, "Assignment Final Score", None), "Assignment Final Score"),
+                to_scale_10_optional(getattr(student, "BA?i t??-p Unposted Final Score", None), "BA?i t??-p Unposted Final Score") or to_scale_10_optional(getattr(student, "Assignment Unposted Final Score", None), "Assignment Unposted Final Score"),
             )
             CC = round(0.25 * (diem_danh or 0) + 0.25 * (quiz or 0) + 0.5 * (bai_tap or 0), 1)
 
@@ -1843,8 +1853,8 @@ def calculate_cc_ck_gk(student, gradebook_csv_path="canvas_gradebook.csv", overr
             if midterm_id:
                 GK = getattr(student, f"Assignment: {midterm_id}", None)
             if GK is None:
-                gk_final = to_scale_10_optional(getattr(student, "Midterm Final Score", None))
-                gk_unposted = to_scale_10_optional(getattr(student, "Midterm Unposted Final Score", None))
+                gk_final = to_scale_10_optional(getattr(student, "Midterm Final Score", None), "Midterm Final Score")
+                gk_unposted = to_scale_10_optional(getattr(student, "Midterm Unposted Final Score", None), "Midterm Unposted Final Score")
                 GK = pick_score(gk_final, gk_unposted)
 
     if override_ck is not None:
@@ -1858,8 +1868,8 @@ def calculate_cc_ck_gk(student, gradebook_csv_path="canvas_gradebook.csv", overr
             if final_id:
                 CK = getattr(student, f"Assignment: {final_id}", None)
             if CK is None:
-                ck_final = to_scale_10_optional(getattr(student, "Final Final Score", None))
-                ck_unposted = to_scale_10_optional(getattr(student, "Final Unposted Final Score", None))
+                ck_final = to_scale_10_optional(getattr(student, "Final Final Score", None), "Final Final Score")
+                ck_unposted = to_scale_10_optional(getattr(student, "Final Unposted Final Score", None), "Final Unposted Final Score")
                 CK = pick_score(ck_final, ck_unposted)
 
     CC = 0.0 if CC is None or (isinstance(CC, float) and pd.isna(CC)) else CC
@@ -1868,16 +1878,16 @@ def calculate_cc_ck_gk(student, gradebook_csv_path="canvas_gradebook.csv", overr
 
     details = {
         "diem_danh": pick_score(
-            to_scale_10_optional(getattr(student, "??i???m danh Final Score", None)) or to_scale_10_optional(getattr(student, "Attendance Final Score", None)),
-            to_scale_10_optional(getattr(student, "??i???m danh Unposted Final Score", None)) or to_scale_10_optional(getattr(student, "Attendance Unposted Final Score", None)),
+            to_scale_10_optional(getattr(student, "??i???m danh Final Score", None), "??i???m danh Final Score") or to_scale_10_optional(getattr(student, "Attendance Final Score", None), "Attendance Final Score"),
+            to_scale_10_optional(getattr(student, "??i???m danh Unposted Final Score", None), "??i???m danh Unposted Final Score") or to_scale_10_optional(getattr(student, "Attendance Unposted Final Score", None), "Attendance Unposted Final Score"),
         ),
         "quiz": pick_score(
-            to_scale_10_optional(getattr(student, "Quiz Final Score", None)),
-            to_scale_10_optional(getattr(student, "Quiz Unposted Final Score", None)),
+            to_scale_10_optional(getattr(student, "Quiz Final Score", None), "Quiz Final Score"),
+            to_scale_10_optional(getattr(student, "Quiz Unposted Final Score", None), "Quiz Unposted Final Score"),
         ),
         "bai_tap": pick_score(
-            to_scale_10_optional(getattr(student, "BA?i t??-p Final Score", None)) or to_scale_10_optional(getattr(student, "Assignment Final Score", None)),
-            to_scale_10_optional(getattr(student, "BA?i t??-p Unposted Final Score", None)) or to_scale_10_optional(getattr(student, "Assignment Unposted Final Score", None)),
+            to_scale_10_optional(getattr(student, "BA?i t??-p Final Score", None), "BA?i t??-p Final Score") or to_scale_10_optional(getattr(student, "Assignment Final Score", None), "Assignment Final Score"),
+            to_scale_10_optional(getattr(student, "BA?i t??-p Unposted Final Score", None), "BA?i t??-p Unposted Final Score") or to_scale_10_optional(getattr(student, "Assignment Unposted Final Score", None), "Assignment Unposted Final Score"),
         ),
         "GK": GK,
         "CK": CK,
@@ -2470,6 +2480,253 @@ def update_mat_excel_grades(file_path, students, output_path=None, diff_output_p
         verbose=verbose,
     )
     return output_path
+
+
+def sync_mat_excel_scores_to_canvas(
+    file_path,
+    db_path=None,
+    api_url=None,
+    api_key=None,
+    course_id=None,
+    cc_assignment_id=None,
+    gk_assignment_id=None,
+    ck_assignment_id=None,
+    fields=None,
+    dry_run=None,
+    verbose=False,
+):
+    """
+    Read CC/GK/CK scores from a MAT*.xlsx file and sync them to Canvas assignments.
+    GK/CK require configured assignment IDs; CC is synced only when CANVAS_CC_ASSIGNMENT_ID is set.
+    When dry_run is True, no updates are made; planned updates are printed instead.
+    """
+    if dry_run is None:
+        dry_run = DRY_RUN
+    if api_url is None:
+        api_url = CANVAS_LMS_API_URL
+    if api_key is None:
+        api_key = CANVAS_LMS_API_KEY
+    if course_id is None:
+        course_id = CANVAS_LMS_COURSE_ID
+    if cc_assignment_id is None:
+        cc_assignment_id = CANVAS_CC_ASSIGNMENT_ID
+    if gk_assignment_id is None:
+        gk_assignment_id = CANVAS_MIDTERM_ASSIGNMENT_ID
+    if ck_assignment_id is None:
+        ck_assignment_id = CANVAS_FINAL_ASSIGNMENT_ID
+
+    if not os.path.exists(file_path):
+        raise ValueError(f"MAT Excel file not found: {file_path}")
+
+    def _read_mat_scores(path):
+        wb = openpyxl.load_workbook(path, data_only=True)
+        ws = wb.active
+
+        merged_ranges = list(ws.merged_cells.ranges)
+        for merged_range in merged_ranges:
+            min_row, min_col, max_row, max_col = merged_range.min_row, merged_range.min_col, merged_range.max_row, merged_range.max_col
+            value = ws.cell(row=min_row, column=min_col).value
+            ws.unmerge_cells(str(merged_range))
+            for row in range(min_row, max_row + 1):
+                for col in range(min_col, max_col + 1):
+                    ws.cell(row=row, column=col).value = value
+
+        header_row_idx = None
+        for i in range(9, 20):
+            row = [str(ws.cell(row=i + 1, column=j + 1).value or "").strip().lower() for j in range(ws.max_column)]
+            has_cc = any(cell == "cc" or "chuyên cần" in cell for cell in row)
+            has_ck = any(cell == "ck" or "cuối kỳ" in cell for cell in row)
+            has_gk = any(cell == "gk" or "giữa kỳ" in cell for cell in row)
+            if has_cc and has_ck and has_gk:
+                header_row_idx = i + 1
+                break
+        if header_row_idx is None:
+            raise ValueError("Header row with CC, CK, GK columns could not be detected.")
+
+        header = [str(ws.cell(row=header_row_idx, column=j + 1).value or "").strip() for j in range(ws.max_column)]
+        col_map = {}
+        for idx, col in enumerate(header):
+            col_lower = col.lower()
+            if (
+                ("mã" in col_lower and "sinh" in col_lower) or
+                ("mã" in col_lower and "sv" in col_lower) or
+                ("mssv" in col_lower) or
+                ("student" in col_lower and "id" in col_lower)
+            ):
+                col_map["Student ID"] = idx + 1
+            elif "họ" in col_lower and "tên" in col_lower or "tên" == col_lower or "name" in col_lower:
+                col_map["Name"] = idx + 1
+            elif col_lower == "cc" or "chuyên cần" in col_lower:
+                col_map["CC"] = idx + 1
+            elif col_lower == "ck" or "cuối kỳ" in col_lower:
+                col_map["CK"] = idx + 1
+            elif col_lower == "gk" or "giữa kỳ" in col_lower:
+                col_map["GK"] = idx + 1
+        for required in ["CC", "CK", "GK"]:
+            if required not in col_map:
+                raise ValueError(f"Column '{required}' not found in header row.")
+
+        end_row = ws.max_row
+        for i in range(header_row_idx + 1, ws.max_row + 1):
+            row_str = " ".join(str(ws.cell(row=i, column=j + 1).value or "").lower() for j in range(ws.max_column))
+            if "tổng số sinh viên" in row_str:
+                end_row = i - 1
+                break
+
+        entries = []
+        for i in range(header_row_idx + 1, end_row + 1):
+            sid = _normalize_student_id(ws.cell(row=i, column=col_map.get("Student ID", 1)).value)
+            name = ""
+            if "Name" in col_map:
+                name = str(ws.cell(row=i, column=col_map["Name"]).value or "").strip()
+            if not sid and not name:
+                continue
+            entry = {
+                "student_id": sid,
+                "name": name,
+                "CC": _coerce_score(ws.cell(row=i, column=col_map["CC"]).value),
+                "GK": _coerce_score(ws.cell(row=i, column=col_map["GK"]).value),
+                "CK": _coerce_score(ws.cell(row=i, column=col_map["CK"]).value),
+                "row": i,
+            }
+            entries.append(entry)
+        return entries
+
+    entries = _read_mat_scores(file_path)
+    if not entries:
+        if verbose:
+            print("[SyncMatCanvas] No score rows found in MAT file.")
+        else:
+            print("No score rows found in MAT file.")
+        return {"updated": 0, "skipped": 0, "missing_canvas": 0, "missing_assignment": 0}
+
+    if not db_path or not os.path.exists(db_path):
+        raise ValueError("Student database not found. Provide --db or ensure students.db exists.")
+
+    students = load_database(db_path, verbose=verbose)
+    id_to_canvas = {}
+    name_to_canvas = {}
+    id_to_name = {}
+    for s in students:
+        canvas_id = getattr(s, "Canvas ID", None)
+        if not canvas_id:
+            continue
+        sid = _normalize_student_id(getattr(s, "Student ID", ""))
+        name = str(getattr(s, "Name", "")).strip()
+        if sid and sid not in id_to_canvas:
+            id_to_canvas[sid] = canvas_id
+            id_to_name[sid] = name
+        if name:
+            name_key = _normalize_vietnamese_name(name)
+            if name_key and name_key not in name_to_canvas:
+                name_to_canvas[name_key] = canvas_id
+
+    assignment_ids = {
+        "CC": str(cc_assignment_id).strip() if cc_assignment_id else "",
+        "GK": str(gk_assignment_id).strip() if gk_assignment_id else "",
+        "CK": str(ck_assignment_id).strip() if ck_assignment_id else "",
+    }
+
+    fields_to_sync = ["CC", "GK", "CK"]
+    if fields:
+        if isinstance(fields, str):
+            raw_fields = [f.strip().upper() for f in fields.split(",") if f.strip()]
+        else:
+            raw_fields = [str(f).strip().upper() for f in fields if str(f).strip()]
+        invalid = [f for f in raw_fields if f not in ("CC", "GK", "CK")]
+        if invalid:
+            raise ValueError(f"Invalid sync fields: {', '.join(invalid)} (expected CC, GK, CK).")
+        if raw_fields:
+            fields_to_sync = raw_fields
+
+    if "CC" in fields_to_sync:
+        cc_scores_present = any(_is_grade_provided(entry.get("CC")) for entry in entries)
+        if cc_scores_present and not assignment_ids["CC"]:
+            print("[SyncMatCanvas] CC scores detected but CANVAS_CC_ASSIGNMENT_ID is not set; CC will be skipped.")
+
+    if not any(assignment_ids.get(field) for field in fields_to_sync):
+        raise ValueError("No Canvas assignment IDs configured for requested sync fields.")
+
+    assignments = {}
+    if not dry_run:
+        if not api_url or not api_key or not course_id:
+            raise ValueError("Canvas API URL, API key, and course ID are required.")
+        canvas = Canvas(api_url, api_key)
+        course = canvas.get_course(course_id)
+        for key, aid in assignment_ids.items():
+            if not aid:
+                continue
+            try:
+                assignments[key] = course.get_assignment(aid)
+            except Exception as e:
+                if verbose:
+                    print(f"[SyncMatCanvas] Failed to load assignment {aid} for {key}: {e}")
+                assignment_ids[key] = ""
+
+    updated = 0
+    skipped = 0
+    missing_canvas = 0
+    missing_assignment = 0
+
+    for entry in entries:
+        sid = entry.get("student_id", "")
+        name = entry.get("name", "")
+        canvas_id = None
+        if sid:
+            canvas_id = id_to_canvas.get(sid)
+        if not canvas_id and name:
+            canvas_id = name_to_canvas.get(_normalize_vietnamese_name(name))
+        if not canvas_id:
+            missing_canvas += 1
+            if verbose:
+                print(f"[SyncMatCanvas] No Canvas ID for {name} ({sid}). Skipping.")
+            continue
+
+        for field in fields_to_sync:
+            score = entry.get(field)
+            if not _is_grade_provided(score):
+                continue
+            assignment_id = assignment_ids.get(field, "")
+            if not assignment_id:
+                missing_assignment += 1
+                if verbose:
+                    print(f"[SyncMatCanvas] No assignment ID configured for {field}. Skipping {name} ({sid}).")
+                continue
+
+            assignment = assignments.get(field)
+            label = getattr(assignment, "name", f"Assignment {assignment_id}")
+            if dry_run:
+                print(f"[SyncMatCanvas] Dry run: {name} ({sid}) -> {field}={score} to {label} (ID: {assignment_id})")
+                updated += 1
+                continue
+
+            try:
+                submission = assignment.get_submission(canvas_id)
+                submission.edit(submission={"posted_grade": score})
+                updated += 1
+                if verbose:
+                    print(f"[SyncMatCanvas] Updated {name} ({sid}) {field}={score} to {label}.")
+            except Exception as e:
+                skipped += 1
+                if verbose:
+                    print(f"[SyncMatCanvas] Failed to update {name} ({sid}) {field}={score}: {e}")
+
+    if dry_run:
+        print(f"[SyncMatCanvas] Dry run: would update {updated} score(s).")
+    else:
+        print(f"[SyncMatCanvas] Updated {updated} score(s). Skipped {skipped}.")
+
+    if missing_canvas:
+        print(f"[SyncMatCanvas] Skipped {missing_canvas} row(s) without Canvas IDs.")
+    if missing_assignment:
+        print(f"[SyncMatCanvas] Skipped {missing_assignment} score(s) without configured assignment IDs.")
+
+    return {
+        "updated": updated,
+        "skipped": skipped,
+        "missing_canvas": missing_canvas,
+        "missing_assignment": missing_assignment,
+    }
 
 def read_students_from_excel_csv(file_path, db_path=None, verbose=False, preview_only=False, preview_rows=5):
     """
