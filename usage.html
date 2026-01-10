@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Usage &#8212; Course Management Toolkit 0.1.1 documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="_static/basic.css?v=686e5160" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=27fed22d" />
+    <script src="_static/documentation_options.js?v=a58bc63e"></script>
+    <script src="_static/doctools.js?v=9bcbadda"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="API Reference" href="api.html" />
+    <link rel="prev" title="Course Management Toolkit" href="index.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <section id="usage">
+<h1>Usage<a class="headerlink" href="#usage" title="Link to this heading">¶</a></h1>
+<section id="install-editable">
+<h2>Install (editable)<a class="headerlink" href="#install-editable" title="Link to this heading">¶</a></h2>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span>.
+</pre></div>
+</div>
+</section>
+<section id="install-into-per-user-venv">
+<h2>Install into per-user venv<a class="headerlink" href="#install-into-per-user-venv" title="Link to this heading">¶</a></h2>
+<p>Linux/macOS:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>make<span class="w"> </span>install
+~/.course_venv/bin/course
+</pre></div>
+</div>
+<p>Windows:</p>
+<div class="highlight-bat notranslate"><div class="highlight"><pre><span></span>make.bat install
+<span class="nv">%USERPROFILE%</span>\.course_venv\Scripts\course.exe
+</pre></div>
+</div>
+</section>
+<section id="run">
+<h2>Run<a class="headerlink" href="#run" title="Link to this heading">¶</a></h2>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>course
+</pre></div>
+</div>
+</section>
+<section id="interactive-menu-tips">
+<h2>Interactive menu tips<a class="headerlink" href="#interactive-menu-tips" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Use arrow keys (or W/S) to move, Enter to select, q to quit.</p></li>
+<li><p>Type a menu number quickly to jump to that option.</p></li>
+</ul>
+</section>
+<section id="clear-stored-settings">
+<h2>Clear stored settings<a class="headerlink" href="#clear-stored-settings" title="Link to this heading">¶</a></h2>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>course<span class="w"> </span>--clear-config
+course<span class="w"> </span>--clear-credentials
+course<span class="w"> </span>-ccfg
+course<span class="w"> </span>-ccred
+</pre></div>
+</div>
+<p>Tip: <code class="docutils literal notranslate"><span class="pre">--google-credentials-path</span></code> and <code class="docutils literal notranslate"><span class="pre">--google-token-path</span></code> copy the files into
+the default config folder with standard filenames, even if you only set them in
+a separate command before running <code class="docutils literal notranslate"><span class="pre">--sync-google-classroom</span></code>.</p>
+</section>
+<section id="configuration-and-file-locations">
+<h2>Configuration and file locations<a class="headerlink" href="#configuration-and-file-locations" title="Link to this heading">¶</a></h2>
+<p>The tool reads settings from <code class="docutils literal notranslate"><span class="pre">config.json</span></code> stored in a course-specific folder
+determined by <code class="docutils literal notranslate"><span class="pre">.course_code</span></code>. On first run, you will be prompted for a course
+code (for example, MAT3500) and it will be cached in <code class="docutils literal notranslate"><span class="pre">.course_code</span></code>.
+When you load a config file with <code class="docutils literal notranslate"><span class="pre">--config</span></code>, it is copied into the default
+config folder as <code class="docutils literal notranslate"><span class="pre">config.json</span></code>.
+Sample config: <code class="docutils literal notranslate"><span class="pre">sample/config/config.sample.json</span></code>.</p>
+<p>Default config locations:</p>
+<ul class="simple">
+<li><p>Windows: <code class="docutils literal notranslate"><span class="pre">%APPDATA%\course\&lt;course_code&gt;\config.json</span></code></p></li>
+<li><p>macOS: <code class="docutils literal notranslate"><span class="pre">~/Library/Application</span> <span class="pre">Support/course/&lt;course_code&gt;/config.json</span></code></p></li>
+<li><p>Linux: <code class="docutils literal notranslate"><span class="pre">~/.config/course/&lt;course_code&gt;/config.json</span></code></p></li>
+</ul>
+<p>Credential and token files live in the same folder by default:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">credentials.json</span></code> (Google service account)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">token.pickle</span></code> (Google OAuth tokens)</p></li>
+</ul>
+<p>You can override paths via <code class="docutils literal notranslate"><span class="pre">CREDENTIALS_PATH</span></code> and <code class="docutils literal notranslate"><span class="pre">TOKEN_PATH</span></code> in the config
+file.
+When you provide Google Classroom credentials/token paths via CLI or the menu,
+the files are copied into the default folder with the standard names.
+You can also set <code class="docutils literal notranslate"><span class="pre">GOOGLE_CLASSROOM_COURSE_ID</span></code> in <code class="docutils literal notranslate"><span class="pre">config.json</span></code> to skip the
+course selection prompt.</p>
+<p>Final evaluation weights can be configured via <code class="docutils literal notranslate"><span class="pre">WEIGHT_CC</span></code>, <code class="docutils literal notranslate"><span class="pre">WEIGHT_GK</span></code>,
+and <code class="docutils literal notranslate"><span class="pre">WEIGHT_CK</span></code> in <code class="docutils literal notranslate"><span class="pre">config.json</span></code>. The weights must sum to 1.0.</p>
+</section>
+<section id="ocr-dependencies-and-setup">
+<h2>OCR dependencies and setup<a class="headerlink" href="#ocr-dependencies-and-setup" title="Link to this heading">¶</a></h2>
+<p>Local OCR and PDF conversion require system tools. Install them before using
+<code class="docutils literal notranslate"><span class="pre">--ocr-service</span> <span class="pre">tesseract</span></code> or features that convert PDF pages to images.</p>
+<p>Windows (PowerShell):</p>
+<div class="highlight-powershell notranslate"><div class="highlight"><pre><span></span><span class="n">winget</span> <span class="n">install</span> <span class="n">-e</span> <span class="p">-</span><span class="n">-id</span> <span class="n">UB-Mannheim</span><span class="p">.</span><span class="n">TesseractOCR</span>
+<span class="n">winget</span> <span class="n">install</span> <span class="n">-e</span> <span class="p">-</span><span class="n">-id</span> <span class="n">oschwartz10612</span><span class="p">.</span><span class="n">Poppler</span>
+</pre></div>
+</div>
+<p>macOS (Homebrew):</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>brew<span class="w"> </span>install<span class="w"> </span>tesseract<span class="w"> </span>poppler
+</pre></div>
+</div>
+<p>Linux:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Debian/Ubuntu</span>
+sudo<span class="w"> </span>apt-get<span class="w"> </span>update
+sudo<span class="w"> </span>apt-get<span class="w"> </span>install<span class="w"> </span>-y<span class="w"> </span>tesseract-ocr<span class="w"> </span>poppler-utils
+
+<span class="c1"># Fedora</span>
+sudo<span class="w"> </span>dnf<span class="w"> </span>install<span class="w"> </span>-y<span class="w"> </span>tesseract<span class="w"> </span>poppler-utils
+
+<span class="c1"># Arch</span>
+sudo<span class="w"> </span>pacman<span class="w"> </span>-S<span class="w"> </span>tesseract<span class="w"> </span>poppler
+</pre></div>
+</div>
+<p>Verify:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>tesseract<span class="w"> </span>--version
+pdftoppm<span class="w"> </span>-h
+</pre></div>
+</div>
+<p>Note: Post-OCR AI refinement is disabled; improve scan quality or switch OCR engines if text quality is poor.</p>
+</section>
+<section id="canvas-and-google-classroom-setup">
+<h2>Canvas and Google Classroom setup<a class="headerlink" href="#canvas-and-google-classroom-setup" title="Link to this heading">¶</a></h2>
+<p>Populate the following keys in <code class="docutils literal notranslate"><span class="pre">config.json</span></code> (or load from a JSON file with
+<code class="docutils literal notranslate"><span class="pre">--config</span></code>):</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">CANVAS_LMS_API_URL</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">CANVAS_LMS_API_KEY</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">CANVAS_LMS_COURSE_ID</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">CREDENTIALS_PATH</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">TOKEN_PATH</span></code></p></li>
+</ul>
+<p>Canvas operations will use these defaults unless overridden by flags like
+<code class="docutils literal notranslate"><span class="pre">--canvas-course-id</span></code>.</p>
+</section>
+<section id="common-workflows">
+<h2>Common workflows<a class="headerlink" href="#common-workflows" title="Link to this heading">¶</a></h2>
+<p>Sync Canvas roster into the local database:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>course<span class="w"> </span>--sync-canvas
+course<span class="w"> </span>-sc
+</pre></div>
+</div>
+<p>Notes:</p>
+<ul class="simple">
+<li><p>Canvas sync now stores submission comments and rubric evaluations per assignment in the database.</p></li>
+</ul>
+<p>List auto-generated CLI short aliases:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>course<span class="w"> </span>--list-cli-aliases
+course<span class="w"> </span>-lca
+</pre></div>
+</div>
+<p>Sync Google Classroom roster into the local database:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>course<span class="w"> </span>--sync-google-classroom
+course<span class="w"> </span>-sgc
+</pre></div>
+</div>
+<p>Notes:</p>
+<ul class="simple">
+<li><p>Canvas and Google Classroom score sync normalizes grades to a 10-point scale when max points are available.</p></li>
+<li><p>Student ID inference for MAT Excel updates only works with VNU University of Science, Hanoi email format.</p></li>
+</ul>
+<p>Grade resubmissions (lists assignments that need regrading, excludes Roll Call Attendance, and prompts per student unless default is enabled). When keeping old grade, the newer submission is assigned the most recent graded score from the submission history:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>course<span class="w"> </span>--grade-resubmission
+course<span class="w"> </span>--grade-resubmission<span class="w"> </span>--keep-old-grade
+course<span class="w"> </span>-grs
+course<span class="w"> </span>-grs<span class="w"> </span>--keep-old-grade
+</pre></div>
+</div>
+<p>Update a MAT*.xlsx file with grades from the local database:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>course<span class="w"> </span>--update-mat-excel<span class="w"> </span>MAT3500-3-Toan-roi-rac-4TC.xlsx
+course<span class="w"> </span>-ume<span class="w"> </span>MAT3500-3-Toan-roi-rac-4TC.xlsx
+</pre></div>
+</div>
+<p>Export a roster to CSV:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>course<span class="w"> </span>--export-roster
+course<span class="w"> </span>-ero
+</pre></div>
+</div>
+<p>Preview an import (no write):</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>course<span class="w"> </span>--preview-import<span class="w"> </span>students.xlsx
+course<span class="w"> </span>-pi<span class="w"> </span>students.xlsx
+</pre></div>
+</div>
+<p>Notes:</p>
+<ul class="simple">
+<li><p>MAT*.xlsx imports ignore score columns (CC, GK, CK, totals); only roster fields are imported.</p></li>
+</ul>
+<p>Export an anonymized roster:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>course<span class="w"> </span>--export-anonymized
+course<span class="w"> </span>-ean
+</pre></div>
+</div>
+<p>Generate a weekly workflow template:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>course<span class="w"> </span>--generate-weekly-workflow
+course<span class="w"> </span>-gww
+</pre></div>
+</div>
+<p>Run weekly automation:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>course<span class="w"> </span>--run-weekly-automation<span class="w"> </span>--weekly-assignment-id<span class="w"> </span><span class="m">123456</span><span class="w"> </span>--weekly-teacher-canvas-id<span class="w"> </span><span class="m">987654</span>
+course<span class="w"> </span>-rwa<span class="w"> </span>--weekly-assignment-id<span class="w"> </span><span class="m">123456</span><span class="w"> </span>--weekly-teacher-canvas-id<span class="w"> </span><span class="m">987654</span>
+</pre></div>
+</div>
+<p>If <code class="docutils literal notranslate"><span class="pre">--weekly-assignment-id</span></code> is omitted, the tool scans <code class="docutils literal notranslate"><span class="pre">weekly_reports/</span></code> to list
+assignments already processed and then runs on closed assignments not yet in the reports.</p>
+<p>Run weekly automation locally (no GitHub repo needed):</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>course<span class="w"> </span>--run-weekly-local<span class="w"> </span>--weekly-assignment-id<span class="w"> </span><span class="m">123456</span><span class="w"> </span>--weekly-local-root<span class="w"> </span><span class="s2">&quot;C:\\path\\to\\course-folder&quot;</span>
+course<span class="w"> </span>-rwl<span class="w"> </span>--weekly-assignment-id<span class="w"> </span><span class="m">123456</span><span class="w"> </span>--weekly-local-root<span class="w"> </span><span class="s2">&quot;C:\\path\\to\\course-folder&quot;</span>
+</pre></div>
+</div>
+</section>
+<section id="weekly-automation-guide">
+<h2>Weekly automation guide<a class="headerlink" href="#weekly-automation-guide" title="Link to this heading">¶</a></h2>
+<p>Local weekly run:</p>
+<ul class="simple">
+<li><p>Ensure <code class="docutils literal notranslate"><span class="pre">students.db</span></code> exists in the target folder.</p></li>
+<li><p>Ensure <code class="docutils literal notranslate"><span class="pre">config.json</span></code> is configured (Canvas API URL/key, course ID, OCR keys if needed).</p></li>
+<li><p>Run <code class="docutils literal notranslate"><span class="pre">course</span> <span class="pre">--run-weekly-local</span></code> with <code class="docutils literal notranslate"><span class="pre">--weekly-assignment-id</span></code> and an optional
+<code class="docutils literal notranslate"><span class="pre">--weekly-local-root</span></code> to choose where reports are stored.</p></li>
+<li><p>Reports and evidence are stored in <code class="docutils literal notranslate"><span class="pre">weekly_reports/&lt;timestamp&gt;/</span></code> with a
+<code class="docutils literal notranslate"><span class="pre">students.db.bak</span></code> backup.</p></li>
+<li><p>If the assignment ID is omitted, the tool processes closed assignments not yet listed
+in <code class="docutils literal notranslate"><span class="pre">weekly_reports/</span></code>.</p></li>
+</ul>
+<p>GitHub Actions weekly run:</p>
+<ul class="simple">
+<li><p>Store <code class="docutils literal notranslate"><span class="pre">students.db</span></code> in the repo that hosts the workflow.</p></li>
+<li><p>Configure secrets <code class="docutils literal notranslate"><span class="pre">CANVAS_API_URL</span></code>, <code class="docutils literal notranslate"><span class="pre">CANVAS_API_KEY</span></code>, and optional OCR keys.</p></li>
+<li><p>Generate the workflow via <code class="docutils literal notranslate"><span class="pre">course</span> <span class="pre">--generate-weekly-workflow</span></code>.</p></li>
+<li><p>The workflow clones the toolkit repo, runs weekly checks, archives artifacts into
+<code class="docutils literal notranslate"><span class="pre">weekly_reports/&lt;timestamp&gt;/</span></code>, removes the toolkit clone, and commits updates.</p></li>
+</ul>
+</section>
+<section id="course-calendar-builder">
+<h2>Course calendar builder<a class="headerlink" href="#course-calendar-builder" title="Link to this heading">¶</a></h2>
+<p>Build a course calendar from first-week sessions and export TXT/Markdown/ICS files. If the input file is omitted,
+the tool prompts for dates and times interactively.</p>
+<p>Example input file:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">course_code</span><span class="p">:</span> <span class="n">MAT3508</span>
+<span class="n">course_name</span><span class="p">:</span> <span class="n">Discrete</span> <span class="n">Mathematics</span>
+<span class="n">weeks</span><span class="p">:</span> <span class="mi">15</span>
+<span class="n">extra_week</span><span class="p">:</span> <span class="n">yes</span>
+<span class="n">holiday</span><span class="p">:</span> <span class="mi">2026</span><span class="o">-</span><span class="mi">01</span><span class="o">-</span><span class="mi">01</span>
+<span class="n">holiday</span><span class="p">:</span> <span class="mi">2026</span><span class="o">-</span><span class="mi">02</span><span class="o">-</span><span class="mi">17</span>
+<span class="n">session</span><span class="p">:</span> <span class="mi">2026</span><span class="o">-</span><span class="mi">01</span><span class="o">-</span><span class="mi">05</span> <span class="mi">08</span><span class="p">:</span><span class="mi">00</span><span class="o">-</span><span class="mi">10</span><span class="p">:</span><span class="mi">00</span> <span class="o">|</span> <span class="n">Room</span> <span class="mi">101</span> <span class="o">|</span> <span class="n">Lecture</span>
+<span class="n">session</span><span class="p">:</span> <span class="mi">2026</span><span class="o">-</span><span class="mi">01</span><span class="o">-</span><span class="mi">07</span> <span class="mi">08</span><span class="p">:</span><span class="mi">00</span><span class="o">-</span><span class="mi">10</span><span class="p">:</span><span class="mi">00</span> <span class="o">|</span> <span class="n">Room</span> <span class="mi">101</span> <span class="o">|</span> <span class="n">Lecture</span>
+</pre></div>
+</div>
+<p>Notes:
+- Course code and course name are required for calendar titles. Provide them in the input file, config (<code class="docutils literal notranslate"><span class="pre">COURSE_CODE</span></code>, <code class="docutils literal notranslate"><span class="pre">COURSE_NAME</span></code>), CLI (<code class="docutils literal notranslate"><span class="pre">--calendar-course-code</span></code>, <code class="docutils literal notranslate"><span class="pre">--calendar-course-name</span></code>), or cache the course code in <code class="docutils literal notranslate"><span class="pre">.course_code</span></code>.
+- Fixed Vietnamese holidays (1/1, 4/30, 5/1, 9/2) are automatically excluded.
+- Add lunar holidays such as Tet or Hung Vuong via <code class="docutils literal notranslate"><span class="pre">holiday:</span></code> lines or interactive input.
+- Add unofficial holidays via <code class="docutils literal notranslate"><span class="pre">unofficial_holiday:</span></code> or <code class="docutils literal notranslate"><span class="pre">extra_holiday:</span></code> lines (comma-separated dates).
+- Holidays are auto-fetched via AI using the default provider.
+- A make-up week is added only when holidays skip sessions.
+- Start time must be earlier than end time.
+- Sample input: <code class="docutils literal notranslate"><span class="pre">sample/calendar/course_calendar_sample_input.txt</span></code> (triggers a make-up week).
+- Unofficial-holiday sample: <code class="docutils literal notranslate"><span class="pre">sample/calendar/course_calendar_with_unofficial_holidays.txt</span></code>.
+- Add unofficial holidays with <code class="docutils literal notranslate"><span class="pre">--calendar-extra-holidays</span> <span class="pre">2026-03-10,2026-04-05</span></code>.</p>
+<p>Usage:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">course</span> <span class="o">--</span><span class="n">build</span><span class="o">-</span><span class="n">course</span><span class="o">-</span><span class="n">calendar</span> <span class="o">--</span><span class="n">calendar</span><span class="o">-</span><span class="nb">input</span> <span class="n">first_week</span><span class="o">.</span><span class="n">txt</span> <span class="o">--</span><span class="n">calendar</span><span class="o">-</span><span class="n">course</span><span class="o">-</span><span class="n">code</span> <span class="n">MAT3508</span> <span class="o">--</span><span class="n">calendar</span><span class="o">-</span><span class="n">course</span><span class="o">-</span><span class="n">name</span> <span class="s2">&quot;Discrete Mathematics&quot;</span>
+<span class="n">course</span> <span class="o">--</span><span class="n">build</span><span class="o">-</span><span class="n">course</span><span class="o">-</span><span class="n">calendar</span>
+<span class="n">course</span> <span class="o">-</span><span class="n">bcc</span> <span class="o">--</span><span class="n">calendar</span><span class="o">-</span><span class="nb">input</span> <span class="n">first_week</span><span class="o">.</span><span class="n">txt</span> <span class="o">--</span><span class="n">calendar</span><span class="o">-</span><span class="n">course</span><span class="o">-</span><span class="n">code</span> <span class="n">MAT3508</span> <span class="o">--</span><span class="n">calendar</span><span class="o">-</span><span class="n">course</span><span class="o">-</span><span class="n">name</span> <span class="s2">&quot;Discrete Mathematics&quot;</span>
+<span class="n">course</span> <span class="o">-</span><span class="n">bcc</span>
+</pre></div>
+</div>
+<p>Import an existing iCal file into Canvas (requires <code class="docutils literal notranslate"><span class="pre">CANVAS_LMS_API_URL</span></code>, <code class="docutils literal notranslate"><span class="pre">CANVAS_LMS_API_KEY</span></code>, <code class="docutils literal notranslate"><span class="pre">CANVAS_LMS_COURSE_ID</span></code>):</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">course</span> <span class="o">--</span><span class="n">import</span><span class="o">-</span><span class="n">canvas</span><span class="o">-</span><span class="n">calendar</span><span class="o">-</span><span class="n">ics</span> <span class="n">course_calendar</span><span class="o">.</span><span class="n">ics</span> <span class="o">--</span><span class="n">skip</span><span class="o">-</span><span class="n">duplicates</span> <span class="o">--</span><span class="n">dry</span><span class="o">-</span><span class="n">run</span>
+<span class="n">course</span> <span class="o">-</span><span class="n">icci</span> <span class="n">course_calendar</span><span class="o">.</span><span class="n">ics</span> <span class="o">--</span><span class="n">skip</span><span class="o">-</span><span class="n">duplicates</span> <span class="o">-</span><span class="n">dr</span>
+<span class="c1"># Use --force to import without duplicate checks.</span>
+</pre></div>
+</div>
+<p>Outputs: <code class="docutils literal notranslate"><span class="pre">course_calendar.txt</span></code>, <code class="docutils literal notranslate"><span class="pre">course_calendar.md</span></code>, <code class="docutils literal notranslate"><span class="pre">course_calendar.ics</span></code> in the chosen output directory.
+Use <code class="docutils literal notranslate"><span class="pre">--calendar-output-dir</span></code> and <code class="docutils literal notranslate"><span class="pre">--calendar-output-base</span></code> to customize the location and base filename.
+Backup and restore
+——————</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>course<span class="w"> </span>--backup-db
+course<span class="w"> </span>--restore-db
+course<span class="w"> </span>--backup-config
+course<span class="w"> </span>--restore-config
+course<span class="w"> </span>-bd
+course<span class="w"> </span>-rd
+course<span class="w"> </span>-bc
+course<span class="w"> </span>-rc
+</pre></div>
+</div>
+</section>
+<section id="data-validation-report">
+<h2>Data validation report<a class="headerlink" href="#data-validation-report" title="Link to this heading">¶</a></h2>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>course<span class="w"> </span>--validate-data
+course<span class="w"> </span>-vd
+</pre></div>
+</div>
+</section>
+<section id="dry-run-mode">
+<h2>Dry-run mode<a class="headerlink" href="#dry-run-mode" title="Link to this heading">¶</a></h2>
+<p>Preview changes without writing files:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>course<span class="w"> </span>--update-mat-excel<span class="w"> </span>MAT3500-3-Toan-roi-rac-4TC.xlsx<span class="w"> </span>--dry-run<span class="w"> </span>--export-grade-diff
+course<span class="w"> </span>-ume<span class="w"> </span>MAT3500-3-Toan-roi-rac-4TC.xlsx<span class="w"> </span>-dr<span class="w"> </span>--export-grade-diff
+</pre></div>
+</div>
+<p>Student detail sort order (for <code class="docutils literal notranslate"><span class="pre">--all-details</span></code> and <code class="docutils literal notranslate"><span class="pre">--export-all-details</span></code>):</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>course<span class="w"> </span>--export-all-details<span class="w"> </span>students.txt<span class="w"> </span>--student-sort-method<span class="w"> </span>first_last
+course<span class="w"> </span>--export-all-details<span class="w"> </span>students.txt<span class="w"> </span>--student-sort-method<span class="w"> </span>last_first
+course<span class="w"> </span>--export-all-details<span class="w"> </span>students.txt<span class="w"> </span>--student-sort-method<span class="w"> </span>id
+course<span class="w"> </span>-E<span class="w"> </span>students.txt<span class="w"> </span>--student-sort-method<span class="w"> </span>first_last
+course<span class="w"> </span>-E<span class="w"> </span>students.txt<span class="w"> </span>--student-sort-method<span class="w"> </span>last_first
+course<span class="w"> </span>-E<span class="w"> </span>students.txt<span class="w"> </span>--student-sort-method<span class="w"> </span>id
+</pre></div>
+</div>
+<p>You can also set <code class="docutils literal notranslate"><span class="pre">STUDENT_SORT_METHOD</span></code> in <code class="docutils literal notranslate"><span class="pre">config.json</span></code> (first_last, last_first, id).</p>
+</section>
+<section id="logging">
+<h2>Logging<a class="headerlink" href="#logging" title="Link to this heading">¶</a></h2>
+<p>Rotating logs are written to the config folder by default. Configure:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">LOG_DIR</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">LOG_LEVEL</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">LOG_MAX_BYTES</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">LOG_BACKUP_COUNT</span></code></p></li>
+</ul>
+<p>Backup retention is controlled by:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">DB_BACKUP_KEEP</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">CONFIG_BACKUP_KEEP</span></code></p></li>
+</ul>
+<p>A brief per-run summary is appended to <code class="docutils literal notranslate"><span class="pre">run_report.txt</span></code> in the working directory.</p>
+</section>
+<section id="canvas-announcements">
+<h2>Canvas announcements<a class="headerlink" href="#canvas-announcements" title="Link to this heading">¶</a></h2>
+<p>Create an announcement from a short message (manual input or a TXT file), optionally refine with AI, preview, and post:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">course</span> <span class="o">--</span><span class="n">add</span><span class="o">-</span><span class="n">canvas</span><span class="o">-</span><span class="n">announcement</span> <span class="o">--</span><span class="n">announcement</span><span class="o">-</span><span class="n">title</span> <span class="s2">&quot;Week 3&quot;</span> <span class="o">--</span><span class="n">announcement</span><span class="o">-</span><span class="n">message</span> <span class="s2">&quot;Please submit by Friday&quot;</span>
+<span class="n">course</span> <span class="o">--</span><span class="n">add</span><span class="o">-</span><span class="n">canvas</span><span class="o">-</span><span class="n">announcement</span> <span class="o">--</span><span class="n">announcement</span><span class="o">-</span><span class="n">title</span> <span class="s2">&quot;Reminder&quot;</span> <span class="o">--</span><span class="n">announcement</span><span class="o">-</span><span class="n">file</span> <span class="n">announcement</span><span class="o">.</span><span class="n">txt</span> <span class="o">--</span><span class="n">refine</span> <span class="n">gemini</span>
+<span class="n">course</span> <span class="o">-</span><span class="n">aa</span> <span class="o">--</span><span class="n">announcement</span><span class="o">-</span><span class="n">title</span> <span class="s2">&quot;Week 3&quot;</span> <span class="o">--</span><span class="n">announcement</span><span class="o">-</span><span class="n">message</span> <span class="s2">&quot;Please submit by Friday&quot;</span>
+<span class="n">course</span> <span class="o">-</span><span class="n">aa</span> <span class="o">--</span><span class="n">announcement</span><span class="o">-</span><span class="n">title</span> <span class="s2">&quot;Reminder&quot;</span> <span class="o">--</span><span class="n">announcement</span><span class="o">-</span><span class="n">file</span> <span class="n">announcement</span><span class="o">.</span><span class="n">txt</span> <span class="o">--</span><span class="n">refine</span> <span class="n">gemini</span>
+</pre></div>
+</div>
+<p>Use <code class="docutils literal notranslate"><span class="pre">--dry-run</span></code> to preview without posting. Omit <code class="docutils literal notranslate"><span class="pre">--refine</span></code> to post the original text without AI.</p>
+<p>Sample inputs/outputs:
+- <code class="docutils literal notranslate"><span class="pre">sample/announcements/announcement_input.txt</span></code>
+- <code class="docutils literal notranslate"><span class="pre">sample/announcements/announcement_refined_output.txt</span></code>
+- <code class="docutils literal notranslate"><span class="pre">sample/announcements/announcement_input_vi.txt</span></code>
+- <code class="docutils literal notranslate"><span class="pre">sample/announcements/announcement_refined_output_vi.txt</span></code></p>
+</section>
+<section id="override-grades">
+<h2>Override grades<a class="headerlink" href="#override-grades" title="Link to this heading">¶</a></h2>
+<p>Place <code class="docutils literal notranslate"><span class="pre">override_grades.xlsx</span></code> in the working directory (see <code class="docutils literal notranslate"><span class="pre">sample/overrides/override_grades.xlsx</span></code> for the format).
+Required columns: <code class="docutils literal notranslate"><span class="pre">Mã</span> <span class="pre">Sinh</span> <span class="pre">Viên</span></code> or <code class="docutils literal notranslate"><span class="pre">Họ</span> <span class="pre">và</span> <span class="pre">Tên</span></code>, plus at least one of <code class="docutils literal notranslate"><span class="pre">CC</span></code>/<code class="docutils literal notranslate"><span class="pre">GK</span></code>/<code class="docutils literal notranslate"><span class="pre">CK</span></code> (order does not matter). <code class="docutils literal notranslate"><span class="pre">STT</span></code> and <code class="docutils literal notranslate"><span class="pre">Lý</span> <span class="pre">do</span></code> are optional.
+Common header aliases are accepted, for example <code class="docutils literal notranslate"><span class="pre">MSSV</span></code>, <code class="docutils literal notranslate"><span class="pre">Mã</span> <span class="pre">SV</span></code>, <code class="docutils literal notranslate"><span class="pre">Họ</span> <span class="pre">tên</span></code>, <code class="docutils literal notranslate"><span class="pre">Midterm</span></code> (Giữa kỳ), <code class="docutils literal notranslate"><span class="pre">Final</span></code> (Cuối kỳ), <code class="docutils literal notranslate"><span class="pre">CC</span></code> (Chuyên cần), <code class="docutils literal notranslate"><span class="pre">Reason</span></code> (Lý do).
+Non-empty CC/GK/CK cells override computed grades, and <code class="docutils literal notranslate"><span class="pre">Lý</span> <span class="pre">do</span></code> is appended to the final evaluation output when present.
+When using Canvas gradebook CSVs, <code class="docutils literal notranslate"><span class="pre">Unposted</span> <span class="pre">Final</span> <span class="pre">Score</span></code> is used if <code class="docutils literal notranslate"><span class="pre">Final</span> <span class="pre">Score</span></code> is missing or all-zero for CC/GK/CK.
+Assignment-group scores are omitted from the final evaluation report when all component scores are 0.
+Final evaluation TXT output includes the weighted formula used for the total score.</p>
+</section>
+<section id="ai-report-refinement">
+<h2>AI report refinement<a class="headerlink" href="#ai-report-refinement" title="Link to this heading">¶</a></h2>
+<p>Set <code class="docutils literal notranslate"><span class="pre">REPORT_REFINE_METHOD</span></code> to <code class="docutils literal notranslate"><span class="pre">gemini</span></code>, <code class="docutils literal notranslate"><span class="pre">huggingface</span></code>, or <code class="docutils literal notranslate"><span class="pre">local</span></code> in <code class="docutils literal notranslate"><span class="pre">config.json</span></code> (requires the corresponding API key for remote providers).
+When AI refinement runs, the report includes the default model and the model actually used.
+Local LLM settings (defaults to Ollama):</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">LOCAL_LLM_COMMAND</span></code> (default: <code class="docutils literal notranslate"><span class="pre">ollama</span></code>)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">LOCAL_LLM_MODEL</span></code> (default: <code class="docutils literal notranslate"><span class="pre">llama3.2:3b</span></code>)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">LOCAL_LLM_ARGS</span></code> (optional extra CLI args)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">LOCAL_LLM_GGUF_DIR</span></code> (default: <code class="docutils literal notranslate"><span class="pre">C:\llm</span></code>, scanned recursively for <code class="docutils literal notranslate"><span class="pre">.gguf</span></code> files)</p></li>
+</ul>
+<p>Runtime overrides: <code class="docutils literal notranslate"><span class="pre">--local-llm-command</span></code>, <code class="docutils literal notranslate"><span class="pre">--local-llm-model</span></code>, <code class="docutils literal notranslate"><span class="pre">--local-llm-args</span></code>, <code class="docutils literal notranslate"><span class="pre">--local-llm-gguf-dir</span></code>.</p>
+<p>Installing local AI models (examples):
+- Ollama: <a class="reference external" href="https://ollama.com/">https://ollama.com/</a> then run <code class="docutils literal notranslate"><span class="pre">ollama</span> <span class="pre">pull</span> <span class="pre">llama3.2:3b</span></code> and set <code class="docutils literal notranslate"><span class="pre">LOCAL_LLM_COMMAND=ollama</span></code>, <code class="docutils literal notranslate"><span class="pre">LOCAL_LLM_MODEL=llama3.2:3b</span></code>.
+- llama.cpp: build <code class="docutils literal notranslate"><span class="pre">llama-cli</span></code> (<a class="reference external" href="https://github.com/ggerganov/llama.cpp">https://github.com/ggerganov/llama.cpp</a>), set <code class="docutils literal notranslate"><span class="pre">LOCAL_LLM_COMMAND</span></code> to the <code class="docutils literal notranslate"><span class="pre">llama-cli</span></code> path and <code class="docutils literal notranslate"><span class="pre">LOCAL_LLM_ARGS</span></code> to include <code class="docutils literal notranslate"><span class="pre">-m</span> <span class="pre">&lt;path-to-gguf&gt;</span></code>.
+Use <code class="docutils literal notranslate"><span class="pre">--refine</span> <span class="pre">local</span></code> or set <code class="docutils literal notranslate"><span class="pre">REPORT_REFINE_METHOD=local</span></code> to use the local model.</p>
+</section>
+<section id="ai-model-verification-and-listing">
+<h2>AI model verification and listing<a class="headerlink" href="#ai-model-verification-and-listing" title="Link to this heading">¶</a></h2>
+<p>Verify credentials and connectivity:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>course<span class="w"> </span>--test-ai
+course<span class="w"> </span>-tai
+</pre></div>
+</div>
+<p>Verify the local model:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>course<span class="w"> </span>--test-ai<span class="w"> </span><span class="nb">local</span>
+course<span class="w"> </span>-tai<span class="w"> </span><span class="nb">local</span>
+</pre></div>
+</div>
+<p>Detect locally installed models (Ollama or llama.cpp compatible):</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>course<span class="w"> </span>--detect-local-ai
+course<span class="w"> </span>-dla
+</pre></div>
+</div>
+<p>Test a specific model name:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>course<span class="w"> </span>--test-ai<span class="w"> </span>gemini<span class="w"> </span>--test-ai-model<span class="w"> </span>gemini-2.5-flash
+course<span class="w"> </span>-tai<span class="w"> </span>gemini<span class="w"> </span>-tam<span class="w"> </span>gemini-2.5-flash
+</pre></div>
+</div>
+<p>List available models:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>course<span class="w"> </span>--list-ai-models<span class="w"> </span>gemini
+course<span class="w"> </span>-lam<span class="w"> </span>gemini
+</pre></div>
+</div>
+<p>When an AI call is rate-limited, the tool retries and may switch to a different available model with similar capabilities.</p>
+</section>
+<section id="submission-quality-checks">
+<h2>Submission quality checks<a class="headerlink" href="#submission-quality-checks" title="Link to this heading">¶</a></h2>
+<p>Meaningfulness checks can be tuned via config keys:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">QUALITY_MIN_CHARS</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">QUALITY_UNIQUE_CHAR_RATIO_MIN</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">QUALITY_REPEAT_CHAR_RATIO_MAX</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">QUALITY_VN_CHAR_RATIO_MIN</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">QUALITY_ALNUM_RATIO_MIN</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">QUALITY_SYMBOL_RATIO_MAX</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">QUALITY_EMPTY_LINE_RATIO_MAX</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">QUALITY_MATH_DENSITY_THRESHOLD</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">QUALITY_LENGTH_RATIO_LOW</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">QUALITY_LENGTH_RATIO_MEDIUM</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">QUALITY_LENGTH_RATIO_HIGH</span></code></p></li>
+</ul>
+</section>
+<section id="troubleshooting">
+<h2>Troubleshooting<a class="headerlink" href="#troubleshooting" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>If <code class="docutils literal notranslate"><span class="pre">course</span></code> cannot find <code class="docutils literal notranslate"><span class="pre">students.db</span></code>, confirm you are running the command
+in the intended working directory.</p></li>
+<li><p>If OCR commands are missing, recheck your PATH or reinstall Tesseract/Poppler.</p></li>
+<li><p>If Canvas/Google Classroom calls fail, verify API keys and course IDs in
+<code class="docutils literal notranslate"><span class="pre">config.json</span></code>.</p></li>
+</ul>
+</section>
+</section>
+
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">Course Management Toolkit</a></h1>
+
+
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<ul class="current">
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Usage</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#install-editable">Install (editable)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#install-into-per-user-venv">Install into per-user venv</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#run">Run</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#interactive-menu-tips">Interactive menu tips</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#clear-stored-settings">Clear stored settings</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#configuration-and-file-locations">Configuration and file locations</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#ocr-dependencies-and-setup">OCR dependencies and setup</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#canvas-and-google-classroom-setup">Canvas and Google Classroom setup</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#common-workflows">Common workflows</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#weekly-automation-guide">Weekly automation guide</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#course-calendar-builder">Course calendar builder</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#data-validation-report">Data validation report</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#dry-run-mode">Dry-run mode</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#logging">Logging</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#canvas-announcements">Canvas announcements</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#override-grades">Override grades</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#ai-report-refinement">AI report refinement</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#ai-model-verification-and-listing">AI model verification and listing</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#submission-quality-checks">Submission quality checks</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#troubleshooting">Troubleshooting</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="api.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="changelog.html">Changelog</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="index.html" title="previous chapter">Course Management Toolkit</a></li>
+      <li>Next: <a href="api.html" title="next chapter">API Reference</a></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &#169;2026, Duc A. Hoang.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 8.1.3</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+      |
+      <a href="_sources/usage.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>
