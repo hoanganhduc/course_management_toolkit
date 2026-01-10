@@ -1477,22 +1477,37 @@ def calculate_cc_ck_gk(student, gradebook_csv_path="canvas_gradebook.csv", overr
     """
     overrides = get_override_grades(file_path=override_file, verbose=verbose)
     override_entry = None
+    override_match = None
     student_id = _normalize_student_id(getattr(student, "Student ID", ""))
     student_name = str(getattr(student, "Name", "")).strip()
     if overrides.get("by_id") and student_id in overrides["by_id"]:
         override_entry = overrides["by_id"][student_id]
+        override_match = "ID"
     elif overrides.get("by_name") and student_name:
         override_entry = overrides["by_name"].get(_normalize_vietnamese_name(student_name))
+        if override_entry:
+            override_match = "name"
+    compute_meta = {"CC": {}, "GK": {}, "CK": {}}
     override_cc = override_entry.get("CC") if override_entry and _is_grade_provided(override_entry.get("CC")) else None
     override_gk = override_entry.get("GK") if override_entry and _is_grade_provided(override_entry.get("GK")) else None
     override_ck = override_entry.get("CK") if override_entry and _is_grade_provided(override_entry.get("CK")) else None
     override_fields = []
     if override_cc is not None:
         override_fields.append("CC")
+        compute_meta["CC"] = {"source": "override"}
     if override_gk is not None:
         override_fields.append("GK")
+        compute_meta["GK"] = {"source": "override"}
     if override_ck is not None:
         override_fields.append("CK")
+        compute_meta["CK"] = {"source": "override"}
+    override_meta = None
+    if override_entry:
+        override_meta = {
+            "match_type": override_match,
+            "row_index": override_entry.get("row_index"),
+            "row_number": override_entry.get("row_number"),
+        }
     if verbose and override_entry:
         print(
             "[OverrideGrades] Found entry for "
@@ -1521,6 +1536,8 @@ def calculate_cc_ck_gk(student, gradebook_csv_path="canvas_gradebook.csv", overr
             "details": details,
             "override_reason": override_reason,
             "override_fields": override_fields,
+            "override_meta": override_meta,
+            "compute_meta": compute_meta,
         }
 
     def _looks_percent_label(label):
@@ -1662,6 +1679,16 @@ def calculate_cc_ck_gk(student, gradebook_csv_path="canvas_gradebook.csv", overr
             return unposted_val
         return final_val
 
+    def pick_score_with_meta(final_val, unposted_val):
+        if final_val is None:
+            if unposted_val is not None:
+                return unposted_val, "unposted (final missing)"
+            return 0.0, "missing (final+unposted)"
+        if final_val == 0.0 and unposted_val not in (None, 0.0):
+            return unposted_val, "unposted (final zero)"
+        return final_val, "final"
+
+
     # If gradebook_csv_path is provided, use it to extract scores
     if gradebook_csv_path:
         try:
@@ -1674,15 +1701,21 @@ def calculate_cc_ck_gk(student, gradebook_csv_path="canvas_gradebook.csv", overr
                     canvas_id_col = col
                     break
             if not canvas_id_col:
+                if verbose:
+                    print("[calculate_cc_ck_gk] Canvas ID column not found in gradebook CSV.")
                 raise ValueError("Canvas ID column not found in gradebook CSV.")
 
             student_canvas_id = getattr(student, "Canvas ID", None)
             if not student_canvas_id:
+                if verbose:
+                    print("[calculate_cc_ck_gk] Student Canvas ID not found in student object.")
                 raise ValueError("Student Canvas ID not found in student object.")
 
             # Find the row for this student
             row = df[df[canvas_id_col] == int(student_canvas_id)]
             if row.empty:
+                if verbose:
+                    print(f"[calculate_cc_ck_gk] Student Canvas ID {student_canvas_id} not found in gradebook CSV.")
                 raise ValueError(f"Student Canvas ID {student_canvas_id} not found in gradebook CSV.")
             row = row.iloc[0]
 
@@ -1706,23 +1739,60 @@ def calculate_cc_ck_gk(student, gradebook_csv_path="canvas_gradebook.csv", overr
             elif cc_col or cc_unposted_col:
                 cc_final = to_scale_10_optional(row.get(cc_col, None), cc_col) if cc_col else None
                 cc_unposted = to_scale_10_optional(row.get(cc_unposted_col, None), cc_unposted_col) if cc_unposted_col else None
-                CC = pick_score(cc_final, cc_unposted)
+                CC, cc_pick = pick_score_with_meta(cc_final, cc_unposted)
+                compute_meta["CC"] = {
+                    "source": "gradebook",
+                    "method": "cc_column",
+                    "final_col": cc_col,
+                    "final": cc_final,
+                    "unposted_col": cc_unposted_col,
+                    "unposted": cc_unposted,
+                    "pick": cc_pick,
+                }
                 if verbose and cc_final in (None, 0.0) and cc_unposted not in (None, 0.0):
                     print("[calculate_cc_ck_gk] Using unposted CC score from gradebook.")
             else:
-                diem_danh = pick_score(
-                    to_scale_10_optional(row.get(diem_danh_col, None), diem_danh_col),
-                    to_scale_10_optional(row.get(diem_danh_unposted_col, None), diem_danh_unposted_col),
-                )
-                quiz = pick_score(
-                    to_scale_10_optional(row.get(quiz_col, None), quiz_col),
-                    to_scale_10_optional(row.get(quiz_unposted_col, None), quiz_unposted_col),
-                )
-                bai_tap = pick_score(
-                    to_scale_10_optional(row.get(bai_tap_col, None), bai_tap_col),
-                    to_scale_10_optional(row.get(bai_tap_unposted_col, None), bai_tap_unposted_col),
-                )
+                diem_danh_final = to_scale_10_optional(row.get(diem_danh_col, None), diem_danh_col)
+                diem_danh_unposted = to_scale_10_optional(row.get(diem_danh_unposted_col, None), diem_danh_unposted_col)
+                diem_danh, diem_danh_pick = pick_score_with_meta(diem_danh_final, diem_danh_unposted)
+                quiz_final = to_scale_10_optional(row.get(quiz_col, None), quiz_col)
+                quiz_unposted = to_scale_10_optional(row.get(quiz_unposted_col, None), quiz_unposted_col)
+                quiz, quiz_pick = pick_score_with_meta(quiz_final, quiz_unposted)
+                bai_tap_final = to_scale_10_optional(row.get(bai_tap_col, None), bai_tap_col)
+                bai_tap_unposted = to_scale_10_optional(row.get(bai_tap_unposted_col, None), bai_tap_unposted_col)
+                bai_tap, bai_tap_pick = pick_score_with_meta(bai_tap_final, bai_tap_unposted)
                 CC = round(0.25 * diem_danh + 0.25 * quiz + 0.5 * bai_tap, 1)
+                compute_meta["CC"] = {
+                    "source": "gradebook",
+                    "method": "components",
+                    "formula": "0.25*diem_danh + 0.25*quiz + 0.5*bai_tap",
+                    "components": {
+                        "diem_danh": {
+                            "final_col": diem_danh_col,
+                            "final": diem_danh_final,
+                            "unposted_col": diem_danh_unposted_col,
+                            "unposted": diem_danh_unposted,
+                            "pick": diem_danh_pick,
+                            "value": diem_danh,
+                        },
+                        "quiz": {
+                            "final_col": quiz_col,
+                            "final": quiz_final,
+                            "unposted_col": quiz_unposted_col,
+                            "unposted": quiz_unposted,
+                            "pick": quiz_pick,
+                            "value": quiz,
+                        },
+                        "bai_tap": {
+                            "final_col": bai_tap_col,
+                            "final": bai_tap_final,
+                            "unposted_col": bai_tap_unposted_col,
+                            "unposted": bai_tap_unposted,
+                            "pick": bai_tap_pick,
+                            "value": bai_tap,
+                        },
+                    },
+                }
 
             # Detect GK/CK columns robustly
             gk_col = find_best_col(df.columns, gk_keywords, prefer_final=True) or "Giữa kỳ Final Score"
@@ -1735,7 +1805,16 @@ def calculate_cc_ck_gk(student, gradebook_csv_path="canvas_gradebook.csv", overr
             else:
                 gk_final = to_scale_10_optional(row.get(gk_col, None), gk_col)
                 gk_unposted = to_scale_10_optional(row.get(gk_unposted_col, None), gk_unposted_col)
-                GK = pick_score(gk_final, gk_unposted)
+                GK, gk_pick = pick_score_with_meta(gk_final, gk_unposted)
+                compute_meta["GK"] = {
+                    "source": "gradebook",
+                    "method": "column",
+                    "final_col": gk_col,
+                    "final": gk_final,
+                    "unposted_col": gk_unposted_col,
+                    "unposted": gk_unposted,
+                    "pick": gk_pick,
+                }
                 if verbose and gk_final in (None, 0.0) and gk_unposted not in (None, 0.0):
                     print("[calculate_cc_ck_gk] Using unposted GK score from gradebook.")
             if override_ck is not None:
@@ -1743,7 +1822,16 @@ def calculate_cc_ck_gk(student, gradebook_csv_path="canvas_gradebook.csv", overr
             else:
                 ck_final = to_scale_10_optional(row.get(ck_col, None), ck_col)
                 ck_unposted = to_scale_10_optional(row.get(ck_unposted_col, None), ck_unposted_col)
-                CK = pick_score(ck_final, ck_unposted)
+                CK, ck_pick = pick_score_with_meta(ck_final, ck_unposted)
+                compute_meta["CK"] = {
+                    "source": "gradebook",
+                    "method": "column",
+                    "final_col": ck_col,
+                    "final": ck_final,
+                    "unposted_col": ck_unposted_col,
+                    "unposted": ck_unposted,
+                    "pick": ck_pick,
+                }
                 if verbose and ck_final in (None, 0.0) and ck_unposted not in (None, 0.0):
                     print("[calculate_cc_ck_gk] Using unposted CK score from gradebook.")
             if verbose and override_gk is not None:
@@ -1779,10 +1867,12 @@ def calculate_cc_ck_gk(student, gradebook_csv_path="canvas_gradebook.csv", overr
                 "details": details,
                 "override_reason": override_reason,
                 "override_fields": override_fields,
+                "override_meta": override_meta,
+                "compute_meta": compute_meta,
             }
         except Exception as e:
             if verbose:
-                print(f"[calculate_cc_ck_gk] Error extracting from gradebook CSV: {e}")
+                print(f"[calculate_cc_ck_gk] Error extracting from gradebook CSV ({gradebook_csv_path}): {e}")
             # Fallback to default method below
 
     # Fallback: use student object attributes (legacy logic)
@@ -1825,22 +1915,59 @@ def calculate_cc_ck_gk(student, gradebook_csv_path="canvas_gradebook.csv", overr
         if cc_final_attr or cc_unposted_attr:
             cc_final = to_scale_10_optional(getattr(student, cc_final_attr, None), cc_final_attr) if cc_final_attr else None
             cc_unposted = to_scale_10_optional(getattr(student, cc_unposted_attr, None), cc_unposted_attr) if cc_unposted_attr else None
-            CC = pick_score(cc_final, cc_unposted)
+            CC, cc_pick = pick_score_with_meta(cc_final, cc_unposted)
+            compute_meta["CC"] = {
+                "source": "attributes",
+                "method": "cc_attribute",
+                "final_attr": cc_final_attr,
+                "final": cc_final,
+                "unposted_attr": cc_unposted_attr,
+                "unposted": cc_unposted,
+                "pick": cc_pick,
+            }
         if CC is None or CC == 0.0:
             # Try multiple variants
-            diem_danh = pick_score(
-                to_scale_10_optional(getattr(student, "??i???m danh Final Score", None), "??i???m danh Final Score") or to_scale_10_optional(getattr(student, "Attendance Final Score", None), "Attendance Final Score"),
-                to_scale_10_optional(getattr(student, "??i???m danh Unposted Final Score", None), "??i???m danh Unposted Final Score") or to_scale_10_optional(getattr(student, "Attendance Unposted Final Score", None), "Attendance Unposted Final Score"),
-            )
-            quiz = pick_score(
-                to_scale_10_optional(getattr(student, "Quiz Final Score", None), "Quiz Final Score"),
-                to_scale_10_optional(getattr(student, "Quiz Unposted Final Score", None), "Quiz Unposted Final Score"),
-            )
-            bai_tap = pick_score(
-                to_scale_10_optional(getattr(student, "BA?i t??-p Final Score", None), "BA?i t??-p Final Score") or to_scale_10_optional(getattr(student, "Assignment Final Score", None), "Assignment Final Score"),
-                to_scale_10_optional(getattr(student, "BA?i t??-p Unposted Final Score", None), "BA?i t??-p Unposted Final Score") or to_scale_10_optional(getattr(student, "Assignment Unposted Final Score", None), "Assignment Unposted Final Score"),
-            )
+            diem_danh_final = to_scale_10_optional(getattr(student, "??i???m danh Final Score", None), "??i???m danh Final Score") or to_scale_10_optional(getattr(student, "Attendance Final Score", None), "Attendance Final Score")
+            diem_danh_unposted = to_scale_10_optional(getattr(student, "??i???m danh Unposted Final Score", None), "??i???m danh Unposted Final Score") or to_scale_10_optional(getattr(student, "Attendance Unposted Final Score", None), "Attendance Unposted Final Score")
+            diem_danh, diem_danh_pick = pick_score_with_meta(diem_danh_final, diem_danh_unposted)
+            quiz_final = to_scale_10_optional(getattr(student, "Quiz Final Score", None), "Quiz Final Score")
+            quiz_unposted = to_scale_10_optional(getattr(student, "Quiz Unposted Final Score", None), "Quiz Unposted Final Score")
+            quiz, quiz_pick = pick_score_with_meta(quiz_final, quiz_unposted)
+            bai_tap_final = to_scale_10_optional(getattr(student, "BA?i t??-p Final Score", None), "BA?i t??-p Final Score") or to_scale_10_optional(getattr(student, "Assignment Final Score", None), "Assignment Final Score")
+            bai_tap_unposted = to_scale_10_optional(getattr(student, "BA?i t??-p Unposted Final Score", None), "BA?i t??-p Unposted Final Score") or to_scale_10_optional(getattr(student, "Assignment Unposted Final Score", None), "Assignment Unposted Final Score")
+            bai_tap, bai_tap_pick = pick_score_with_meta(bai_tap_final, bai_tap_unposted)
             CC = round(0.25 * (diem_danh or 0) + 0.25 * (quiz or 0) + 0.5 * (bai_tap or 0), 1)
+            compute_meta["CC"] = {
+                "source": "attributes",
+                "method": "components",
+                "formula": "0.25*diem_danh + 0.25*quiz + 0.5*bai_tap",
+                "components": {
+                    "diem_danh": {
+                        "final_attr": "??i???m danh Final Score/Attendance Final Score",
+                        "final": diem_danh_final,
+                        "unposted_attr": "??i???m danh Unposted Final Score/Attendance Unposted Final Score",
+                        "unposted": diem_danh_unposted,
+                        "pick": diem_danh_pick,
+                        "value": diem_danh,
+                    },
+                    "quiz": {
+                        "final_attr": "Quiz Final Score",
+                        "final": quiz_final,
+                        "unposted_attr": "Quiz Unposted Final Score",
+                        "unposted": quiz_unposted,
+                        "pick": quiz_pick,
+                        "value": quiz,
+                    },
+                    "bai_tap": {
+                        "final_attr": "BA?i t??-p Final Score/Assignment Final Score",
+                        "final": bai_tap_final,
+                        "unposted_attr": "BA?i t??-p Unposted Final Score/Assignment Unposted Final Score",
+                        "unposted": bai_tap_unposted,
+                        "pick": bai_tap_pick,
+                        "value": bai_tap,
+                    },
+                },
+            }
 
     if override_gk is not None:
         GK = override_gk
@@ -1852,10 +1979,33 @@ def calculate_cc_ck_gk(student, gradebook_csv_path="canvas_gradebook.csv", overr
             midterm_id = str(CANVAS_MIDTERM_ASSIGNMENT_ID).strip()
             if midterm_id:
                 GK = getattr(student, f"Assignment: {midterm_id}", None)
+                if GK is not None:
+                    compute_meta["GK"] = {
+                        "source": "attributes",
+                        "method": "assignment_id",
+                        "assignment_id": midterm_id,
+                        "value": GK,
+                    }
             if GK is None:
                 gk_final = to_scale_10_optional(getattr(student, "Midterm Final Score", None), "Midterm Final Score")
                 gk_unposted = to_scale_10_optional(getattr(student, "Midterm Unposted Final Score", None), "Midterm Unposted Final Score")
-                GK = pick_score(gk_final, gk_unposted)
+                GK, gk_pick = pick_score_with_meta(gk_final, gk_unposted)
+                compute_meta["GK"] = {
+                    "source": "attributes",
+                    "method": "final_unposted",
+                    "final_attr": "Midterm Final Score",
+                    "final": gk_final,
+                    "unposted_attr": "Midterm Unposted Final Score",
+                    "unposted": gk_unposted,
+                    "pick": gk_pick,
+                }
+        else:
+            compute_meta["GK"] = {
+                "source": "attributes",
+                "method": "average_by_title",
+                "keyword": "giữa kỳ",
+                "value": GK,
+            }
 
     if override_ck is not None:
         CK = override_ck
@@ -1867,10 +2017,33 @@ def calculate_cc_ck_gk(student, gradebook_csv_path="canvas_gradebook.csv", overr
             final_id = str(CANVAS_FINAL_ASSIGNMENT_ID).strip()
             if final_id:
                 CK = getattr(student, f"Assignment: {final_id}", None)
+                if CK is not None:
+                    compute_meta["CK"] = {
+                        "source": "attributes",
+                        "method": "assignment_id",
+                        "assignment_id": final_id,
+                        "value": CK,
+                    }
             if CK is None:
                 ck_final = to_scale_10_optional(getattr(student, "Final Final Score", None), "Final Final Score")
                 ck_unposted = to_scale_10_optional(getattr(student, "Final Unposted Final Score", None), "Final Unposted Final Score")
-                CK = pick_score(ck_final, ck_unposted)
+                CK, ck_pick = pick_score_with_meta(ck_final, ck_unposted)
+                compute_meta["CK"] = {
+                    "source": "attributes",
+                    "method": "final_unposted",
+                    "final_attr": "Final Final Score",
+                    "final": ck_final,
+                    "unposted_attr": "Final Unposted Final Score",
+                    "unposted": ck_unposted,
+                    "pick": ck_pick,
+                }
+        else:
+            compute_meta["CK"] = {
+                "source": "attributes",
+                "method": "average_by_title",
+                "keyword": "cuối kỳ",
+                "value": CK,
+            }
 
     CC = 0.0 if CC is None or (isinstance(CC, float) and pd.isna(CC)) else CC
     CK = 0.0 if CK is None or (isinstance(CK, float) and pd.isna(CK)) else CK
@@ -1904,6 +2077,8 @@ def calculate_cc_ck_gk(student, gradebook_csv_path="canvas_gradebook.csv", overr
         "details": details,
         "override_reason": override_reason,
         "override_fields": override_fields,
+        "override_meta": override_meta,
+        "compute_meta": compute_meta,
     }
 
 def export_grade_diff_csv(rows, output_path, verbose=False):
@@ -1985,6 +2160,8 @@ def generate_final_evaluations(
         details = scores["details"]
         override_reason = scores.get("override_reason", "")
         override_fields = scores.get("override_fields", [])
+        override_meta = scores.get("override_meta", None)
+        compute_meta = scores.get("compute_meta", None)
 
         cc_value = float(CC) if CC is not None else 0.0
         gk_value = float(GK) if GK else 0.0
@@ -2065,6 +2242,8 @@ def generate_final_evaluations(
                 "details": details,
                 "override_reason": override_reason,
                 "override_fields": override_fields,
+                "override_meta": override_meta,
+                "compute_meta": compute_meta,
                 "report_path": result_path,
             }
         )
@@ -2106,6 +2285,62 @@ def update_mat_excel_grades(file_path, students, output_path=None, diff_output_p
     def names_match(name1, name2):
         """Check if two names match after normalization."""
         return normalize_vietnamese_name(name1) == normalize_vietnamese_name(name2)
+
+    def format_compute_breakdown(field, meta):
+        if not meta or not isinstance(meta, dict):
+            return "details: unavailable"
+        field_meta = meta.get(field) or {}
+        source = field_meta.get("source")
+        method = field_meta.get("method")
+        if source == "gradebook":
+            if method in ("cc_column", "column"):
+                return (
+                    "details: gradebook, "
+                    f"final={field_meta.get('final')} ({field_meta.get('final_col')}), "
+                    f"unposted={field_meta.get('unposted')} ({field_meta.get('unposted_col')}), "
+                    f"picked={field_meta.get('pick')}"
+                )
+            if method == "components":
+                comps = field_meta.get("components") or {}
+                parts = []
+                for comp_name in ("diem_danh", "quiz", "bai_tap"):
+                    comp = comps.get(comp_name) or {}
+                    parts.append(
+                        f"{comp_name}={comp.get('value')} (final={comp.get('final')} "
+                        f"[{comp.get('final_col')}], unposted={comp.get('unposted')} "
+                        f"[{comp.get('unposted_col')}], picked={comp.get('pick')})"
+                    )
+                return "details: gradebook components, " + "; ".join(parts)
+        if source == "attributes":
+            if method in ("cc_attribute", "final_unposted"):
+                return (
+                    "details: attributes, "
+                    f"final={field_meta.get('final')} ({field_meta.get('final_attr')}), "
+                    f"unposted={field_meta.get('unposted')} ({field_meta.get('unposted_attr')}), "
+                    f"picked={field_meta.get('pick')}"
+                )
+            if method == "components":
+                comps = field_meta.get("components") or {}
+                parts = []
+                for comp_name in ("diem_danh", "quiz", "bai_tap"):
+                    comp = comps.get(comp_name) or {}
+                    parts.append(
+                        f"{comp_name}={comp.get('value')} (final={comp.get('final')} "
+                        f"[{comp.get('final_attr')}], unposted={comp.get('unposted')} "
+                        f"[{comp.get('unposted_attr')}], picked={comp.get('pick')})"
+                    )
+                return "details: attributes components, " + "; ".join(parts)
+            if method == "assignment_id":
+                return (
+                    "details: attributes, "
+                    f"assignment_id={field_meta.get('assignment_id')}, value={field_meta.get('value')}"
+                )
+            if method == "average_by_title":
+                return (
+                    "details: attributes, "
+                    f"average_by_title='{field_meta.get('keyword')}', value={field_meta.get('value')}"
+                )
+        return "details: unavailable"
 
     # Prefer override_grades.xlsx alongside the MAT file, if present.
     # Temporarily swap the override cache so per-course files are respected.
@@ -2280,6 +2515,9 @@ def update_mat_excel_grades(file_path, students, output_path=None, diff_output_p
                 "match_type": match_type,
                 "name": name,
                 "override_fields": ev.get("override_fields", []),
+                "override_reason": ev.get("override_reason", ""),
+                "override_meta": ev.get("override_meta", None),
+                "compute_meta": ev.get("compute_meta", None),
             }
             if verbose:
                 print(f"[update_mat_excel_grades] Matched student {name} ({sid}) by {match_type}")
@@ -2430,6 +2668,9 @@ def update_mat_excel_grades(file_path, students, output_path=None, diff_output_p
         match_type = value_info["match_type"]
         name = value_info.get("name", "")
         override_fields = set(value_info.get("override_fields") or [])
+        override_reason = value_info.get("override_reason", "")
+        override_meta = value_info.get("override_meta") or {}
+        compute_meta = value_info.get("compute_meta")
         
         for field in ["CC", "CK", "GK"]:
             if field in cell_info and field in value_info:
@@ -2452,7 +2693,24 @@ def update_mat_excel_grades(file_path, students, output_path=None, diff_output_p
                     "Match Type": match_type,
                 })
                 if verbose:
-                    print(f"[update_mat_excel_grades] Student ID {sid} (matched by {match_type}), {field}: {old_val} -> {new_val}, cell: {cell_addr}")
+                    source_detail = "computed (gradebook/attributes)"
+                    breakdown_detail = format_compute_breakdown(field, compute_meta)
+                    if field in override_fields:
+                        override_row = "unknown"
+                        if override_meta.get("row_number"):
+                            override_row = f"row {override_meta['row_number']}"
+                        elif override_meta.get("row_index") is not None:
+                            override_row = f"row index {override_meta['row_index']}"
+                        override_match = override_meta.get("match_type") or "unknown"
+                        source_detail = f"override file: {override_file}, match: {override_match}, {override_row}"
+                        if override_reason:
+                            source_detail = f"{source_detail}, reason: {override_reason}"
+                        breakdown_detail = None
+                    print(
+                        f"[update_mat_excel_grades] Student ID {sid} (Name: {name}, matched by {match_type}), "
+                        f"{field}: {old_val} -> {new_val}, cell: {cell_addr}, source: {source_detail}"
+                        + (f", {breakdown_detail}" if breakdown_detail else "")
+                    )
 
     if not dry_run:
         wb_out.save(output_path)
@@ -3112,17 +3370,14 @@ def read_students_from_excel_csv(file_path, db_path=None, verbose=False, preview
     def get_name(student):
         name = getattr(student, "Name", None)
         if name:
-            return str(name).strip().lower()
+            return _normalize_vietnamese_name(name)
         for k in student.__dict__:
             if "name" in k.lower():
-                return str(getattr(student, k)).strip().lower()
+                return _normalize_vietnamese_name(getattr(student, k))
         return None
 
     def get_student_id(student):
-        sid = getattr(student, "Student ID", None)
-        if sid:
-            return str(sid).strip()
-        return None
+        return _normalize_student_id(getattr(student, "Student ID", None))
 
     def get_section_id(student):
         for field_name in ["Canvas Section", "Section ID", "Registration ID", "Class ID", "Registered Class ID"]:
@@ -3137,6 +3392,19 @@ def read_students_from_excel_csv(file_path, db_path=None, verbose=False, preview
             if username:
                 return str(username).strip()
         return None
+
+    def _is_better_name(candidate, current):
+        if not candidate:
+            return False
+        if not current:
+            return True
+        cand = str(candidate).strip()
+        cur = str(current).strip()
+        if len(cand.split()) > len(cur.split()):
+            return True
+        if len(cand) > len(cur) and _normalize_vietnamese_name(cand).startswith(_normalize_vietnamese_name(cur)):
+            return True
+        return False
 
     # Deduplication logic with update/merge
     unique_students = []
@@ -3168,6 +3436,8 @@ def read_students_from_excel_csv(file_path, db_path=None, verbose=False, preview
                 # Update u with any new fields from s
                 for k, v in s.__dict__.items():
                     if k not in u.__dict__ or not u.__dict__[k]:
+                        u.__dict__[k] = v
+                    elif k == "Name" and _is_better_name(v, u.__dict__.get(k)):
                         u.__dict__[k] = v
                     # Special handling for section ID: keep both if different
                     elif k in ["Canvas Section", "Section ID", "Registration ID", "Class ID", "Registered Class ID"] and u.__dict__[k] != v and v:
@@ -3326,17 +3596,27 @@ def read_students_from_pdf(pdf_path, db_path=None, lang="auto", service=DEFAULT_
     def get_name(student):
         name = getattr(student, "Name", None)
         if name:
-            return str(name).strip().lower()
+            return _normalize_vietnamese_name(name)
         for k in student.__dict__:
             if "name" in k.lower():
-                return str(getattr(student, k)).strip().lower()
+                return _normalize_vietnamese_name(getattr(student, k))
         return None
 
     def get_student_id(student):
-        sid = getattr(student, "Student ID", None)
-        if sid:
-            return str(sid).strip()
-        return None
+        return _normalize_student_id(getattr(student, "Student ID", None))
+
+    def _is_better_name(candidate, current):
+        if not candidate:
+            return False
+        if not current:
+            return True
+        cand = str(candidate).strip()
+        cur = str(current).strip()
+        if len(cand.split()) > len(cur.split()):
+            return True
+        if len(cand) > len(cur) and _normalize_vietnamese_name(cand).startswith(_normalize_vietnamese_name(cur)):
+            return True
+        return False
 
     unique_students = []
     for s in all_students:
@@ -3355,6 +3635,8 @@ def read_students_from_pdf(pdf_path, db_path=None, lang="auto", service=DEFAULT_
                 # Update u with any new fields from s
                 for k, v in s.__dict__.items():
                     if k not in u.__dict__ or not u.__dict__[k]:
+                        u.__dict__[k] = v
+                    elif k == "Name" and _is_better_name(v, u.__dict__.get(k)):
                         u.__dict__[k] = v
                 found_duplicate = True
                 break
@@ -3749,9 +4031,67 @@ def save_database(students, db_path, verbose=False, audit_source=None):
         print(f"[SaveDatabase] Saving database to {db_path}...")
     else:
         print(f"Saving database to {db_path}...")
+    def _dedup_students(students_to_merge):
+        def get_student_id(student):
+            return _normalize_student_id(getattr(student, "Student ID", None))
+
+        def get_name(student):
+            name = getattr(student, "Name", None)
+            if name:
+                return _normalize_vietnamese_name(name)
+            for k in student.__dict__:
+                if "name" in k.lower():
+                    return _normalize_vietnamese_name(getattr(student, k))
+            return ""
+
+        def _is_better_name(candidate, current):
+            if not candidate:
+                return False
+            if not current:
+                return True
+            cand = str(candidate).strip()
+            cur = str(current).strip()
+            if len(cand.split()) > len(cur.split()):
+                return True
+            if len(cand) > len(cur) and _normalize_vietnamese_name(cand).startswith(_normalize_vietnamese_name(cur)):
+                return True
+            return False
+
+        unique_students = []
+        for s in students_to_merge:
+            sid_s = get_student_id(s)
+            name_s = get_name(s)
+            found_duplicate = False
+            for u in unique_students:
+                sid_u = get_student_id(u)
+                name_u = get_name(u)
+                is_duplicate = False
+                if sid_s and sid_u and sid_s == sid_u:
+                    is_duplicate = True
+                elif name_s and name_u and name_s == name_u:
+                    is_duplicate = True
+                if is_duplicate:
+                    for k, v in s.__dict__.items():
+                        if k not in u.__dict__ or not u.__dict__[k]:
+                            u.__dict__[k] = v
+                        elif k == "Name" and _is_better_name(v, u.__dict__.get(k)):
+                            u.__dict__[k] = v
+                        elif k in ["Canvas Section", "Section ID", "Registration ID", "Class ID", "Registered Class ID"] and u.__dict__[k] != v and v:
+                            u.__dict__[f"Additional {k}"] = v
+                    found_duplicate = True
+                    break
+            if not found_duplicate:
+                unique_students.append(s)
+        return unique_students
+
     # Refine database before saving
     _append_grade_audit(students, db_path, audit_source=audit_source, verbose=verbose)
     students_refined = refine_database(students, verbose=verbose)
+    before_count = len(students_refined)
+    students_refined = _dedup_students(students_refined)
+    after_count = len(students_refined)
+    if verbose and before_count != after_count:
+        print(f"[SaveDatabase] Deduplicated students: {before_count} -> {after_count}")
     with open(db_path, 'wb') as f:
         pickle.dump(students_refined, f)
     append_run_report(
@@ -7731,7 +8071,7 @@ def load_override_grades(file_path="override_grades.xlsx", verbose=False):
         raise ValueError("[OverrideGrades] Missing required score columns: CC, GK, or CK.")
 
     overrides = {"by_id": {}, "by_name": {}}
-    for _, row in df.iterrows():
+    for row_index, row in df.iterrows():
         raw_id = row.get(col_id) if col_id and _is_grade_provided(row.get(col_id)) else ""
         raw_name = row.get(col_name) if col_name and _is_grade_provided(row.get(col_name)) else ""
         student_id = _normalize_student_id(raw_id)
@@ -7743,11 +8083,16 @@ def load_override_grades(file_path="override_grades.xlsx", verbose=False):
                 print("[OverrideGrades] Detected swapped ID/name cells; swapping for this row.")
         if not student_id and not full_name:
             continue
+        excel_row_number = None
+        if isinstance(row_index, (int, np.integer)) and row_index >= 0:
+            excel_row_number = int(row_index) + 2
         entry = {
             "CC": _coerce_score(row.get(col_cc)) if col_cc else None,
             "CK": _coerce_score(row.get(col_ck)) if col_ck else None,
             "GK": _coerce_score(row.get(col_gk)) if col_gk else None,
             "reason": str(row.get(col_reason)).strip() if col_reason and _is_grade_provided(row.get(col_reason)) else "",
+            "row_index": row_index,
+            "row_number": excel_row_number,
         }
         if student_id:
             overrides["by_id"][student_id] = entry
