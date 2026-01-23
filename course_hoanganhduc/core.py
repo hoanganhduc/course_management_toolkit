@@ -38,6 +38,28 @@ def _apply_config_overrides(config):
             if hasattr(module, key):
                 setattr(module, key, value)
 
+def _resolve_google_paths(args, config, course_code=None, verbose=False):
+    credentials_path = args.google_credentials_path if hasattr(args, "google_credentials_path") and args.google_credentials_path else None
+    if not credentials_path:
+        credentials_path = config.get("CREDENTIALS_PATH") if isinstance(config, dict) else None
+    if not credentials_path:
+        credentials_path = get_default_credentials_path(course_code=course_code)
+    token_path = args.google_token_path if hasattr(args, "google_token_path") and args.google_token_path else None
+    if not token_path:
+        token_path = config.get("TOKEN_PATH") if isinstance(config, dict) else None
+    if not token_path:
+        token_path = get_default_token_path(course_code=course_code)
+    if args.google_credentials_path or args.google_token_path:
+        synced = sync_credentials_to_default(
+            credentials_path=credentials_path,
+            token_path=token_path,
+            course_code=course_code,
+            verbose=verbose,
+        )
+        credentials_path = synced["credentials_path"]
+        token_path = synced["token_path"]
+    return credentials_path, token_path
+
 def _generate_short_aliases(parser):
     used = set()
     for action in parser._actions:
@@ -170,11 +192,13 @@ def _build_menu_sections():
         ("Student Database", [
             ("Import students from Excel, CSV, or PDF file", "1"),
             ("Dry-run preview import (Excel/CSV/PDF, no write)", "59"),
+            ("Import students from Google Sheet URL", "78"),
             ("Save current students to database", "2"),
             ("Load students from database", "3"),
             ("Search for students by keyword (name, student id, email, etc.)", "6"),
             ("Show details of a student", "7"),
             ("Show details of all students", "8"),
+            ("List students by email domain", "77"),
             ("Interactively modify the student database", "14"),
             ("Load override grades into database", "51"),
             ("Backup students database", "54"),
@@ -249,6 +273,9 @@ def _build_menu_sections():
             ("Detect local AI models (Ollama)", "64"),
             ("List Google Classroom courses", "65"),
             ("Sync students with Google Classroom", "49"),
+            ("Grade Google Classroom assignment submissions", "75"),
+            ("Download Google Classroom submissions (checks)", "76"),
+            ("Unenroll Google Classroom students by email domain", "79"),
             ("Backup config.json", "57"),
             ("Restore config.json", "58"),
         ]),
@@ -633,6 +660,12 @@ def main():
     db_group.add_argument('--export-anonymized', '-ean', nargs='?', const=True,
                           help="Export anonymized roster to CSV (optional: output path)",
                           dest="export_anonymized", metavar="CSV_FILE")
+    db_group.add_argument('--list-email-domain', '-led', type=str,
+                          help="List students whose email matches domain(s) (comma-separated, e.g., gmail.com,outlook.com)",
+                          dest="list_email_domain", metavar="DOMAIN")
+    db_group.add_argument('--add-google-sheet', '-gsh', type=str, nargs='?', const=True,
+                          help="Import students from Google Sheet URL (optional: URL, default from config)",
+                          dest="add_google_sheet", metavar="SHEET_URL")
 
     ocr_group = parser.add_argument_group("OCR and PDFs")
     ocr_group.add_argument('--add-blackboard-counts', '-b', type=str,
@@ -805,6 +838,57 @@ def main():
     gclass_group.add_argument('--list-google-courses', '-lgc', action='store_true',
                               help="List Google Classroom courses for the current account",
                               dest="list_google_courses")
+    gclass_group.add_argument('--grade-google-classroom', '-ggc', action='store_true',
+                              help="Grade Google Classroom assignment submissions",
+                              dest="grade_google_classroom")
+    gclass_group.add_argument('--gc-coursework-id', type=str, nargs='*',
+                              help="Google Classroom coursework ID(s) to grade (optional)",
+                              dest="gc_coursework_id")
+    gclass_group.add_argument('--gc-grade-score', type=float,
+                              help="Score to assign to selected submissions (optional)",
+                              dest="gc_grade_score")
+    gclass_group.add_argument('--gc-include-graded', action='store_true',
+                              help="Include already graded submissions",
+                              dest="gc_include_graded")
+    gclass_group.add_argument('--gc-apply-all', action='store_true',
+                              help="Apply grading to all listed submissions without selection",
+                              dest="gc_apply_all")
+    gclass_group.add_argument('--download-google-classroom-submissions', '-dgcs', action='store_true',
+                              help="Download latest Google Classroom submissions and run checks",
+                              dest="download_google_classroom_submissions")
+    gclass_group.add_argument('--gc-download-coursework-id', type=str, nargs='*',
+                              help="Google Classroom coursework ID(s) to download (optional)",
+                              dest="gc_download_coursework_id")
+    gclass_group.add_argument('--gc-download-dest-dir', type=str,
+                              help="Download folder for Google Classroom submissions (optional)",
+                              dest="gc_download_dest_dir")
+    gclass_group.add_argument('--gc-meaningful-threshold', type=float,
+                              help="Meaningfulness threshold for Google Classroom checks",
+                              dest="gc_meaningful_threshold")
+    gclass_group.add_argument('--gc-similarity-threshold', type=float,
+                              help="Similarity threshold for Google Classroom checks",
+                              dest="gc_similarity_threshold")
+    gclass_group.add_argument('--gc-ocr-service', type=str,
+                              help="OCR service for Google Classroom checks (ocrspace/tesseract/paddleocr)",
+                              dest="gc_ocr_service")
+    gclass_group.add_argument('--gc-ocr-lang', type=str,
+                              help="OCR language for Google Classroom checks",
+                              dest="gc_ocr_lang")
+    gclass_group.add_argument('--unenroll-google-classroom', '-ugc', action='store_true',
+                              help="Unenroll Google Classroom students by email domain",
+                              dest="unenroll_google_classroom")
+    gclass_group.add_argument('--gc-unenroll-domain', type=str,
+                              help="Email domain(s) to match for Google Classroom unenroll (comma-separated)",
+                              dest="gc_unenroll_domain")
+    gclass_group.add_argument('--gc-unenroll-all', action='store_true',
+                              help="Unenroll all matched Google Classroom students without selection",
+                              dest="gc_unenroll_all")
+    gclass_group.add_argument('--gc-unenroll-email', type=str,
+                              help="Email(s) to match for Google Classroom unenroll (comma-separated)",
+                              dest="gc_unenroll_email")
+    gclass_group.add_argument('--gc-unenroll-select', action='store_true',
+                              help="Select Google Classroom students to unenroll from a list",
+                              dest="gc_unenroll_select")
 
     automation_group = parser.add_argument_group("Automation")
     automation_group.add_argument('--run-weekly-automation', action='store_true',
@@ -986,6 +1070,10 @@ def main():
     # Promote config values to module-level defaults (legacy behavior).
     if config:
         _apply_config_overrides(config)
+        config_warnings = validate_config(config, verbose=args.verbose)
+        if config_warnings and not args.verbose:
+            for warn in config_warnings:
+                print(f"Config warning: {warn}")
 
     if args.google_credentials_path or args.google_token_path:
         sync_credentials_to_default(
@@ -1191,16 +1279,12 @@ def main():
         backup_database(db_path=db_path, backup_dir=backup_dir, keep=args.db_backup_keep, verbose=args.verbose)
 
     if args.list_google_courses:
-        credentials_path = args.google_credentials_path if hasattr(args, "google_credentials_path") and args.google_credentials_path else None
-        if not credentials_path:
-            credentials_path = config.get("CREDENTIALS_PATH") if isinstance(config, dict) else None
-        if not credentials_path:
-            credentials_path = get_default_credentials_path(course_code=args.course_code)
-        token_path = args.google_token_path if hasattr(args, "google_token_path") and args.google_token_path else None
-        if not token_path:
-            token_path = config.get("TOKEN_PATH") if isinstance(config, dict) else None
-        if not token_path:
-            token_path = get_default_token_path(course_code=args.course_code)
+        credentials_path, token_path = _resolve_google_paths(
+            args,
+            config,
+            course_code=args.course_code,
+            verbose=args.verbose,
+        )
         courses = list_google_classroom_courses(credentials_path, token_path, verbose=args.verbose)
         if courses:
             print("Available Google Classroom courses:")
@@ -2114,21 +2198,47 @@ def main():
     if args.export_anonymized:
         export_path = args.export_anonymized if isinstance(args.export_anonymized, str) else None
         export_anonymized_roster(students, file_path=export_path, db_path=db_path, verbose=args.verbose)
+
+    if args.list_email_domain:
+        list_students_by_email_domain(students, args.list_email_domain, db_path=db_path, verbose=args.verbose)
+
+    if args.add_google_sheet:
+        sheet_url = None
+        if isinstance(args.add_google_sheet, str) and args.add_google_sheet is not True:
+            sheet_url = args.add_google_sheet
+        if not sheet_url:
+            sheet_url = config.get("GOOGLE_SHEET_URL") if isinstance(config, dict) else None
+        if not sheet_url:
+            print("Google Sheet URL not provided. Set GOOGLE_SHEET_URL in config or pass --add-google-sheet.")
+        else:
+            credentials_path, token_path = _resolve_google_paths(
+                args,
+                config,
+                course_code=args.course_code,
+                verbose=args.verbose,
+            )
+            temp_csv = download_google_sheet_to_csv(
+                sheet_url,
+                credentials_path=credentials_path,
+                token_path=token_path,
+                verbose=args.verbose,
+            )
+            import_students_from_file(
+                temp_csv,
+                db_path=db_path,
+                verbose=args.verbose,
+            )
         
     if args.sync_google_classroom:
         course_id = args.google_course_id if hasattr(args, "google_course_id") and args.google_course_id else None
         if not course_id:
             course_id = config.get("GOOGLE_CLASSROOM_COURSE_ID") if isinstance(config, dict) else None
-        credentials_path = args.google_credentials_path if hasattr(args, "google_credentials_path") and args.google_credentials_path else None
-        if not credentials_path:
-            credentials_path = config.get("CREDENTIALS_PATH") if isinstance(config, dict) else None
-        if not credentials_path:
-            credentials_path = get_default_credentials_path(course_code=args.course_code)
-        token_path = args.google_token_path if hasattr(args, "google_token_path") and args.google_token_path else None
-        if not token_path:
-            token_path = config.get("TOKEN_PATH") if isinstance(config, dict) else None
-        if not token_path:
-            token_path = get_default_token_path(course_code=args.course_code)
+        credentials_path, token_path = _resolve_google_paths(
+            args,
+            config,
+            course_code=args.course_code,
+            verbose=args.verbose,
+        )
         if not course_id:
             courses = list_google_classroom_courses(credentials_path, token_path, verbose=args.verbose)
             if not courses:
@@ -2153,15 +2263,6 @@ def main():
             existing_course_id = config.get("GOOGLE_CLASSROOM_COURSE_ID") if isinstance(config, dict) else None
             if course_id != existing_course_id:
                 update_config_values({"GOOGLE_CLASSROOM_COURSE_ID": course_id}, course_code=args.course_code, verbose=args.verbose)
-        if args.google_credentials_path or args.google_token_path:
-            synced = sync_credentials_to_default(
-                credentials_path=credentials_path,
-                token_path=token_path,
-                course_code=args.course_code,
-                verbose=args.verbose,
-            )
-            credentials_path = synced["credentials_path"]
-            token_path = synced["token_path"]
         added, updated = sync_students_with_google_classroom(
             students,
             db_path=db_path,
@@ -2172,6 +2273,72 @@ def main():
             verbose=args.verbose
         )
         print(f"Sync with Google Classroom completed: {added} students added, {updated} students updated.")
+
+    if args.grade_google_classroom:
+        course_id = args.google_course_id if hasattr(args, "google_course_id") and args.google_course_id else None
+        if not course_id:
+            course_id = config.get("GOOGLE_CLASSROOM_COURSE_ID") if isinstance(config, dict) else None
+        credentials_path, token_path = _resolve_google_paths(
+            args,
+            config,
+            course_code=args.course_code,
+            verbose=args.verbose,
+        )
+        ungraded_only = not bool(args.gc_include_graded)
+        grade_google_classroom_assignment_submissions(
+            course_id=course_id,
+            credentials_path=credentials_path,
+            token_path=token_path,
+            coursework_ids=args.gc_coursework_id,
+            score=args.gc_grade_score,
+            ungraded_only=ungraded_only,
+            apply_all=bool(args.gc_apply_all),
+            verbose=args.verbose,
+        )
+
+    if args.download_google_classroom_submissions:
+        course_id = args.google_course_id if hasattr(args, "google_course_id") and args.google_course_id else None
+        if not course_id:
+            course_id = config.get("GOOGLE_CLASSROOM_COURSE_ID") if isinstance(config, dict) else None
+        credentials_path, token_path = _resolve_google_paths(
+            args,
+            config,
+            course_code=args.course_code,
+            verbose=args.verbose,
+        )
+        download_google_classroom_assignment_submissions(
+            course_id=course_id,
+            credentials_path=credentials_path,
+            token_path=token_path,
+            coursework_ids=args.gc_download_coursework_id,
+            dest_dir=args.gc_download_dest_dir,
+            ocr_service=args.gc_ocr_service or DEFAULT_OCR_METHOD,
+            lang=args.gc_ocr_lang or "auto",
+            meaningfulness_threshold=args.gc_meaningful_threshold if args.gc_meaningful_threshold is not None else 0.4,
+            similarity_threshold=args.gc_similarity_threshold if args.gc_similarity_threshold is not None else 0.85,
+            verbose=args.verbose,
+        )
+
+    if args.unenroll_google_classroom:
+        course_id = args.google_course_id if hasattr(args, "google_course_id") and args.google_course_id else None
+        if not course_id:
+            course_id = config.get("GOOGLE_CLASSROOM_COURSE_ID") if isinstance(config, dict) else None
+        credentials_path, token_path = _resolve_google_paths(
+            args,
+            config,
+            course_code=args.course_code,
+            verbose=args.verbose,
+        )
+        unenroll_google_classroom_students(
+            course_id=course_id,
+            domains=args.gc_unenroll_domain,
+            emails=args.gc_unenroll_email,
+            select_mode=bool(args.gc_unenroll_select),
+            credentials_path=credentials_path,
+            token_path=token_path,
+            apply_all=bool(args.gc_unenroll_all),
+            verbose=args.verbose,
+        )
     
     if args.delete_empty_canvas_groups:
         course_id = args.canvas_course_id if hasattr(args, "canvas_course_id") and args.canvas_course_id else CANVAS_LMS_COURSE_ID
@@ -2285,6 +2452,46 @@ def main():
                     )
                 else:
                     print("Unsupported file type for dry-run preview.")
+            elif choice == '78':
+                sheet_url = input("Google Sheet URL (leave blank to use config default, or 'q' to quit): ").strip()
+                if sheet_url.lower() in ('q', 'quit'):
+                    continue
+                if not sheet_url:
+                    sheet_url = config.get("GOOGLE_SHEET_URL") if isinstance(config, dict) else None
+                if not sheet_url:
+                    print("Google Sheet URL not provided. Set GOOGLE_SHEET_URL in config or paste a URL.")
+                    continue
+                credentials_path = input_with_completion("Enter Google credentials JSON file path (default: gclassroom_credentials.json, or 'q' to quit): ").strip()
+                if credentials_path.lower() in ('q', 'quit'):
+                    continue
+                if not credentials_path:
+                    credentials_path = 'gclassroom_credentials.json'
+                token_path = input_with_completion("Enter Google token pickle file path (default: token.pickle, or 'q' to quit): ").strip()
+                if token_path.lower() in ('q', 'quit'):
+                    continue
+                if not token_path:
+                    token_path = 'token.pickle'
+                if args.google_credentials_path or args.google_token_path:
+                    synced = sync_credentials_to_default(
+                        credentials_path=credentials_path,
+                        token_path=token_path,
+                        course_code=args.course_code,
+                        verbose=args.verbose,
+                    )
+                    credentials_path = synced["credentials_path"]
+                    token_path = synced["token_path"]
+                temp_csv = download_google_sheet_to_csv(
+                    sheet_url,
+                    credentials_path=credentials_path,
+                    token_path=token_path,
+                    verbose=args.verbose,
+                )
+                import_students_from_file(
+                    temp_csv,
+                    db_path=db_path,
+                    verbose=args.verbose,
+                )
+                students = load_database(db_path, verbose=args.verbose)
             elif choice == '2':
                 save_database(students, db_path=db_path, verbose=args.verbose, audit_source="manual-save")
                 print("Database saved.")
@@ -2323,6 +2530,11 @@ def main():
                 ).strip().lower()
                 sort_method = sort_method or STUDENT_SORT_METHOD
                 print_all_student_details(students, verbose=args.verbose, sort_method=sort_method)
+            elif choice == '77':
+                domain = input("Email domain(s) to match (e.g., gmail.com,outlook.com, or 'q' to quit): ").strip()
+                if domain.lower() in ('q', 'quit'):
+                    continue
+                list_students_by_email_domain(students, domain, db_path=db_path, verbose=args.verbose)
             elif choice == '51':
                 override_path = input_with_completion(
                     "Enter override_grades.xlsx path (leave blank for ./override_grades.xlsx, or 'q' to quit): "
@@ -3464,6 +3676,156 @@ def main():
                 print(f"Sync with Google Classroom completed: {added} students added, {updated} students updated.")
                 # Refresh students list after syncing
                 students = load_database(db_path, verbose=args.verbose)
+            elif choice == '75':
+                course_id = input("Enter Google Classroom course ID (leave blank to select interactively, or 'q' to quit): ").strip()
+                if course_id.lower() in ('q', 'quit'):
+                    continue
+                course_id = course_id if course_id else None
+                if not course_id:
+                    course_id = config.get("GOOGLE_CLASSROOM_COURSE_ID") if isinstance(config, dict) else None
+                credentials_path = input_with_completion("Enter Google Classroom credentials JSON file path (default: gclassroom_credentials.json, or 'q' to quit): ").strip()
+                if credentials_path.lower() in ('q', 'quit'):
+                    continue
+                if not credentials_path:
+                    credentials_path = 'gclassroom_credentials.json'
+                token_path = input_with_completion("Enter Google Classroom token pickle file path (default: token.pickle, or 'q' to quit): ").strip()
+                if token_path.lower() in ('q', 'quit'):
+                    continue
+                if not token_path:
+                    token_path = 'token.pickle'
+                if args.google_credentials_path or args.google_token_path:
+                    synced = sync_credentials_to_default(
+                        credentials_path=credentials_path,
+                        token_path=token_path,
+                        course_code=args.course_code,
+                        verbose=args.verbose,
+                    )
+                    credentials_path = synced["credentials_path"]
+                    token_path = synced["token_path"]
+                coursework_raw = input("Enter coursework ID(s), comma-separated (leave blank for interactive selection): ").strip()
+                coursework_ids = [c.strip() for c in coursework_raw.split(",") if c.strip()] if coursework_raw else None
+                score_raw = input("Score to assign (leave blank to prompt later): ").strip()
+                score_val = None
+                if score_raw:
+                    try:
+                        score_val = float(score_raw)
+                    except Exception:
+                        print("Invalid score; will prompt later.")
+                include_graded_raw = input("Include already graded submissions? (y/n) [n]: ").strip().lower()
+                include_graded = include_graded_raw in ("y", "yes")
+                apply_all_raw = input("Apply grading to all listed submissions? (y/n) [n]: ").strip().lower()
+                apply_all = apply_all_raw in ("y", "yes")
+                grade_google_classroom_assignment_submissions(
+                    course_id=course_id,
+                    credentials_path=credentials_path,
+                    token_path=token_path,
+                    coursework_ids=coursework_ids,
+                    score=score_val,
+                    ungraded_only=not include_graded,
+                    apply_all=apply_all,
+                    verbose=args.verbose,
+                )
+            elif choice == '76':
+                course_id = input("Enter Google Classroom course ID (leave blank to select interactively, or 'q' to quit): ").strip()
+                if course_id.lower() in ('q', 'quit'):
+                    continue
+                course_id = course_id if course_id else None
+                if not course_id:
+                    course_id = config.get("GOOGLE_CLASSROOM_COURSE_ID") if isinstance(config, dict) else None
+                credentials_path = input_with_completion("Enter Google Classroom credentials JSON file path (default: gclassroom_credentials.json, or 'q' to quit): ").strip()
+                if credentials_path.lower() in ('q', 'quit'):
+                    continue
+                if not credentials_path:
+                    credentials_path = 'gclassroom_credentials.json'
+                token_path = input_with_completion("Enter Google Classroom token pickle file path (default: token.pickle, or 'q' to quit): ").strip()
+                if token_path.lower() in ('q', 'quit'):
+                    continue
+                if not token_path:
+                    token_path = 'token.pickle'
+                if args.google_credentials_path or args.google_token_path:
+                    synced = sync_credentials_to_default(
+                        credentials_path=credentials_path,
+                        token_path=token_path,
+                        course_code=args.course_code,
+                        verbose=args.verbose,
+                    )
+                    credentials_path = synced["credentials_path"]
+                    token_path = synced["token_path"]
+                coursework_raw = input("Enter coursework ID(s), comma-separated (leave blank for interactive selection): ").strip()
+                coursework_ids = [c.strip() for c in coursework_raw.split(",") if c.strip()] if coursework_raw else None
+                dest_dir = input_with_completion("Download folder (optional, blank for default): ").strip() or None
+                meaningful_raw = input("Meaningfulness threshold [0.4]: ").strip()
+                similarity_raw = input("Similarity threshold [0.85]: ").strip()
+                ocr_raw = input(f"OCR service (ocrspace/tesseract/paddleocr) [{DEFAULT_OCR_METHOD}]: ").strip().lower()
+                ocr_lang = input("OCR language [auto]: ").strip() or "auto"
+                meaningful = float(meaningful_raw) if meaningful_raw else 0.4
+                similarity = float(similarity_raw) if similarity_raw else 0.85
+                ocr_service = ocr_raw or DEFAULT_OCR_METHOD
+                download_google_classroom_assignment_submissions(
+                    course_id=course_id,
+                    credentials_path=credentials_path,
+                    token_path=token_path,
+                    coursework_ids=coursework_ids,
+                    dest_dir=dest_dir,
+                    ocr_service=ocr_service,
+                    lang=ocr_lang,
+                    meaningfulness_threshold=meaningful,
+                    similarity_threshold=similarity,
+                    verbose=args.verbose,
+                )
+            elif choice == '79':
+                course_id = input("Enter Google Classroom course ID (leave blank to select interactively, or 'q' to quit): ").strip()
+                if course_id.lower() in ('q', 'quit'):
+                    continue
+                course_id = course_id if course_id else None
+                if not course_id:
+                    course_id = config.get("GOOGLE_CLASSROOM_COURSE_ID") if isinstance(config, dict) else None
+                credentials_path = input_with_completion("Enter Google Classroom credentials JSON file path (default: gclassroom_credentials.json, or 'q' to quit): ").strip()
+                if credentials_path.lower() in ('q', 'quit'):
+                    continue
+                if not credentials_path:
+                    credentials_path = 'gclassroom_credentials.json'
+                token_path = input_with_completion("Enter Google Classroom token pickle file path (default: token.pickle, or 'q' to quit): ").strip()
+                if token_path.lower() in ('q', 'quit'):
+                    continue
+                if not token_path:
+                    token_path = 'token.pickle'
+                if args.google_credentials_path or args.google_token_path:
+                    synced = sync_credentials_to_default(
+                        credentials_path=credentials_path,
+                        token_path=token_path,
+                        course_code=args.course_code,
+                        verbose=args.verbose,
+                    )
+                    credentials_path = synced["credentials_path"]
+                    token_path = synced["token_path"]
+                mode_raw = input("Mode (domain/email/select) [domain]: ").strip().lower()
+                mode = mode_raw or "domain"
+                domains = None
+                emails = None
+                select_mode = False
+                if mode == "email":
+                    emails = input("Email(s) to match (comma-separated, or 'q' to quit): ").strip()
+                    if emails.lower() in ('q', 'quit'):
+                        continue
+                elif mode == "select":
+                    select_mode = True
+                else:
+                    domains = input("Email domain(s) to match (comma-separated, or 'q' to quit): ").strip()
+                    if domains.lower() in ('q', 'quit'):
+                        continue
+                apply_all_raw = input("Unenroll all matched students? (y/n) [n]: ").strip().lower()
+                apply_all = apply_all_raw in ("y", "yes")
+                unenroll_google_classroom_students(
+                    course_id=course_id,
+                    domains=domains,
+                    emails=emails,
+                    select_mode=select_mode,
+                    credentials_path=credentials_path,
+                    token_path=token_path,
+                    apply_all=apply_all,
+                    verbose=args.verbose,
+                )
             elif choice == '50':
                 # Delete empty Canvas groups
                 course_id = input("Enter Canvas course ID (leave blank for default, or 'q' to quit): ").strip()

@@ -367,6 +367,11 @@ def load_config(config_path=None, verbose=False):
         CANVAS_LMS_API_URL
         CANVAS_LMS_API_KEY
         CANVAS_LMS_COURSE_ID
+        GOOGLE_CLASSROOM_GRADE_CATEGORY_METHOD
+        GOOGLE_CLASSROOM_CC_TOPICS
+        GOOGLE_CLASSROOM_GK_TOPICS
+        GOOGLE_CLASSROOM_CK_TOPICS
+        GOOGLE_SHEET_URL
         COURSE_CODE
         COURSE_NAME
         DEFAULT_RESTRICTED
@@ -484,6 +489,11 @@ def load_config(config_path=None, verbose=False):
         "CANVAS_LMS_API_URL",
         "CANVAS_LMS_API_KEY",
         "CANVAS_LMS_COURSE_ID",
+        "GOOGLE_CLASSROOM_GRADE_CATEGORY_METHOD",
+        "GOOGLE_CLASSROOM_CC_TOPICS",
+        "GOOGLE_CLASSROOM_GK_TOPICS",
+        "GOOGLE_CLASSROOM_CK_TOPICS",
+        "GOOGLE_SHEET_URL",
         "COURSE_CODE",
         "COURSE_NAME",
         "DEFAULT_RESTRICTED",
@@ -518,6 +528,31 @@ def load_config(config_path=None, verbose=False):
     else:
         print(f"Configuration loaded from {config_path}")
     return result
+
+def validate_config(config, verbose=False):
+    """
+    Lightweight validation for config values. Returns a list of warning strings.
+    """
+    warnings = []
+    if not isinstance(config, dict):
+        return warnings
+    method = config.get("GOOGLE_CLASSROOM_GRADE_CATEGORY_METHOD")
+    if method:
+        method_norm = str(method).strip().lower()
+        if method_norm not in ("average", "avg", "mean", "sum", "total", "weighted", "weight", "ratio"):
+            warnings.append(
+                f"GOOGLE_CLASSROOM_GRADE_CATEGORY_METHOD is '{method}'; expected average/sum/weighted."
+            )
+    sheet_url = config.get("GOOGLE_SHEET_URL")
+    if sheet_url and not str(sheet_url).strip().lower().startswith("http"):
+        warnings.append("GOOGLE_SHEET_URL does not look like a URL.")
+    for key in ("GOOGLE_CLASSROOM_CC_TOPICS", "GOOGLE_CLASSROOM_GK_TOPICS", "GOOGLE_CLASSROOM_CK_TOPICS"):
+        if key in config and config.get(key) is not None and not isinstance(config.get(key), (str, list, tuple, set)):
+            warnings.append(f"{key} should be a string or list.")
+    if verbose and warnings:
+        for warn in warnings:
+            print(f"[Config] Warning: {warn}")
+    return warnings
 
 def get_default_download_folder(verbose=False):
     """

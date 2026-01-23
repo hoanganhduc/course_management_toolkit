@@ -151,6 +151,44 @@ def complete_path(text, state):
     except IndexError:
         return None
 
+def get_input_with_quit(prompt, default=None):
+    value = input(prompt).strip()
+    if value.lower() in ("q", "quit"):
+        return None
+    if not value and default is not None:
+        return str(default)
+    return value
+
+def parse_selection(selection, total):
+    if not selection:
+        return []
+    selection = selection.strip().lower()
+    if selection in ("a", "all"):
+        return list(range(1, total + 1))
+    indices = set()
+    for part in selection.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if "-" in part:
+            try:
+                start, end = part.split("-", 1)
+                start = int(start)
+                end = int(end)
+                for i in range(start, end + 1):
+                    if 1 <= i <= total:
+                        indices.add(i)
+            except Exception:
+                continue
+        else:
+            try:
+                idx = int(part)
+                if 1 <= idx <= total:
+                    indices.add(idx)
+            except Exception:
+                continue
+    return sorted(indices)
+
 def input_with_completion(prompt, select_file=False, file_filter=None, verbose=False):
     """
     Input with tab-completion for file paths.

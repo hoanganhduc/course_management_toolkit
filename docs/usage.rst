@@ -134,8 +134,10 @@ Populate the following keys in ``config.json`` (or load from a JSON file with
 - ``CANVAS_LMS_API_URL``
 - ``CANVAS_LMS_API_KEY``
 - ``CANVAS_LMS_COURSE_ID``
+- ``GOOGLE_CLASSROOM_GRADE_CATEGORY_METHOD``
 - ``CREDENTIALS_PATH``
 - ``TOKEN_PATH``
+- ``GOOGLE_SHEET_URL``
 
 Canvas operations will use these defaults unless overridden by flags like
 ``--canvas-course-id``.
@@ -161,6 +163,9 @@ List auto-generated CLI short aliases:
    course --list-cli-aliases
    course -lca
 
+Google Classroom workflows
+--------------------------
+
 Sync Google Classroom roster into the local database:
 
 .. code-block:: bash
@@ -172,6 +177,46 @@ Notes:
 
 - Canvas and Google Classroom score sync normalizes grades to a 10-point scale when max points are available.
 - Student ID inference for MAT Excel updates only works with VNU University of Science, Hanoi email format.
+- ``GOOGLE_CLASSROOM_GRADE_CATEGORY_METHOD`` controls topic/category aggregation (average, sum, weighted; default: average).
+- ``GOOGLE_CLASSROOM_CC_TOPICS``, ``GOOGLE_CLASSROOM_GK_TOPICS``, ``GOOGLE_CLASSROOM_CK_TOPICS`` map CC/GK/CK to Google Classroom topic names (comma-separated).
+- Required Google APIs: Classroom, Drive (submission downloads), Sheets (Google Sheet imports).
+- If you enable new APIs or scopes, delete ``token.pickle`` or re-run to re-auth.
+
+Setup quick steps:
+
+- Create/choose a Google Cloud project.
+- Enable APIs: Classroom API, Drive API, Google Sheets API.
+- Configure OAuth consent screen (external/internal as needed).
+- Create OAuth client credentials (Desktop app) and download ``credentials.json``.
+- Place ``credentials.json`` and (after first run) ``token.pickle`` in the config folder or pass paths via CLI.
+
+Grade Google Classroom assignments:
+
+.. code-block:: bash
+
+   course --grade-google-classroom
+   course --grade-google-classroom --gc-coursework-id 1234567890 --gc-grade-score 8
+
+Notes:
+
+- ``--gc-include-graded`` includes already graded submissions.
+- ``--gc-apply-all`` grades all listed submissions without selection.
+
+Download latest Google Classroom submissions and run checks:
+
+.. code-block:: bash
+
+   course --download-google-classroom-submissions
+   course --download-google-classroom-submissions --gc-download-coursework-id 1234567890 --gc-download-dest-dir ./gclassroom_submissions
+
+Unenroll Google Classroom students by email domain:
+
+.. code-block:: bash
+
+   course --unenroll-google-classroom --gc-unenroll-domain gmail.com
+   course --unenroll-google-classroom --gc-unenroll-domain gmail.com,outlook.com --gc-unenroll-all
+   course --unenroll-google-classroom --gc-unenroll-email student1@gmail.com,student2@outlook.com
+   course --unenroll-google-classroom --gc-unenroll-select
 
 Grade resubmissions (lists assignments that need regrading, excludes Roll Call Attendance, and prompts per student unless default is enabled). When keeping old grade, the newer submission is assigned the most recent graded score from the submission history:
 
@@ -203,9 +248,25 @@ Preview an import (no write):
    course --preview-import students.xlsx
    course -pi students.xlsx
 
+Import students from a Google Sheet URL:
+
+.. code-block:: bash
+
+   course --add-google-sheet "https://docs.google.com/spreadsheets/d/FILE_ID/edit#gid=0"
+
+Notes:
+
+- Google Sheets API must be enabled for the project tied to your credentials.
+
 Notes:
 
 - MAT*.xlsx imports ignore score columns (CC, GK, CK, totals); only roster fields are imported.
+
+List students by email domain:
+
+.. code-block:: bash
+
+   course --list-email-domain gmail.com,outlook.com
 
 Export an anonymized roster:
 

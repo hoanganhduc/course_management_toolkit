@@ -56,6 +56,11 @@ OCRSPACE_API_URL = "https://api.ocr.space/parse/image"
 CANVAS_LMS_API_URL = ""
 CANVAS_LMS_API_KEY = ""
 CANVAS_LMS_COURSE_ID = ""
+GOOGLE_CLASSROOM_GRADE_CATEGORY_METHOD = "average"
+GOOGLE_CLASSROOM_CC_TOPICS = ""
+GOOGLE_CLASSROOM_GK_TOPICS = ""
+GOOGLE_CLASSROOM_CK_TOPICS = ""
+GOOGLE_SHEET_URL = ""
 
 # Default course code used in config path when none is provided.
 DEFAULT_COURSE_CODE = "mat3500"

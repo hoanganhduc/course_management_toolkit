@@ -68,6 +68,7 @@ from .utils import *
 
 AI_LAST_MODEL_USED = {"provider": None, "model": None}
 _AI_MODEL_CACHE = {}
+_GC_CONFLICT_DECISIONS = {}
 
 def clean_excel_data(df, verbose=False):
     """
@@ -142,15 +143,15 @@ def normalize_columns(df, verbose=False):
         "Github": "GitHub Username",
         "GitHub": "GitHub Username",
         
-        # Registration/Section ID mappings - all mapped to Canvas Section
-        "Registered Class ID": "Canvas Section",
-        "Registration ID": "Canvas Section",
-        "Registered Class": "Canvas Section",
-        "Canvas Section": "Canvas Section",
-        "Section ID": "Canvas Section",
-        "Lớp học phần": "Canvas Section",
-        "Mã Section": "Canvas Section",
-        "Mã lớp đăng ký": "Canvas Section",
+        # Registration/Section ID mappings - all mapped to Section
+        "Registered Class ID": "Section",
+        "Registration ID": "Section",
+        "Registered Class": "Section",
+        "Canvas Section": "Section",
+        "Section ID": "Section",
+        "Lớp học phần": "Section",
+        "Mã Section": "Section",
+        "Mã lớp đăng ký": "Section",
         
         # Email mappings (including specific Google Classroom variants)
         "Email": "Email",
@@ -239,9 +240,9 @@ def normalize_columns(df, verbose=False):
             mapped = True
             continue
             
-        # Try Registration/Section patterns specifically - all map to Canvas Section
+        # Try Registration/Section patterns specifically - all map to Section
         if re.search(r"registered\s*class\s*id|registration\s*id|class\s*registration|section\s*id|canvas\s*section|mã\s*lớp", col.lower()):
-            col_map[col] = "Canvas Section"
+            col_map[col] = "Section"
             mapped = True
             continue
             
@@ -275,13 +276,25 @@ def normalize_columns(df, verbose=False):
         return v in {"", "anonymous", "n/a", "na", "none", "unk", "unknown", "no name", "không tên", "chưa rõ"}
 
     # Helper to check for valid 8-digit student id (must be integer, not float)
-    def is_valid_student_id(val):
+    def _normalize_student_id_value(val):
         if isinstance(val, float):
-            # Reject floats (e.g., 12345678.0)
-            return False
+            # Accept floats that are actually integer IDs (e.g., 12345678.0)
+            if val.is_integer():
+                return str(int(val))
+            return ""
+        if isinstance(val, int):
+            return str(val)
         if not isinstance(val, str):
             val = str(val)
         val = val.strip()
+        if val.endswith(".0") and val.replace(".", "", 1).isdigit():
+            val = val[:-2]
+        return val
+
+    def is_valid_student_id(val):
+        val = _normalize_student_id_value(val)
+        if not val:
+            return False
         # Reject if contains a decimal point
         if '.' in val:
             return False
@@ -340,6 +353,10 @@ def normalize_columns(df, verbose=False):
             if verbose:
                 print(f"[NormalizeColumns] Keeping extra column: {col}")
     df = df.loc[:, cols_to_keep]
+    if "Section" in df.columns and "Canvas Section" not in df.columns:
+        df["Canvas Section"] = df["Section"]
+    if "Student ID" in df.columns:
+        df["Student ID"] = df["Student ID"].apply(_normalize_student_id_value)
 
     # Reformat names of the form "<first name>, <family name>" to "<family name> <first name>"
     if "Name" in df.columns:
@@ -1588,6 +1605,235 @@ def calculate_cc_ck_gk(student, gradebook_csv_path="canvas_gradebook.csv", overr
         s = ''.join(c for c in s if not unicodedata.combining(c))
         return s
 
+    def _normalize_gc_grade_category_method(value):
+        if value is None:
+            return "average"
+        method = str(value).strip().lower()
+        if method in ("avg", "average", "mean"):
+            return "average"
+        if method in ("weighted", "weight", "ratio"):
+            return "weighted"
+        if method in ("sum", "total"):
+            return "sum"
+        return "average"
+
+    def _parse_gc_topic_list(value):
+        if not value:
+            return []
+        if isinstance(value, (list, tuple, set)):
+            return [str(v).strip() for v in value if str(v).strip()]
+        text = str(value).strip()
+        if not text:
+            return []
+        if text.startswith("[") and text.endswith("]"):
+            try:
+                parsed = json.loads(text)
+                if isinstance(parsed, list):
+                    return [str(v).strip() for v in parsed if str(v).strip()]
+            except Exception:
+                pass
+        return [v.strip() for v in text.split(",") if v.strip()]
+
+    def _coerce_gc_topic_score(entry):
+        if not isinstance(entry, dict):
+            return None, None
+        grade_val = None
+        max_val = None
+        try:
+            grade_val = float(entry.get("grade"))
+        except Exception:
+            grade_val = None
+        try:
+            max_val = float(entry.get("max_points")) if entry.get("max_points") is not None else None
+        except Exception:
+            max_val = None
+        score_val = None
+        if grade_val is not None:
+            if max_val not in (None, 0) and max_val != 10:
+                score_val = round(grade_val / max_val * 10, 2)
+            elif grade_val > 10:
+                score_val = round(grade_val / 10, 2)
+            else:
+                score_val = grade_val
+        meta = {
+            "grade": grade_val,
+            "max_points": max_val,
+            "method": entry.get("method"),
+            "count": entry.get("count"),
+        }
+        return score_val, meta
+
+    def _compute_gc_topic_score(topic_grades, topic_names):
+        if not topic_grades or not isinstance(topic_grades, dict):
+            return None, None
+        lookup = {}
+        for key in topic_grades:
+            if key is None:
+                continue
+            lookup[normalize_text(key)] = key
+        matches = []
+        for topic in topic_names:
+            key = normalize_text(topic)
+            if key in lookup:
+                topic_name = lookup[key]
+                entry = topic_grades.get(topic_name) or {}
+                score_val, score_meta = _coerce_gc_topic_score(entry)
+                if score_val is None:
+                    continue
+                matches.append(
+                    {
+                        "topic": topic_name,
+                        "score": score_val,
+                        "meta": score_meta,
+                    }
+                )
+        if not matches:
+            return None, None
+        scores = [m["score"] for m in matches if m.get("score") is not None]
+        if not scores:
+            return None, None
+        combine_method = _normalize_gc_grade_category_method(GOOGLE_CLASSROOM_GRADE_CATEGORY_METHOD)
+        total_grade = 0.0
+        total_max = 0.0
+        for item in matches:
+            meta = item.get("meta") or {}
+            grade_val = meta.get("grade")
+            max_val = meta.get("max_points")
+            if grade_val is None:
+                continue
+            total_grade += float(grade_val)
+            if max_val not in (None, 0):
+                total_max += float(max_val)
+        if combine_method in ("sum", "weighted") and total_max > 0:
+            value = round(total_grade / total_max * 10, 2)
+        elif combine_method == "sum":
+            value = round(sum(scores), 2)
+        else:
+            value = round(sum(scores) / len(scores), 2)
+        meta = {
+            "source": "google_classroom_topics",
+            "method": combine_method,
+            "value": value,
+            "topics": [m["topic"] for m in matches],
+            "topic_scores": matches,
+        }
+        return value, meta
+
+    def _should_prompt_gc_conflict():
+        try:
+            return sys.stdin.isatty()
+        except Exception:
+            return False
+
+    def _get_gc_conflict_decision(field, current_value, gc_value):
+        if _GC_CONFLICT_DECISIONS.get("_all"):
+            return _GC_CONFLICT_DECISIONS["_all"]
+        if not _should_prompt_gc_conflict():
+            return "keep_canvas"
+        prompt = (
+            f"[Google Classroom] Conflict for {field}: "
+            f"Canvas={current_value}, Google Classroom={gc_value}. "
+            "Use (c)anvas, (g)classroom, (s)kip, (a)pply to all? "
+        )
+        while True:
+            choice = input(prompt).strip().lower()
+            if choice in ("c", "canvas"):
+                return "keep_canvas"
+            if choice in ("g", "gc", "classroom", "google"):
+                return "use_gc"
+            if choice in ("s", "skip"):
+                return "skip"
+            if choice in ("a", "all"):
+                while True:
+                    sub = input("Apply which option to all conflicts? (c/g/s): ").strip().lower()
+                    if sub in ("c", "canvas"):
+                        _GC_CONFLICT_DECISIONS["_all"] = "keep_canvas"
+                        return "keep_canvas"
+                    if sub in ("g", "gc", "classroom", "google"):
+                        _GC_CONFLICT_DECISIONS["_all"] = "use_gc"
+                        return "use_gc"
+                    if sub in ("s", "skip"):
+                        _GC_CONFLICT_DECISIONS["_all"] = "skip"
+                        return "skip"
+
+    def _merge_gc_score(field, current_value, compute_meta, gc_value, gc_meta):
+        field_meta = compute_meta.get(field) or {}
+        if field_meta.get("source") == "override":
+            field_meta["google_classroom"] = gc_meta
+            field_meta["conflict"] = {
+                "canvas_value": current_value,
+                "google_classroom_value": gc_value,
+                "decision": "override_kept",
+            }
+            compute_meta[field] = field_meta
+            return current_value
+        missing = current_value is None
+        pick = field_meta.get("pick")
+        if isinstance(pick, str) and "missing" in pick:
+            missing = True
+        if missing:
+            merged = dict(gc_meta)
+            merged["decision"] = "use_gc_missing"
+            compute_meta[field] = merged
+            return gc_value
+        if isinstance(current_value, (int, float)) and abs(float(current_value) - float(gc_value)) > 1e-6:
+            decision = _get_gc_conflict_decision(field, current_value, gc_value)
+            conflict = {
+                "canvas_value": current_value,
+                "google_classroom_value": gc_value,
+                "decision": decision,
+                "canvas_source": field_meta.get("source"),
+            }
+            if decision == "use_gc":
+                merged = dict(gc_meta)
+                merged["prior_source"] = field_meta.get("source")
+                merged["conflict"] = conflict
+                compute_meta[field] = merged
+                return gc_value
+            field_meta["google_classroom"] = gc_meta
+            field_meta["conflict"] = conflict
+            compute_meta[field] = field_meta
+            return current_value
+        field_meta["google_classroom"] = gc_meta
+        compute_meta[field] = field_meta
+        return current_value
+
+    def _get_gc_scores(student):
+        topic_grades = getattr(student, "Google_Classroom_Topic_Grades", None)
+        if not isinstance(topic_grades, dict):
+            return {}
+        def _auto_match_gc_topics(field):
+            field_keywords = {
+                "CC": ["chuyen can", "attendance", "participation", "diem danh", "cc"],
+                "GK": ["giua ky", "giua ki", "midterm", "gk"],
+                "CK": ["cuoi ky", "cuoi ki", "final", "ck"],
+            }
+            keywords = field_keywords.get(field, [])
+            matches = []
+            for topic_name in topic_grades.keys():
+                ntopic = normalize_text(topic_name)
+                if any(k in ntopic for k in keywords):
+                    matches.append(topic_name)
+            return matches
+
+        result = {}
+        field_to_topics = {
+            "CC": GOOGLE_CLASSROOM_CC_TOPICS,
+            "GK": GOOGLE_CLASSROOM_GK_TOPICS,
+            "CK": GOOGLE_CLASSROOM_CK_TOPICS,
+        }
+        for field, topics_config in field_to_topics.items():
+            topics = _parse_gc_topic_list(topics_config)
+            if not topics:
+                topics = _auto_match_gc_topics(field)
+            if not topics:
+                continue
+            value, meta = _compute_gc_topic_score(topic_grades, topics)
+            if value is None or meta is None:
+                continue
+            result[field] = {"value": value, "meta": meta}
+        return result
+
     # Keywords for CC (attendance/participation/assignment group weight may vary)
     cc_keywords = [
         "chuyen can",           # chuyên cần
@@ -1856,6 +2102,14 @@ def calculate_cc_ck_gk(student, gradebook_csv_path="canvas_gradebook.csv", overr
                 "CK": CK,
                 "CC": CC,
             }
+            gc_scores = _get_gc_scores(student)
+            if gc_scores:
+                if "CC" in gc_scores:
+                    CC = _merge_gc_score("CC", CC, compute_meta, gc_scores["CC"]["value"], gc_scores["CC"]["meta"])
+                if "GK" in gc_scores:
+                    GK = _merge_gc_score("GK", GK, compute_meta, gc_scores["GK"]["value"], gc_scores["GK"]["meta"])
+                if "CK" in gc_scores:
+                    CK = _merge_gc_score("CK", CK, compute_meta, gc_scores["CK"]["value"], gc_scores["CK"]["meta"])
             CC, CK, GK, override_reason = apply_override_grades(student, CC, CK, GK, overrides)
             details["CC"] = CC
             details["GK"] = GK
@@ -2066,6 +2320,14 @@ def calculate_cc_ck_gk(student, gradebook_csv_path="canvas_gradebook.csv", overr
         "CK": CK,
         "CC": CC,
     }
+    gc_scores = _get_gc_scores(student)
+    if gc_scores:
+        if "CC" in gc_scores:
+            CC = _merge_gc_score("CC", CC, compute_meta, gc_scores["CC"]["value"], gc_scores["CC"]["meta"])
+        if "GK" in gc_scores:
+            GK = _merge_gc_score("GK", GK, compute_meta, gc_scores["GK"]["value"], gc_scores["GK"]["meta"])
+        if "CK" in gc_scores:
+            CK = _merge_gc_score("CK", CK, compute_meta, gc_scores["CK"]["value"], gc_scores["CK"]["meta"])
     CC, CK, GK, override_reason = apply_override_grades(student, CC, CK, GK, overrides)
     details["CC"] = CC
     details["GK"] = GK
@@ -2201,6 +2463,21 @@ def generate_final_evaluations(
             result_lines.append(f"Overridden scores (Điểm được ghi đè): {', '.join(override_fields)}")
         if override_reason:
             result_lines.append(f"Override reason (Lý do ghi đè): {override_reason}")
+        conflict_lines = []
+        if isinstance(compute_meta, dict):
+            for field in ("CC", "GK", "CK"):
+                field_meta = compute_meta.get(field) or {}
+                conflict = field_meta.get("conflict")
+                if conflict:
+                    conflict_lines.append(
+                        f"{field}: canvas={conflict.get('canvas_value')}, "
+                        f"google_classroom={conflict.get('google_classroom_value')}, "
+                        f"decision={conflict.get('decision')}"
+                    )
+        if conflict_lines:
+            result_lines.append("Conflicts (Canvas vs Google Classroom):")
+            for line in conflict_lines:
+                result_lines.append(f"  - {line}")
         result_lines.append(f"Total score (scale 10) (Tổng điểm thang 10): {total_score}")
 
         report_text = "\n".join(result_lines)
@@ -2292,13 +2569,21 @@ def update_mat_excel_grades(file_path, students, output_path=None, diff_output_p
         field_meta = meta.get(field) or {}
         source = field_meta.get("source")
         method = field_meta.get("method")
+        conflict = field_meta.get("conflict") or {}
+        conflict_note = ""
+        if conflict:
+            conflict_note = (
+                f", conflict=canvas:{conflict.get('canvas_value')}, "
+                f"gc:{conflict.get('google_classroom_value')}, "
+                f"decision:{conflict.get('decision')}"
+            )
         if source == "gradebook":
             if method in ("cc_column", "column"):
                 return (
                     "details: gradebook, "
                     f"final={field_meta.get('final')} ({field_meta.get('final_col')}), "
                     f"unposted={field_meta.get('unposted')} ({field_meta.get('unposted_col')}), "
-                    f"picked={field_meta.get('pick')}"
+                    f"picked={field_meta.get('pick')}{conflict_note}"
                 )
             if method == "components":
                 comps = field_meta.get("components") or {}
@@ -2310,14 +2595,14 @@ def update_mat_excel_grades(file_path, students, output_path=None, diff_output_p
                         f"[{comp.get('final_col')}], unposted={comp.get('unposted')} "
                         f"[{comp.get('unposted_col')}], picked={comp.get('pick')})"
                     )
-                return "details: gradebook components, " + "; ".join(parts)
+                return "details: gradebook components, " + "; ".join(parts) + conflict_note
         if source == "attributes":
             if method in ("cc_attribute", "final_unposted"):
                 return (
                     "details: attributes, "
                     f"final={field_meta.get('final')} ({field_meta.get('final_attr')}), "
                     f"unposted={field_meta.get('unposted')} ({field_meta.get('unposted_attr')}), "
-                    f"picked={field_meta.get('pick')}"
+                    f"picked={field_meta.get('pick')}{conflict_note}"
                 )
             if method == "components":
                 comps = field_meta.get("components") or {}
@@ -2329,17 +2614,29 @@ def update_mat_excel_grades(file_path, students, output_path=None, diff_output_p
                         f"[{comp.get('final_attr')}], unposted={comp.get('unposted')} "
                         f"[{comp.get('unposted_attr')}], picked={comp.get('pick')})"
                     )
-                return "details: attributes components, " + "; ".join(parts)
+                return "details: attributes components, " + "; ".join(parts) + conflict_note
             if method == "assignment_id":
                 return (
                     "details: attributes, "
-                    f"assignment_id={field_meta.get('assignment_id')}, value={field_meta.get('value')}"
+                    f"assignment_id={field_meta.get('assignment_id')}, value={field_meta.get('value')}{conflict_note}"
                 )
             if method == "average_by_title":
                 return (
                     "details: attributes, "
-                    f"average_by_title='{field_meta.get('keyword')}', value={field_meta.get('value')}"
+                    f"average_by_title='{field_meta.get('keyword')}', value={field_meta.get('value')}{conflict_note}"
                 )
+        if source == "google_classroom_topics":
+            topics = field_meta.get("topics") or []
+            parts = []
+            if topics:
+                parts.append("topics=" + ", ".join(topics))
+            if method:
+                parts.append(f"method={method}")
+            if field_meta.get("value") is not None:
+                parts.append(f"value={field_meta.get('value')}")
+            if conflict_note:
+                parts.append(conflict_note.lstrip(", "))
+            return "details: google classroom topics, " + "; ".join(parts)
         return "details: unavailable"
 
     # Prefer override_grades.xlsx alongside the MAT file, if present.
@@ -2683,13 +2980,22 @@ def update_mat_excel_grades(file_path, students, output_path=None, diff_output_p
                 if not dry_run:
                     cell.value = new_val
                 updated_count += 1
+                source_label = "computed"
+                if field in override_fields:
+                    source_label = "override"
+                elif isinstance(compute_meta, dict):
+                    field_meta = compute_meta.get(field) or {}
+                    if field_meta.get("source") == "google_classroom_topics":
+                        source_label = "google_classroom_topics"
+                    elif field_meta.get("source") in ("gradebook", "attributes"):
+                        source_label = field_meta.get("source")
                 diff_rows.append({
                     "Student ID": sid,
                     "Name": name,
                     "Field": field,
                     "Old": old_val,
                     "New": new_val,
-                    "Source": "override" if field in override_fields else "computed",
+                    "Source": source_label,
                     "Match Type": match_type,
                 })
                 if verbose:
@@ -2995,7 +3301,7 @@ def read_students_from_excel_csv(file_path, db_path=None, verbose=False, preview
     Unmerges all merged cells (horizontal and vertical) for header detection.
     For files matching "MAT*.xlsx" pattern, starts reading from row 10 forward.
     For MAT*.xlsx files, also ignores all rows after the row containing "Tổng số sinh viên" or similar metadata.
-    Extracts registered class ID info (Canvas section) if available in the file.
+    Extracts registered class ID info (Section) if available in the file.
     Extracts GitHub usernames from columns named "GitHub username" or similar variants.
     If verbose is True, print more details; otherwise, print only important notice.
     """
@@ -3246,7 +3552,7 @@ def read_students_from_excel_csv(file_path, db_path=None, verbose=False, preview
 
     # Check for section/class ID columns
     section_columns = []
-    section_column_names = ["Section ID", "Canvas Section", "Registration ID", "Class ID", "Registered Class ID"]
+    section_column_names = ["Section", "Section ID", "Canvas Section", "Registration ID", "Class ID", "Registered Class ID"]
     for col in df.columns:
         col_lower = str(col).lower()
         if any(term in col_lower for term in ["section", "nhóm", "registration", "đăng ký", "mã lớp", "registered class", "class registration"]):
@@ -3319,7 +3625,9 @@ def read_students_from_excel_csv(file_path, db_path=None, verbose=False, preview
         
         # If section ID found, store it with a standardized name
         if section_id:
-            student_dict["Canvas Section"] = section_id
+            student_dict["Section"] = section_id
+            if "Canvas Section" not in student_dict:
+                student_dict["Canvas Section"] = section_id
             if verbose and student_dict.get("Student ID"):
                 print(f"[ExcelCSV] Found section ID for student {student_dict.get('Student ID')}: {section_id}")
         
@@ -3380,7 +3688,7 @@ def read_students_from_excel_csv(file_path, db_path=None, verbose=False, preview
         return _normalize_student_id(getattr(student, "Student ID", None))
 
     def get_section_id(student):
-        for field_name in ["Canvas Section", "Section ID", "Registration ID", "Class ID", "Registered Class ID"]:
+        for field_name in ["Section", "Canvas Section", "Section ID", "Registration ID", "Class ID", "Registered Class ID"]:
             section = getattr(student, field_name, None)
             if section:
                 return str(section).strip()
@@ -3440,7 +3748,7 @@ def read_students_from_excel_csv(file_path, db_path=None, verbose=False, preview
                     elif k == "Name" and _is_better_name(v, u.__dict__.get(k)):
                         u.__dict__[k] = v
                     # Special handling for section ID: keep both if different
-                    elif k in ["Canvas Section", "Section ID", "Registration ID", "Class ID", "Registered Class ID"] and u.__dict__[k] != v and v:
+                    elif k in ["Section", "Canvas Section", "Section ID", "Registration ID", "Class ID", "Registered Class ID"] and u.__dict__[k] != v and v:
                         u.__dict__[f"Additional {k}"] = v
                 found_duplicate = True
                 break
@@ -4076,7 +4384,7 @@ def save_database(students, db_path, verbose=False, audit_source=None):
                             u.__dict__[k] = v
                         elif k == "Name" and _is_better_name(v, u.__dict__.get(k)):
                             u.__dict__[k] = v
-                        elif k in ["Canvas Section", "Section ID", "Registration ID", "Class ID", "Registered Class ID"] and u.__dict__[k] != v and v:
+                        elif k in ["Section", "Canvas Section", "Section ID", "Registration ID", "Class ID", "Registered Class ID"] and u.__dict__[k] != v and v:
                             u.__dict__[f"Additional {k}"] = v
                     found_duplicate = True
                     break
@@ -4313,7 +4621,7 @@ def en_to_vn_field(field, verbose=False):
     Map English field names to Vietnamese.
     Also handles "Blackboard Count: <date>" fields.
     Includes more Canvas/grade field translations.
-    Translates Canvas section (registered class ID) and GitHub username fields.
+    Translates section (registered class ID) and GitHub username fields.
     If verbose is True, print mapping details; otherwise, print only important notice if field is unmapped.
     """
     field_vn_map = {
@@ -4355,6 +4663,7 @@ def en_to_vn_field(field, verbose=False):
         "Điểm": "Điểm",
         # Canvas section / registered class ID fields
         "Canvas Section": "Lớp học phần",
+        "Section": "Lớp học phần",
         "Registration ID": "Lớp học phần",
         "Registered Class ID": "Lớp học phần",
         "Class ID": "Mã lớp",
@@ -4367,6 +4676,7 @@ def en_to_vn_field(field, verbose=False):
         "GitHub": "GitHub",
         "Google_ID": "Google ID",
         "Google_Classroom_Display_Name": "Google Classroom Display Name",
+        "Google_Classroom_Topic_Grades": "Điểm theo chủ đề Google Classroom",
     }
     if field.startswith("Blackboard Count: "):
         date = field[len("Blackboard Count: "):]
@@ -4424,6 +4734,7 @@ def print_all_student_details(students, db_path=None, verbose=False, sort_method
         else:
             print(f"Sinh viên {idx}/{len(sorted_students)}:")
         data = s.__dict__
+        has_canvas_id = bool(getattr(s, "Canvas ID", None) or data.get("Canvas ID"))
         preferred_keys = [
             "Họ và Tên", "Name",
             "Mã sinh viên", "Student ID",
@@ -4443,7 +4754,12 @@ def print_all_student_details(students, db_path=None, verbose=False, sort_method
             if key in data and key not in seen:
                 ordered_keys.append(key)
                 seen.add(key)
-        remaining_keys = [k for k in data.keys() if k not in seen and k not in ("Grades", "Submissions", "Canvas Submission Comments", "Canvas Rubric Evaluations")]
+        remaining_keys = [
+            k for k in data.keys()
+            if k not in seen
+            and k not in ("Grades", "Submissions", "Canvas Submission Comments", "Canvas Rubric Evaluations", "Google_Classroom_Topic_Grades")
+            and (has_canvas_id or k != "Canvas Section")
+        ]
         for key in sorted(remaining_keys):
             ordered_keys.append(key)
         for k in ordered_keys:
@@ -4488,6 +4804,31 @@ def print_all_student_details(students, db_path=None, verbose=False, sort_method
                 print(f"Total score (Classroom) (Tổng điểm Classroom): {total_gc}/{total_gc_max}")
             elif total_gc > 0:
                 print(f"Total score (Classroom) (Tổng điểm Classroom): {total_gc}")
+        topic_grades = data.get("Google_Classroom_Topic_Grades")
+        if isinstance(topic_grades, dict) and topic_grades:
+            print("Google Classroom topic grades (Điểm theo chủ đề Google Classroom):")
+            for topic in sorted(topic_grades.keys()):
+                info = topic_grades.get(topic) or {}
+                if isinstance(info, dict):
+                    grade = info.get("grade")
+                    max_points = info.get("max_points")
+                    count = info.get("count")
+                    method = info.get("method")
+                    if grade is not None and max_points is not None:
+                        value = f"{grade}/{max_points}"
+                    elif grade is not None:
+                        value = f"{grade}"
+                    else:
+                        value = str(info)
+                    suffix = []
+                    if count:
+                        suffix.append(f"count={count}")
+                    if method:
+                        suffix.append(f"method={method}")
+                    meta = f" ({', '.join(suffix)})" if suffix else ""
+                    print(f"  - {topic}: {value}{meta}")
+                else:
+                    print(f"  - {topic}: {info}")
         submissions = data.get("Submissions")
         if isinstance(submissions, dict):
             print("Submissions (Nộp bài):")
@@ -4699,6 +5040,65 @@ def search_students(students, query, db_path=None, verbose=False):
         print("No student found matching your query.")
     return results
 
+def list_students_by_email_domain(students, domain, db_path=None, verbose=False):
+    """
+    List students whose email matches the given domain (e.g., "gmail.com").
+    Supports comma-separated domains.
+    """
+    if db_path:
+        students = load_database(db_path)
+    students = students or []
+    if not domain:
+        if verbose:
+            print("[EmailDomain] No domain provided.")
+        else:
+            print("No domain provided.")
+        return []
+    raw_domains = str(domain).strip()
+    domains = [d.strip().lower() for d in raw_domains.split(",") if d.strip()]
+    domains = [d[1:] if d.startswith("@") else d for d in domains]
+    domains = [d for d in domains if d]
+    if not domains:
+        if verbose:
+            print("[EmailDomain] No valid domains provided.")
+        else:
+            print("No valid domains provided.")
+        return []
+    email_pattern = re.compile(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$")
+    matched = []
+    for s in students:
+        email_value = getattr(s, "Email", None)
+        candidate = None
+        if isinstance(email_value, str) and email_value.strip():
+            candidate = email_value.strip()
+        else:
+            for value in s.__dict__.values():
+                value_str = str(value).strip()
+                if value_str and email_pattern.match(value_str):
+                    candidate = value_str
+                    break
+        if not candidate:
+            continue
+        candidate_lower = candidate.lower()
+        if any(candidate_lower.endswith("@" + d) for d in domains):
+            matched.append(s)
+    domain_label = ", ".join(domains)
+    if verbose:
+        print(f"[EmailDomain] Found {len(matched)} student(s) with domain(s) '{domain_label}'.")
+    else:
+        print(f"Found {len(matched)} student(s) with domain(s) '{domain_label}'.")
+    for idx, s in enumerate(matched, 1):
+        name = getattr(s, "Name", "") or ""
+        email = getattr(s, "Email", "") or ""
+        if not email:
+            for value in s.__dict__.values():
+                value_str = str(value).strip()
+                if value_str and email_pattern.match(value_str):
+                    email = value_str
+                    break
+        print(f"{idx}. {name} | {email}")
+    return matched
+
 def export_emails_to_txt(students, file_path, db_path=None, verbose=False):
     """
     Export all student emails to a TXT file, avoiding duplicates with previously exported emails.
@@ -4771,7 +5171,7 @@ def export_emails_and_names_to_txt(students, file_path=None, db_path=None, verbo
     """
     Export all student (name, email, role, section) 4-tuples to a TXT file, avoiding duplicates.
     Role is always set to "student".
-    Section information (Canvas Section) is included if available.
+    Section information (Section/Canvas Section) is included if available.
     If verbose is True, print more details; otherwise, print only important notice.
     """
     # If db_path is provided, load students from database
@@ -4813,8 +5213,8 @@ def export_emails_and_names_to_txt(students, file_path=None, db_path=None, verbo
                 break  # Only take the first matching email attribute per student
         
         # Find section information (check multiple possible field names)
-        for section_field in ["Canvas Section", "Section ID", "Registration ID", 
-                             "Registered Class ID", "Class ID"]:
+        for section_field in ["Section", "Canvas Section", "Section ID", "Registration ID",
+                               "Registered Class ID", "Class ID"]:
             if hasattr(s, section_field) and getattr(s, section_field):
                 section = str(getattr(s, section_field)).strip()
                 break
@@ -4886,6 +5286,7 @@ def export_all_details_to_txt(students, file_path=None, db_path=None, verbose=Fa
         for idx, s in enumerate(sorted_students, 1):
             f.write(f"Sinh viên {idx}/{len(sorted_students)}:\n")
             data = s.__dict__
+            has_canvas_id = bool(getattr(s, "Canvas ID", None) or data.get("Canvas ID"))
             preferred_keys = [
                 "Họ và Tên", "Name",
                 "Mã sinh viên", "Student ID",
@@ -4905,7 +5306,12 @@ def export_all_details_to_txt(students, file_path=None, db_path=None, verbose=Fa
                 if key in data and key not in seen:
                     ordered_keys.append(key)
                     seen.add(key)
-            remaining_keys = [k for k in data.keys() if k not in seen and k not in ("Grades", "Submissions", "Canvas Submission Comments", "Canvas Rubric Evaluations")]
+            remaining_keys = [
+                k for k in data.keys()
+                if k not in seen
+                and k not in ("Grades", "Submissions", "Canvas Submission Comments", "Canvas Rubric Evaluations", "Google_Classroom_Topic_Grades")
+                and (has_canvas_id or k != "Canvas Section")
+            ]
             for key in sorted(remaining_keys):
                 ordered_keys.append(key)
             for k in ordered_keys:
@@ -4950,6 +5356,31 @@ def export_all_details_to_txt(students, file_path=None, db_path=None, verbose=Fa
                     f.write(f"Total score (Classroom) (Tổng điểm Classroom): {total_gc}/{total_gc_max}\n")
                 elif total_gc > 0:
                     f.write(f"Total score (Classroom) (Tổng điểm Classroom): {total_gc}\n")
+            topic_grades = data.get("Google_Classroom_Topic_Grades")
+            if isinstance(topic_grades, dict) and topic_grades:
+                f.write("Google Classroom topic grades (Điểm theo chủ đề Google Classroom):\n")
+                for topic in sorted(topic_grades.keys()):
+                    info = topic_grades.get(topic) or {}
+                    if isinstance(info, dict):
+                        grade = info.get("grade")
+                        max_points = info.get("max_points")
+                        count = info.get("count")
+                        method = info.get("method")
+                        if grade is not None and max_points is not None:
+                            value = f"{grade}/{max_points}"
+                        elif grade is not None:
+                            value = f"{grade}"
+                        else:
+                            value = str(info)
+                        suffix = []
+                        if count:
+                            suffix.append(f"count={count}")
+                        if method:
+                            suffix.append(f"method={method}")
+                        meta = f" ({', '.join(suffix)})" if suffix else ""
+                        f.write(f"  - {topic}: {value}{meta}\n")
+                    else:
+                        f.write(f"  - {topic}: {info}\n")
             submissions = data.get("Submissions")
             if isinstance(submissions, dict):
                 f.write("Submissions (Nộp bài):\n")

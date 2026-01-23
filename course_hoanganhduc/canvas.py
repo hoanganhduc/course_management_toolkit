@@ -66,6 +66,7 @@ from .config import *
 from .models import *
 from .utils import *
 from .data import *
+from .submission_checks import analyze_meaningfulness_in_folder
 
 def _unfold_ics_lines(lines):
     unfolded = []
@@ -2076,6 +2077,7 @@ def compare_texts_from_pdfs_in_folder(
     api_key=CANVAS_LMS_API_KEY,
     course_id=CANVAS_LMS_COURSE_ID,
     auto_send=False,
+    notify_students=True,
     verbose=False
 ):
     """
@@ -2667,6 +2669,19 @@ def compare_texts_from_pdfs_in_folder(
         if sent_status.get(key, "NOT_SENT") != "SENT":
             pairs_to_notify.append((pdf1, pdf2, ratio))
 
+    if not notify_students:
+        try:
+            with open(status_path, "w", encoding="utf-8") as f:
+                json.dump(sent_status, f, ensure_ascii=False, indent=2)
+            if verbose:
+                print(f"[PDFSimilarity] Message status saved to {status_path}")
+        except Exception as e:
+            if verbose:
+                print(f"[PDFSimilarity] Failed to save message status: {e}")
+            else:
+                print(f"Failed to save message status: {e}")
+        return similar_pairs
+
     # If there are highly similar pairs to notify, send a separate message for each pair
     if pairs_to_notify:
         if verbose:
@@ -3057,81 +3072,27 @@ def detect_meaningful_level_and_notify_students(
     elif refine is None and auto_send:
         refine = DEFAULT_AI_METHOD or None
 
-    results = {}
+    results, low_quality, extracted_texts, average_length = analyze_meaningfulness_in_folder(
+        folder_path,
+        ocr_service=ocr_service,
+        lang=lang,
+        meaningfulness_threshold=meaningfulness_threshold,
+        refine_method=refine,
+        return_texts=True,
+        write_report=True,
+        verbose=verbose,
+    )
     low_quality_files = []
-    text_lengths = []
-
-    extracted_texts = {}
-    for pdf_path in tqdm(pdf_files, desc="Extracting texts from PDFs"):
-        filename = os.path.basename(pdf_path)
-        base = os.path.splitext(pdf_path)[0]
-        txt_path = base + f"_text_{ocr_service}.txt"
-
-        if filename in sent_status and "meaningful_score" in sent_status[filename]:
-            results[filename] = {
-                "meaningful_score": sent_status[filename].get("meaningful_score", 0.0),
-                "message_sent": sent_status[filename].get("message_sent", False),
-                "error": sent_status[filename].get("error", "")
-            }
-            if "text_length" in sent_status[filename]:
-                text_lengths.append(sent_status[filename]["text_length"])
-            else:
-                if os.path.exists(txt_path):
-                    with open(txt_path, "r", encoding="utf-8") as f:
-                        text = f.read()
-                    text_lengths.append(len(text.strip()))
-            continue
-
-        if not os.path.exists(txt_path):
-            txt_path = extract_text_from_scanned_pdf(
-                pdf_path,
-                txt_output_path=txt_path,
-                service=ocr_service,
-                lang=lang,
-                simple_text=simple_text,
-            )
-        
-        if not txt_path or not os.path.exists(txt_path):
-            results[filename] = {"meaningful_score": 0.0, "message_sent": False, "error": "Failed to extract text"}
-            sent_status[filename] = results[filename]
-            continue
-        
-        with open(txt_path, "r", encoding="utf-8") as f:
-            text = f.read()
-        
-        extracted_texts[filename] = text
-        text_lengths.append(len(text.strip()))
-
-    average_length = sum(text_lengths) / len(text_lengths) if text_lengths else 0
-    if verbose:
-        print(f"[Meaningfulness] Average text length: {average_length:.0f} characters")
-    else:
-        print(f"Average text length: {average_length:.0f} characters")
-
-    for filename, text in tqdm(extracted_texts.items(), desc="Analyzing PDF meaningfulness"):
-        meaningful_score = analyze_text_meaningfulness(text, refine, average_length)
-        # Store diagnostic metrics so the report can show why a file was flagged.
-        metrics = _compute_text_quality_metrics(text)
-        issues = _summarize_quality_issues(metrics, average_length=average_length)
+    for filename, result in results.items():
         already_sent = sent_status.get(filename, {}).get("message_sent", False)
-        results[filename] = {
-            "meaningful_score": meaningful_score,
-            "message_sent": already_sent,
-            "text_length": len(text.strip()),
-            "issues": issues,
-            "metrics": {
-                "vn_char_ratio": metrics["vn_char_ratio"],
-                "alnum_ratio": metrics["alnum_ratio"],
-                "symbol_ratio": metrics["symbol_ratio"],
-                "unique_char_ratio": metrics["unique_char_ratio"],
-                "repeat_char_ratio": metrics["repeat_char_ratio"],
-                "line_empty_ratio": metrics["line_empty_ratio"],
-                "likely_math": metrics["likely_math"],
-            },
-        }
-        sent_status[filename] = results[filename]
-        if meaningful_score < meaningfulness_threshold and not already_sent:
-            low_quality_files.append((filename, meaningful_score, text))
+        result["message_sent"] = already_sent
+        sent_status[filename] = result
+    for filename in low_quality:
+        already_sent = results.get(filename, {}).get("message_sent", False)
+        score = results.get(filename, {}).get("meaningful_score", 0.0)
+        text = extracted_texts.get(filename, "")
+        if not already_sent:
+            low_quality_files.append((filename, score, text))
     
     result_path = os.path.join(folder_path, "meaningfulness_analysis.txt")
     with open(result_path, "w", encoding="utf-8") as f:
