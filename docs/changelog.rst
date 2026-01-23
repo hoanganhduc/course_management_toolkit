@@ -20,6 +20,7 @@ Version 0.1.1 (2025-12-27)
 - Improved Canvas announcement flow with short input, AI refinement, and confirmation before posting.
 - Added auto-generated short aliases for long-only CLI flags.
 - Added ``--list-cli-aliases`` to display auto-generated short aliases.
+- Added duplicate-name reporting (Name/Google Classroom/Canvas display names) with TXT/CSV/JSON exports.
 - Documentation and samples updated for new sync, calendar, and local AI tooling.
 
 Version 0.1.0 (2025-12-27)

@@ -32,11 +32,33 @@ Run
 
    course
 
+Full CLI flag reference is available in :doc:`cli_reference`.
+
 Interactive menu tips
 ---------------------
 
 - Use arrow keys (or W/S) to move, Enter to select, q to quit.
 - Type a menu number quickly to jump to that option.
+- All menu actions have CLI equivalents; see :doc:`cli_reference` for the full list.
+
+Menu ↔ CLI examples
+-------------------
+
+.. list-table::
+   :header-rows: 1
+
+   * - Menu item
+     - CLI equivalent
+   * - List students by email domain
+     - ``course --list-email-domain gmail.com``
+   * - List students with duplicate names
+     - ``course --list-duplicate-names --duplicate-name-field name``
+   * - Import students from Google Sheet
+     - ``course --add-google-sheet <URL>``
+   * - Download Google Classroom submissions
+     - ``course --download-google-classroom-submissions --gc-download-coursework-id <ID>``
+   * - Run weekly automation
+     - ``course --run-weekly-automation --weekly-assignment-id <ID>``
 
 Clear stored settings
 ---------------------
@@ -181,6 +203,8 @@ Notes:
 - ``GOOGLE_CLASSROOM_CC_TOPICS``, ``GOOGLE_CLASSROOM_GK_TOPICS``, ``GOOGLE_CLASSROOM_CK_TOPICS`` map CC/GK/CK to Google Classroom topic names (comma-separated).
 - Required Google APIs: Classroom, Drive (submission downloads), Sheets (Google Sheet imports).
 - If you enable new APIs or scopes, delete ``token.pickle`` or re-run to re-auth.
+- If topic mappings are not set, the tool auto-matches topic names using phrases like "Chuyên cần", "Giữa kỳ/giữa kì", "Cuối kỳ/cuối kì".
+- When Canvas and Google Classroom grades conflict, reports include both sources and interactive flows prompt which source to use.
 
 Setup quick steps:
 
@@ -217,6 +241,12 @@ Unenroll Google Classroom students by email domain:
    course --unenroll-google-classroom --gc-unenroll-domain gmail.com,outlook.com --gc-unenroll-all
    course --unenroll-google-classroom --gc-unenroll-email student1@gmail.com,student2@outlook.com
    course --unenroll-google-classroom --gc-unenroll-select
+   course --unenroll-google-classroom --gc-unenroll-missing-student-id
+   course --unenroll-google-classroom --gc-unenroll-domain gmail.com --dry-run
+
+Notes:
+
+- Successful unenroll removes matching students from the local database (by Email or Google_ID).
 
 Grade resubmissions (lists assignments that need regrading, excludes Roll Call Attendance, and prompts per student unless default is enabled). When keeping old grade, the newer submission is assigned the most recent graded score from the submission history:
 
@@ -267,6 +297,41 @@ List students by email domain:
 .. code-block:: bash
 
    course --list-email-domain gmail.com,outlook.com
+
+List students with duplicate names (or display names):
+
+.. code-block:: bash
+
+   course --list-duplicate-names
+   course --list-duplicate-names --duplicate-name-field google
+   course --list-duplicate-names --duplicate-name-field canvas --duplicate-name-format csv --duplicate-name-output duplicate_canvas
+   course --list-duplicate-names --duplicate-name-field "Some Custom Field" --duplicate-name-format json --duplicate-name-output dupes.json
+
+Notes:
+
+- ``--duplicate-name-field`` accepts ``name``, ``google``, ``canvas``, or a custom field name.
+- ``--duplicate-name-format`` supports ``txt``, ``csv``, or ``json`` (default: ``txt``).
+
+List students missing IDs:
+
+.. code-block:: bash
+
+   course --list-missing-ids
+   course --list-missing-ids google,canvas --missing-ids-format csv --missing-ids-output missing_ids.csv
+
+Unenroll Canvas students:
+
+.. code-block:: bash
+
+   course --unenroll-canvas --canvas-unenroll-domain gmail.com
+   course --unenroll-canvas --canvas-unenroll-email student1@gmail.com,student2@outlook.com
+   course --unenroll-canvas --canvas-unenroll-select
+   course --unenroll-canvas --canvas-unenroll-missing-student-id
+   course --unenroll-canvas --canvas-unenroll-domain gmail.com --dry-run
+
+Notes:
+
+- Successful unenroll removes matching students from the local database (by Email or Canvas ID).
 
 Export an anonymized roster:
 

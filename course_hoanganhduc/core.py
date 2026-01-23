@@ -199,6 +199,8 @@ def _build_menu_sections():
             ("Show details of a student", "7"),
             ("Show details of all students", "8"),
             ("List students by email domain", "77"),
+            ("List students with the same full name", "81"),
+            ("List students missing IDs (Google/Canvas/Student)", "82"),
             ("Interactively modify the student database", "14"),
             ("Load override grades into database", "51"),
             ("Backup students database", "54"),
@@ -236,6 +238,7 @@ def _build_menu_sections():
             ("List all assignments on Canvas LMS", "15"),
             ("List all members of a Canvas course", "16"),
             ("Search for a user in Canvas by name or email", "17"),
+            ("Unenroll Canvas students (domain/email/select/missing-id)", "83"),
             ("Download all submission files for a Canvas assignment", "18"),
             ("Add a comment to a Canvas assignment submission", "19"),
             ("Create a Canvas announcement", "20"),
@@ -275,7 +278,7 @@ def _build_menu_sections():
             ("Sync students with Google Classroom", "49"),
             ("Grade Google Classroom assignment submissions", "75"),
             ("Download Google Classroom submissions (checks)", "76"),
-            ("Unenroll Google Classroom students by email domain", "79"),
+            ("Unenroll Google Classroom students (domain/email/select/missing-id)", "79"),
             ("Backup config.json", "57"),
             ("Restore config.json", "58"),
         ]),
@@ -663,6 +666,29 @@ def main():
     db_group.add_argument('--list-email-domain', '-led', type=str,
                           help="List students whose email matches domain(s) (comma-separated, e.g., gmail.com,outlook.com)",
                           dest="list_email_domain", metavar="DOMAIN")
+    db_group.add_argument('--list-duplicate-names', action='store_true',
+                          help="List students who share the same full name",
+                          dest="list_duplicate_names")
+    db_group.add_argument('--list-missing-ids', nargs='?', const="all",
+                          help="List students missing Google/Canvas/Student IDs (optional: google,canvas,student,all or comma-separated)",
+                          dest="list_missing_ids", metavar="TYPES")
+    db_group.add_argument('--missing-ids-format', type=str, default="txt",
+                          choices=["txt", "csv", "json"],
+                          help="Output format for missing-ids report (default: txt)",
+                          dest="missing_ids_format", metavar="FMT")
+    db_group.add_argument('--missing-ids-output', type=str,
+                          help="Output path for missing-ids report (optional; extension inferred from format if missing)",
+                          dest="missing_ids_output", metavar="PATH")
+    db_group.add_argument('--duplicate-name-field', type=str, default="name",
+                          help="Field to detect duplicates (name/google/canvas or custom field name)",
+                          dest="duplicate_name_field", metavar="FIELD")
+    db_group.add_argument('--duplicate-name-format', type=str, default="txt",
+                          choices=["txt", "csv", "json"],
+                          help="Output format for duplicate-name report (default: txt)",
+                          dest="duplicate_name_format", metavar="FMT")
+    db_group.add_argument('--duplicate-name-output', type=str,
+                          help="Output path for duplicate-name report (optional; extension inferred from format if missing)",
+                          dest="duplicate_name_output", metavar="PATH")
     db_group.add_argument('--add-google-sheet', '-gsh', type=str, nargs='?', const=True,
                           help="Import students from Google Sheet URL (optional: URL, default from config)",
                           dest="add_google_sheet", metavar="SHEET_URL")
@@ -710,6 +736,24 @@ def main():
     canvas_group.add_argument('--list-canvas-members', '-cm', action='store_true', help="List all members (teachers, TAs, students) of a Canvas course", dest="list_canvas_members")
     canvas_group.add_argument('--canvas-course-id', '-cc', type=str, help="Canvas course ID (overrides default)", dest="canvas_course_id")
     canvas_group.add_argument('--search-canvas-user', '-cu', type=str, help="Search for a user in Canvas by name or email", dest="search_canvas_user")
+    canvas_group.add_argument('--unenroll-canvas', action='store_true',
+                              help="Unenroll Canvas students by domain/email/select/missing-id",
+                              dest="unenroll_canvas")
+    canvas_group.add_argument('--canvas-unenroll-domain', type=str,
+                              help="Email domain(s) to match for Canvas unenroll (comma-separated)",
+                              dest="canvas_unenroll_domain")
+    canvas_group.add_argument('--canvas-unenroll-all', action='store_true',
+                              help="Unenroll all matched Canvas students without selection",
+                              dest="canvas_unenroll_all")
+    canvas_group.add_argument('--canvas-unenroll-email', type=str,
+                              help="Email(s) to match for Canvas unenroll (comma-separated)",
+                              dest="canvas_unenroll_email")
+    canvas_group.add_argument('--canvas-unenroll-select', action='store_true',
+                              help="Select Canvas students to unenroll from a list",
+                              dest="canvas_unenroll_select")
+    canvas_group.add_argument('--canvas-unenroll-missing-student-id', action='store_true',
+                              help="Unenroll Canvas students missing Student ID in local database",
+                              dest="canvas_unenroll_missing_student_id")
     canvas_group.add_argument('--download-canvas-assignment', '-da', nargs='?', const=True, default=None,
                               help="Download all submission files for a Canvas assignment (optionally provide assignment ID)",
                               dest="download_canvas_assignment", metavar="ASSIGNMENT_ID")
@@ -889,6 +933,9 @@ def main():
     gclass_group.add_argument('--gc-unenroll-select', action='store_true',
                               help="Select Google Classroom students to unenroll from a list",
                               dest="gc_unenroll_select")
+    gclass_group.add_argument('--gc-unenroll-missing-student-id', action='store_true',
+                              help="Unenroll Google Classroom students missing Student ID in local database",
+                              dest="gc_unenroll_missing_student_id")
 
     automation_group = parser.add_argument_group("Automation")
     automation_group.add_argument('--run-weekly-automation', action='store_true',
@@ -1010,6 +1057,9 @@ def main():
         raise SystemExit(0)
 
     args = parser.parse_args(_apply_short_aliases(parser, sys.argv[1:]))
+
+    if os.environ.get("COURSE_PARSE_ONLY") == "1":
+        return 0
 
     # Persist course code early so config resolution is consistent for this run.
     if args.course_code:
@@ -2202,6 +2252,26 @@ def main():
     if args.list_email_domain:
         list_students_by_email_domain(students, args.list_email_domain, db_path=db_path, verbose=args.verbose)
 
+    if getattr(args, "list_duplicate_names", False):
+        list_students_with_same_full_name(
+            students,
+            db_path=db_path,
+            verbose=args.verbose,
+            field_name=getattr(args, "duplicate_name_field", "name"),
+            output_format=getattr(args, "duplicate_name_format", "txt"),
+            output_path=getattr(args, "duplicate_name_output", None),
+        )
+
+    if args.list_missing_ids:
+        list_students_missing_ids(
+            students,
+            categories=args.list_missing_ids,
+            db_path=db_path,
+            verbose=args.verbose,
+            output_format=getattr(args, "missing_ids_format", "txt"),
+            output_path=getattr(args, "missing_ids_output", None),
+        )
+
     if args.add_google_sheet:
         sheet_url = None
         if isinstance(args.add_google_sheet, str) and args.add_google_sheet is not True:
@@ -2337,6 +2407,27 @@ def main():
             credentials_path=credentials_path,
             token_path=token_path,
             apply_all=bool(args.gc_unenroll_all),
+            db_path=db_path,
+            missing_student_id=bool(args.gc_unenroll_missing_student_id),
+            update_local_db=True,
+            dry_run=bool(args.dry_run),
+            verbose=args.verbose,
+        )
+
+    if getattr(args, "unenroll_canvas", False):
+        course_id = args.canvas_course_id if hasattr(args, "canvas_course_id") and args.canvas_course_id else CANVAS_LMS_COURSE_ID
+        unenroll_canvas_students(
+            course_id=course_id,
+            domains=args.canvas_unenroll_domain,
+            emails=args.canvas_unenroll_email,
+            select_mode=bool(args.canvas_unenroll_select),
+            apply_all=bool(args.canvas_unenroll_all),
+            missing_student_id=bool(args.canvas_unenroll_missing_student_id),
+            db_path=db_path,
+            dry_run=bool(args.dry_run),
+            update_local_db=True,
+            api_url=CANVAS_LMS_API_URL,
+            api_key=CANVAS_LMS_API_KEY,
             verbose=args.verbose,
         )
     
@@ -2535,6 +2626,41 @@ def main():
                 if domain.lower() in ('q', 'quit'):
                     continue
                 list_students_by_email_domain(students, domain, db_path=db_path, verbose=args.verbose)
+            elif choice == '81':
+                field_raw = input("Duplicate field (name/google/canvas/custom) [name]: ").strip().lower()
+                if field_raw == "custom":
+                    field_name = input("Custom field name: ").strip()
+                else:
+                    field_name = field_raw or "name"
+                fmt_raw = input("Output format (txt/csv/json) [txt]: ").strip().lower()
+                output_format = fmt_raw or "txt"
+                output_path = input_with_completion(
+                    "Output path (leave blank to print only): "
+                ).strip()
+                list_students_with_same_full_name(
+                    students,
+                    db_path=db_path,
+                    verbose=args.verbose,
+                    field_name=field_name,
+                    output_format=output_format,
+                    output_path=output_path or None,
+                )
+            elif choice == '82':
+                types_raw = input("Missing ID types (google, canvas, student, all) [all]: ").strip().lower()
+                types_raw = types_raw or "all"
+                fmt_raw = input("Output format (txt/csv/json) [txt]: ").strip().lower()
+                output_format = fmt_raw or "txt"
+                output_path = input_with_completion(
+                    "Output path (leave blank to print only): "
+                ).strip()
+                list_students_missing_ids(
+                    students,
+                    categories=types_raw,
+                    db_path=db_path,
+                    verbose=args.verbose,
+                    output_format=output_format,
+                    output_path=output_path or None,
+                )
             elif choice == '51':
                 override_path = input_with_completion(
                     "Enter override_grades.xlsx path (leave blank for ./override_grades.xlsx, or 'q' to quit): "
@@ -2781,6 +2907,48 @@ def main():
                     api_key=CANVAS_LMS_API_KEY,
                     course_id=course_id,
                     verbose=args.verbose
+                )
+            elif choice == '83':
+                course_id = input("Enter Canvas course ID (leave blank for default, or 'q' to quit): ").strip()
+                if course_id.lower() in ('q', 'quit'):
+                    continue
+                if not course_id:
+                    course_id = CANVAS_LMS_COURSE_ID
+                mode_raw = input("Mode (domain/email/select/missing) [domain]: ").strip().lower()
+                mode = mode_raw or "domain"
+                domains = None
+                emails = None
+                select_mode = False
+                missing_student_id = False
+                if mode == "email":
+                    emails = input("Email(s) to match (comma-separated, or 'q' to quit): ").strip()
+                    if emails.lower() in ('q', 'quit'):
+                        continue
+                elif mode == "select":
+                    select_mode = True
+                elif mode == "missing":
+                    missing_student_id = True
+                else:
+                    domains = input("Email domain(s) to match (comma-separated, or 'q' to quit): ").strip()
+                    if domains.lower() in ('q', 'quit'):
+                        continue
+                apply_all_raw = input("Unenroll all matched students? (y/n) [n]: ").strip().lower()
+                apply_all = apply_all_raw in ("y", "yes")
+                dry_run_raw = input("Dry-run only (no unenroll)? (y/n) [n]: ").strip().lower()
+                dry_run = dry_run_raw in ("y", "yes")
+                unenroll_canvas_students(
+                    course_id=course_id,
+                    domains=domains,
+                    emails=emails,
+                    select_mode=select_mode,
+                    apply_all=apply_all,
+                    missing_student_id=missing_student_id,
+                    db_path=db_path,
+                    dry_run=dry_run,
+                    update_local_db=True,
+                    api_url=CANVAS_LMS_API_URL,
+                    api_key=CANVAS_LMS_API_KEY,
+                    verbose=args.verbose,
                 )
             elif choice == '18':
                 course_id = input("Enter Canvas course ID (leave blank for default, or 'q' to quit): ").strip()
@@ -3799,23 +3967,28 @@ def main():
                     )
                     credentials_path = synced["credentials_path"]
                     token_path = synced["token_path"]
-                mode_raw = input("Mode (domain/email/select) [domain]: ").strip().lower()
+                mode_raw = input("Mode (domain/email/select/missing) [domain]: ").strip().lower()
                 mode = mode_raw or "domain"
                 domains = None
                 emails = None
                 select_mode = False
+                missing_student_id = False
                 if mode == "email":
                     emails = input("Email(s) to match (comma-separated, or 'q' to quit): ").strip()
                     if emails.lower() in ('q', 'quit'):
                         continue
                 elif mode == "select":
                     select_mode = True
+                elif mode == "missing":
+                    missing_student_id = True
                 else:
                     domains = input("Email domain(s) to match (comma-separated, or 'q' to quit): ").strip()
                     if domains.lower() in ('q', 'quit'):
                         continue
                 apply_all_raw = input("Unenroll all matched students? (y/n) [n]: ").strip().lower()
                 apply_all = apply_all_raw in ("y", "yes")
+                dry_run_raw = input("Dry-run only (no unenroll)? (y/n) [n]: ").strip().lower()
+                dry_run = dry_run_raw in ("y", "yes")
                 unenroll_google_classroom_students(
                     course_id=course_id,
                     domains=domains,
@@ -3824,6 +3997,9 @@ def main():
                     credentials_path=credentials_path,
                     token_path=token_path,
                     apply_all=apply_all,
+                    missing_student_id=missing_student_id,
+                    db_path=db_path,
+                    dry_run=dry_run,
                     verbose=args.verbose,
                 )
             elif choice == '50':

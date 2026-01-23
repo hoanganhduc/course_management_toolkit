@@ -67,6 +67,18 @@ course
 Interactive menu tips:
 - Use arrow keys (or W/S) to move, Enter to select, q to quit.
 - You can also type the menu number quickly to jump to an option.
+Menu coverage note:
+- All menu actions have CLI equivalents; see `docs/cli_reference.rst` for the full flag list.
+
+Menu ↔ CLI examples:
+
+| Menu item | CLI equivalent |
+| --- | --- |
+| List students by email domain | `course --list-email-domain gmail.com` |
+| List students with duplicate names | `course --list-duplicate-names --duplicate-name-field name` |
+| Import students from Google Sheet | `course --add-google-sheet <URL>` |
+| Download Google Classroom submissions | `course --download-google-classroom-submissions --gc-download-coursework-id <ID>` |
+| Run weekly automation | `course --run-weekly-automation --weekly-assignment-id <ID>` |
 
 ## Common workflows
 
@@ -86,6 +98,10 @@ course -sc
 
 Notes:
 - Canvas sync now stores submission comments and rubric evaluations per assignment in the database.
+
+Student database utilities:
+- Find duplicate names or display names (Name/Google Classroom/Canvas).
+- Export duplicate-name reports to TXT/CSV/JSON.
 
 List auto-generated CLI short aliases:
 
@@ -108,6 +124,8 @@ Notes:
 - Student ID inference for MAT Excel updates only works with VNU University of Science, Hanoi email format.
 - Google APIs required: Classroom, Drive (for submission downloads), Sheets (for Google Sheet imports).
 - After enabling new APIs or scopes, delete `token.pickle` or re-run to re-auth.
+- If `GOOGLE_CLASSROOM_CC_TOPICS`/`GOOGLE_CLASSROOM_GK_TOPICS`/`GOOGLE_CLASSROOM_CK_TOPICS` are not set, topic names are auto-matched using phrases like "Chuyên cần", "Giữa kỳ/giữa kì", "Cuối kỳ/cuối kì".
+- When Canvas and Google Classroom grades conflict, the report includes both sources and notes the conflict; interactive flows prompt which source to use.
 
 Setup quick steps:
 - Create/choose a Google Cloud project.
@@ -145,7 +163,11 @@ course --unenroll-google-classroom --gc-unenroll-domain gmail.com
 course --unenroll-google-classroom --gc-unenroll-domain gmail.com,outlook.com --gc-unenroll-all
 course --unenroll-google-classroom --gc-unenroll-email student1@gmail.com,student2@outlook.com
 course --unenroll-google-classroom --gc-unenroll-select
+course --unenroll-google-classroom --gc-unenroll-missing-student-id
+course --unenroll-google-classroom --gc-unenroll-domain gmail.com --dry-run
 ```
+Note:
+- Successful unenroll removes matching students from the local database (by Email or Google_ID).
 
 Grade resubmissions (lists assignments that need regrading, excludes Roll Call Attendance, and prompts per student unless default is enabled). When keeping old grade, the newer submission is assigned the most recent graded score from the submission history:
 
@@ -190,6 +212,37 @@ List students by email domain:
 ```bash
 course --list-email-domain gmail.com,outlook.com
 ```
+
+List students with duplicate names (or display names):
+
+```bash
+course --list-duplicate-names
+course --list-duplicate-names --duplicate-name-field google
+course --list-duplicate-names --duplicate-name-field canvas --duplicate-name-format csv --duplicate-name-output duplicate_canvas
+course --list-duplicate-names --duplicate-name-field "Some Custom Field" --duplicate-name-format json --duplicate-name-output dupes.json
+```
+Notes:
+- `--duplicate-name-field` accepts `name`, `google`, `canvas`, or a custom field name.
+- `--duplicate-name-format` supports `txt`, `csv`, or `json` (default: `txt`).
+
+List students missing IDs:
+
+```bash
+course --list-missing-ids
+course --list-missing-ids google,canvas --missing-ids-format csv --missing-ids-output missing_ids.csv
+```
+
+Unenroll Canvas students:
+
+```bash
+course --unenroll-canvas --canvas-unenroll-domain gmail.com
+course --unenroll-canvas --canvas-unenroll-email student1@gmail.com,student2@outlook.com
+course --unenroll-canvas --canvas-unenroll-select
+course --unenroll-canvas --canvas-unenroll-missing-student-id
+course --unenroll-canvas --canvas-unenroll-domain gmail.com --dry-run
+```
+Note:
+- Successful unenroll removes matching students from the local database (by Email or Canvas ID).
 
 Export an anonymized roster:
 
@@ -508,6 +561,7 @@ Common errors and fixes:
 ## Documentation
 
 Sphinx documentation lives in `docs/`.
+- CLI reference (auto-generated from the parser): `docs/cli_reference.rst`.
 
 Build HTML docs:
 

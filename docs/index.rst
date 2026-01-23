@@ -21,6 +21,7 @@ Recent updates
 - Canvas/Google Classroom sync now normalizes scores to a 10-point scale when possible.
 - MAT*.xlsx roster imports ignore score columns (CC, GK, CK, totals).
 - Student detail exports support selectable sort orders.
+- Duplicate-name reporting supports Name, Google Classroom Display Name, and Canvas Display Name with TXT/CSV/JSON exports.
 
 Contents
 --------
@@ -29,5 +30,6 @@ Contents
    :maxdepth: 2
 
    usage
+   cli_reference
    api
    changelog

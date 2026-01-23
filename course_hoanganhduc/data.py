@@ -5099,6 +5099,263 @@ def list_students_by_email_domain(students, domain, db_path=None, verbose=False)
         print(f"{idx}. {name} | {email}")
     return matched
 
+def list_students_with_same_full_name(
+    students,
+    db_path=None,
+    verbose=False,
+    field_name="name",
+    output_format="txt",
+    output_path=None,
+):
+    """
+    List students sharing the same field value (case/diacritic-insensitive).
+    """
+    if db_path:
+        students = load_database(db_path)
+    students = students or []
+
+    field_key = str(field_name or "name").strip().lower()
+    if field_key in ("name", "full name", "fullname", "full_name"):
+        field_label = "Name"
+        field_candidates = ["Name"]
+    elif field_key in ("google", "google classroom", "google_classroom", "gclass", "gc"):
+        field_label = "Google Classroom Display Name"
+        field_candidates = ["Google Classroom Display Name", "Google_Classroom_Display_Name"]
+    elif field_key in ("canvas", "canvas display name", "canvas name", "canvas_display_name"):
+        field_label = "Canvas Display Name"
+        field_candidates = ["Canvas Display Name", "Canvas Name", "Canvas_Name"]
+    else:
+        field_label = str(field_name).strip()
+        field_candidates = [field_label]
+
+    grouped = defaultdict(list)
+    for s in students:
+        field_value = None
+        for candidate in field_candidates:
+            raw = getattr(s, candidate, None)
+            if raw:
+                field_value = raw
+                break
+        if not field_value:
+            continue
+        key = _normalize_vietnamese_name(str(field_value))
+        if not key:
+            continue
+        grouped[key].append(s)
+
+    duplicates = [(key, group) for key, group in grouped.items() if len(group) > 1]
+    duplicates.sort(key=lambda item: (len(item[1]) * -1, item[0]))
+    label = field_label or "Name"
+    if verbose:
+        print(f"[DuplicateNames] Found {len(duplicates)} duplicate group(s) by {label}.")
+    elif duplicates:
+        print(f"Found {len(duplicates)} duplicate group(s) by {label}.")
+    else:
+        print(f"No duplicate {label} values found.")
+        return []
+
+    email_pattern = re.compile(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$")
+    lines = []
+    for idx, (_, group) in enumerate(duplicates, 1):
+        display_name = None
+        for candidate in field_candidates:
+            display_name = getattr(group[0], candidate, None)
+            if display_name:
+                break
+        display_name = display_name or "Unknown"
+        header = f"{idx}. {display_name} ({len(group)} students)"
+        print(header)
+        lines.append(header)
+        for s in group:
+            name = getattr(s, "Name", "") or ""
+            student_id = getattr(s, "Student ID", "") or ""
+            email = getattr(s, "Email", "") or ""
+            field_value = ""
+            for candidate in field_candidates:
+                raw = getattr(s, candidate, None)
+                if raw:
+                    field_value = raw
+                    break
+            if not email:
+                for value in s.__dict__.values():
+                    value_str = str(value).strip()
+                    if value_str and email_pattern.match(value_str):
+                        email = value_str
+                        break
+            entry = f"   - {name} | {student_id} | {email} | {field_value}"
+            print(entry)
+            lines.append(entry)
+
+    if output_path:
+        fmt = (output_format or "txt").strip().lower()
+        ext = os.path.splitext(output_path)[1].lower()
+        if not ext:
+            output_path = f"{output_path}.{fmt}"
+        os.makedirs(os.path.dirname(os.path.abspath(output_path)) or ".", exist_ok=True)
+        if fmt == "csv":
+            with open(output_path, "w", newline="", encoding="utf-8") as f:
+                writer = csv.writer(f)
+                writer.writerow(["group", "group_size", "field", "name", "student_id", "email", "field_value"])
+                for idx, (_, group) in enumerate(duplicates, 1):
+                    for s in group:
+                        field_value = ""
+                        for candidate in field_candidates:
+                            raw = getattr(s, candidate, None)
+                            if raw:
+                                field_value = raw
+                                break
+                        name = getattr(s, "Name", "") or ""
+                        student_id = getattr(s, "Student ID", "") or ""
+                        email = getattr(s, "Email", "") or ""
+                        if not email:
+                            for value in s.__dict__.values():
+                                value_str = str(value).strip()
+                                if value_str and email_pattern.match(value_str):
+                                    email = value_str
+                                    break
+                        writer.writerow([idx, len(group), label, name, student_id, email, field_value])
+        elif fmt == "json":
+            payload = []
+            for idx, (key, group) in enumerate(duplicates, 1):
+                group_payload = {
+                    "group": idx,
+                    "group_size": len(group),
+                    "field": label,
+                    "normalized_key": key,
+                    "students": [],
+                }
+                for s in group:
+                    field_value = ""
+                    for candidate in field_candidates:
+                        raw = getattr(s, candidate, None)
+                        if raw:
+                            field_value = raw
+                            break
+                    name = getattr(s, "Name", "") or ""
+                    student_id = getattr(s, "Student ID", "") or ""
+                    email = getattr(s, "Email", "") or ""
+                    if not email:
+                        for value in s.__dict__.values():
+                            value_str = str(value).strip()
+                            if value_str and email_pattern.match(value_str):
+                                email = value_str
+                                break
+                    group_payload["students"].append({
+                        "name": name,
+                        "student_id": student_id,
+                        "email": email,
+                        "field_value": field_value,
+                    })
+                payload.append(group_payload)
+            with open(output_path, "w", encoding="utf-8") as f:
+                json.dump(payload, f, ensure_ascii=False, indent=2)
+        else:
+            with open(output_path, "w", encoding="utf-8") as f:
+                f.write("\n".join(lines))
+        if verbose:
+            print(f"[DuplicateNames] Saved duplicate report to {output_path}")
+        else:
+            print(f"Saved duplicate report to {output_path}")
+    return duplicates
+
+
+def list_students_missing_ids(
+    students,
+    categories=None,
+    db_path=None,
+    verbose=False,
+    output_format="txt",
+    output_path=None,
+):
+    """
+    List students missing Google ID, Canvas ID, and/or Student ID.
+    categories: 'google', 'canvas', 'student', 'all' or comma-separated list.
+    """
+    if db_path:
+        students = load_database(db_path)
+    students = students or []
+
+    raw = (categories or "all")
+    if isinstance(raw, (list, tuple, set)):
+        tokens = [str(v).strip().lower() for v in raw if str(v).strip()]
+    else:
+        tokens = [v.strip().lower() for v in str(raw).split(",") if v.strip()]
+    if not tokens or "all" in tokens:
+        tokens = ["google", "canvas", "student"]
+
+    field_map = {
+        "google": ["Google_ID", "Google ID", "GoogleID"],
+        "canvas": ["Canvas ID", "Canvas_ID", "CanvasId"],
+        "student": ["Student ID", "Student_ID", "StudentId"],
+    }
+
+    def _get_value(s, candidates):
+        for key in candidates:
+            value = getattr(s, key, None)
+            if value is None:
+                continue
+            value_str = str(value).strip()
+            if value_str:
+                return value_str
+        return ""
+
+    results = {}
+    for token in tokens:
+        candidates = field_map.get(token)
+        if not candidates:
+            continue
+        missing = []
+        for s in students:
+            if not _get_value(s, candidates):
+                missing.append(s)
+        results[token] = missing
+
+    if not results:
+        print("No valid missing-id categories selected.")
+        return {}
+
+    rows = []
+    for token in tokens:
+        missing = results.get(token, [])
+        label = token.capitalize()
+        if verbose:
+            print(f"[MissingIDs] {label}: {len(missing)} student(s) missing.")
+        else:
+            print(f"{label} ID missing: {len(missing)} student(s).")
+        for idx, s in enumerate(missing, 1):
+            name = getattr(s, "Name", "") or ""
+            student_id = _get_value(s, field_map["student"])
+            email = getattr(s, "Email", "") or ""
+            print(f"{idx}. {name} | {student_id} | {email}")
+            rows.append({
+                "category": token,
+                "name": name,
+                "student_id": student_id,
+                "email": email,
+            })
+
+    if output_path:
+        fmt = (output_format or "txt").strip().lower()
+        ext = os.path.splitext(output_path)[1].lower()
+        if not ext:
+            output_path = f"{output_path}.{fmt}"
+        os.makedirs(os.path.dirname(os.path.abspath(output_path)) or ".", exist_ok=True)
+        if fmt == "csv":
+            with open(output_path, "w", newline="", encoding="utf-8") as f:
+                writer = csv.DictWriter(f, fieldnames=["category", "name", "student_id", "email"])
+                writer.writeheader()
+                writer.writerows(rows)
+        elif fmt == "json":
+            with open(output_path, "w", encoding="utf-8") as f:
+                json.dump(rows, f, ensure_ascii=False, indent=2)
+        else:
+            with open(output_path, "w", encoding="utf-8") as f:
+                for row in rows:
+                    f.write(f"{row['category']} | {row['name']} | {row['student_id']} | {row['email']}\n")
+        print(f"Missing ID report saved to: {output_path}")
+
+    return results
+
 def export_emails_to_txt(students, file_path, db_path=None, verbose=False):
     """
     Export all student emails to a TXT file, avoiding duplicates with previously exported emails.
