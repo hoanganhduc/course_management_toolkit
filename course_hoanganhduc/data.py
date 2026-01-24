@@ -3723,6 +3723,8 @@ def read_students_from_excel_csv(file_path, db_path=None, verbose=False, preview
             is_duplicate = False
             if sid_s and sid_u and sid_s == sid_u:
                 is_duplicate = True
+            elif email_s and email_u and email_s == email_u:
+                is_duplicate = True
             elif name_s and name_u and name_s == name_u and not sid_s and not sid_u:
                 is_duplicate = True
             if is_duplicate:
@@ -3911,6 +3913,8 @@ def read_students_from_pdf(pdf_path, db_path=None, lang="auto", service=DEFAULT_
             name_u = get_name(u)
             is_duplicate = False
             if sid_s and sid_u and sid_s == sid_u:
+                is_duplicate = True
+            elif email_s and email_u and email_s == email_u:
                 is_duplicate = True
             elif name_s and name_u and name_s == name_u and not sid_s and not sid_u:
                 is_duplicate = True
