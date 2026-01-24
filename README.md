@@ -76,6 +76,8 @@ Menu ↔ CLI examples:
 | --- | --- |
 | List students by email domain | `course --list-email-domain gmail.com` |
 | List students with duplicate names | `course --list-duplicate-names --duplicate-name-field name` |
+| List Google Classroom students | `course --list-google-students` |
+| List students by submission status | `course --list-submission-status google:turned_in` |
 | Import students from Google Sheet | `course --add-google-sheet <URL>` |
 | Download Google Classroom submissions | `course --download-google-classroom-submissions --gc-download-coursework-id <ID>` |
 | Run weekly automation | `course --run-weekly-automation --weekly-assignment-id <ID>` |
@@ -231,6 +233,42 @@ List students missing IDs:
 course --list-missing-ids
 course --list-missing-ids google,canvas --missing-ids-format csv --missing-ids-output missing_ids.csv
 ```
+
+List Google Classroom students:
+
+```bash
+course --list-google-students
+course --list-google-students --google-course-id 1234567890
+```
+
+List students by submission status:
+
+```bash
+course --list-submission-status google:turned_in
+course --list-submission-status canvas:submitted
+course --list-submission-status google:NEW@Quiz 1
+course --list-submission-status google:NEW@Quiz 1,Quiz 2
+```
+
+Notes:
+- Google Classroom values: `NEW`, `CREATED`, `TURNED_IN`, `RETURNED`, `RECLAIMED_BY_STUDENT`.
+- Canvas values: `UNSUBMITTED`, `SUBMITTED`, `GRADED`, `PENDING_REVIEW`, `COMPLETE`.
+
+Combine listing filters (AND semantics):
+
+```bash
+course --list-email-domain gmail.com --list-missing-ids student
+course --list-email-domain gmail.com --list-submission-status google:turned_in
+course --list-missing-ids student --list-submission-status google:NEW
+course --list-email-domain gmail.com --list-missing-ids student --list-submission-status google:CREATED
+course --list-submission-status canvas:UNSUBMITTED --list-missing-ids student
+course --list-email-domain gmail.com --list-submission-status google:TURNED_IN@Quiz 1
+course --list-email-domain gmail.com --list-submission-status google:TURNED_IN@Quiz 1,Quiz 2
+```
+
+Notes:
+- `--list-duplicate-names` and Canvas/Google roster listings cannot be combined with other listing flags.
+- Export options (like `--missing-ids-output`) are ignored in combined mode; the merged list prints to the console.
 
 Unenroll Canvas students:
 
@@ -389,6 +427,8 @@ Optional settings:
 - `GOOGLE_CLASSROOM_GRADE_CATEGORY_METHOD` for topic/category aggregation (average, sum, weighted; default: average).
 - `GOOGLE_CLASSROOM_CC_TOPICS`, `GOOGLE_CLASSROOM_GK_TOPICS`, `GOOGLE_CLASSROOM_CK_TOPICS` for CC/GK/CK mapping (comma-separated topic names).
 - `GOOGLE_SHEET_URL` for a default Google Sheet import source.
+- `GOOGLE_SHEET_LECTURER_TOPICS_URL` for the lecturer mini-project topics sheet.
+- `GOOGLE_SHEET_STUDENT_REGISTRATION_URL` for the student mini-project registration sheet.
 
 ## Course calendar builder
 

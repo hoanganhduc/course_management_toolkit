@@ -12,6 +12,8 @@ except ImportError:  # Windows without pyreadline installed
 import sys
 import argparse
 import re
+import random
+import hashlib
 import glob
 from datetime import datetime
 import openpyxl
@@ -64,6 +66,7 @@ from .version import __version__
 from .settings import *
 from .config import *
 from .models import *
+from .gclass_sheets import download_google_sheet_to_csv
 from .utils import *
 
 AI_LAST_MODEL_USED = {"provider": None, "model": None}
@@ -3702,17 +3705,7 @@ def read_students_from_excel_csv(file_path, db_path=None, verbose=False, preview
         return None
 
     def _is_better_name(candidate, current):
-        if not candidate:
-            return False
-        if not current:
-            return True
-        cand = str(candidate).strip()
-        cur = str(current).strip()
-        if len(cand.split()) > len(cur.split()):
-            return True
-        if len(cand) > len(cur) and _normalize_vietnamese_name(cand).startswith(_normalize_vietnamese_name(cur)):
-            return True
-        return False
+        return _is_better_display_name(candidate, current)
 
     # Deduplication logic with update/merge
     unique_students = []
@@ -3730,16 +3723,8 @@ def read_students_from_excel_csv(file_path, db_path=None, verbose=False, preview
             is_duplicate = False
             if sid_s and sid_u and sid_s == sid_u:
                 is_duplicate = True
-            elif (sid_s and not sid_u) or (not sid_s and sid_u):
-                if email_s and email_u and email_s == email_u:
-                    is_duplicate = True
-                elif name_s and name_u and name_s == name_u:
-                    is_duplicate = True
-            elif email_s and email_u and email_s == email_u:
+            elif name_s and name_u and name_s == name_u and not sid_s and not sid_u:
                 is_duplicate = True
-            elif (email_s and not email_u) or (not email_s and email_u):
-                if name_s and name_u and name_s == name_u:
-                    is_duplicate = True
             if is_duplicate:
                 # Update u with any new fields from s
                 for k, v in s.__dict__.items():
@@ -3914,17 +3899,7 @@ def read_students_from_pdf(pdf_path, db_path=None, lang="auto", service=DEFAULT_
         return _normalize_student_id(getattr(student, "Student ID", None))
 
     def _is_better_name(candidate, current):
-        if not candidate:
-            return False
-        if not current:
-            return True
-        cand = str(candidate).strip()
-        cur = str(current).strip()
-        if len(cand.split()) > len(cur.split()):
-            return True
-        if len(cand) > len(cur) and _normalize_vietnamese_name(cand).startswith(_normalize_vietnamese_name(cur)):
-            return True
-        return False
+        return _is_better_display_name(candidate, current)
 
     unique_students = []
     for s in all_students:
@@ -3937,7 +3912,7 @@ def read_students_from_pdf(pdf_path, db_path=None, lang="auto", service=DEFAULT_
             is_duplicate = False
             if sid_s and sid_u and sid_s == sid_u:
                 is_duplicate = True
-            elif name_s and name_u and name_s == name_u:
+            elif name_s and name_u and name_s == name_u and not sid_s and not sid_u:
                 is_duplicate = True
             if is_duplicate:
                 # Update u with any new fields from s
@@ -4359,6 +4334,14 @@ def save_database(students, db_path, verbose=False, audit_source=None):
                 return True
             cand = str(candidate).strip()
             cur = str(current).strip()
+            if cand == cur:
+                return False
+            has_diacritic = any(ch not in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz '-" for ch in cand)
+            cur_has_diacritic = any(ch not in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz '-" for ch in cur)
+            if has_diacritic and not cur_has_diacritic:
+                return True
+            if cand.istitle() and not cur.istitle():
+                return True
             if len(cand.split()) > len(cur.split()):
                 return True
             if len(cand) > len(cur) and _normalize_vietnamese_name(cand).startswith(_normalize_vietnamese_name(cur)):
@@ -4376,7 +4359,7 @@ def save_database(students, db_path, verbose=False, audit_source=None):
                 is_duplicate = False
                 if sid_s and sid_u and sid_s == sid_u:
                     is_duplicate = True
-                elif name_s and name_u and name_s == name_u:
+                elif name_s and name_u and name_s == name_u and not sid_s and not sid_u:
                     is_duplicate = True
                 if is_duplicate:
                     for k, v in s.__dict__.items():
@@ -4607,6 +4590,14 @@ def print_student_details(students, identifier, db_path=None, verbose=False):
             else:
                 print("Student details:")
             for k, v in s.__dict__.items():
+                if k == "Submissions" and isinstance(v, dict):
+                    print("Submissions (Nộp bài):")
+                    for title in sorted(v.keys()):
+                        state = v.get(title)
+                        explanation = _gc_submission_state_explanation(state)
+                        suffix = f" ({explanation})" if explanation else ""
+                        print(f"  - {title}: {state}{suffix}")
+                    continue
                 print(f"{k}: {v}")
             found = True
             break
@@ -4615,6 +4606,133 @@ def print_student_details(students, identifier, db_path=None, verbose=False):
             print("[PrintStudentDetails] No student found with the given identifier.")
         else:
             print("No student found with the given identifier.")
+
+_GC_SUBMISSION_STATE_EXPLANATIONS = {
+    "NEW": "not started",
+    "CREATED": "draft (not submitted)",
+    "TURNED_IN": "submitted",
+    "RETURNED": "returned",
+    "RECLAIMED_BY_STUDENT": "unsubmitted",
+}
+_GC_SUBMISSION_STATE_ORDER = [
+    "NEW",
+    "CREATED",
+    "TURNED_IN",
+    "RETURNED",
+    "RECLAIMED_BY_STUDENT",
+]
+
+_CANVAS_SUBMISSION_STATE_EXPLANATIONS = {
+    "SUBMITTED": "submitted",
+    "UNSUBMITTED": "not submitted",
+    "GRADED": "graded",
+    "PENDING_REVIEW": "pending review",
+    "COMPLETE": "complete",
+}
+_CANVAS_SUBMISSION_STATE_ORDER = [
+    "UNSUBMITTED",
+    "SUBMITTED",
+    "GRADED",
+    "PENDING_REVIEW",
+    "COMPLETE",
+]
+
+def get_gc_submission_status_options():
+    return [
+        (state, _GC_SUBMISSION_STATE_EXPLANATIONS.get(state, ""))
+        for state in _GC_SUBMISSION_STATE_ORDER
+    ]
+
+def get_canvas_submission_status_options():
+    return [
+        (state, _CANVAS_SUBMISSION_STATE_EXPLANATIONS.get(state, ""))
+        for state in _CANVAS_SUBMISSION_STATE_ORDER
+    ]
+
+def get_submission_status_options(source):
+    if str(source).strip().lower() == "canvas":
+        return get_canvas_submission_status_options()
+    return get_gc_submission_status_options()
+
+def _normalize_gc_submission_state_token(token):
+    if token is None:
+        return None
+    raw = str(token).strip()
+    if not raw:
+        return None
+    cleaned = re.sub(r"[-\s]+", "_", raw.strip()).upper()
+    alias_map = {
+        "SUBMITTED": "TURNED_IN",
+        "TURNEDIN": "TURNED_IN",
+        "DRAFT": "CREATED",
+        "NOT_SUBMITTED": "NEW",
+    }
+    mapped = alias_map.get(cleaned, cleaned)
+    if mapped in _GC_SUBMISSION_STATE_EXPLANATIONS:
+        return mapped
+    return None
+
+def _normalize_canvas_submission_state_token(token):
+    if token is None:
+        return None
+    raw = str(token).strip()
+    if not raw:
+        return None
+    cleaned = re.sub(r"[-\s]+", "_", raw.strip()).upper()
+    alias_map = {
+        "NOT_SUBMITTED": "UNSUBMITTED",
+        "MISSING": "UNSUBMITTED",
+        "SUBMIT": "SUBMITTED",
+        "PENDINGREVIEW": "PENDING_REVIEW",
+    }
+    mapped = alias_map.get(cleaned, cleaned)
+    if mapped in _CANVAS_SUBMISSION_STATE_EXPLANATIONS:
+        return mapped
+    return None
+
+def _normalize_gc_submission_states(raw):
+    if raw is None:
+        return []
+    if isinstance(raw, (list, tuple, set)):
+        tokens = [str(v).strip() for v in raw if str(v).strip()]
+    else:
+        tokens = [v.strip() for v in str(raw).split(",") if v.strip()]
+    normalized = []
+    seen = set()
+    for token in tokens:
+        mapped = _normalize_gc_submission_state_token(token)
+        if mapped and mapped not in seen:
+            normalized.append(mapped)
+            seen.add(mapped)
+    return normalized
+
+def _normalize_canvas_submission_states(raw):
+    if raw is None:
+        return []
+    if isinstance(raw, (list, tuple, set)):
+        tokens = [str(v).strip() for v in raw if str(v).strip()]
+    else:
+        tokens = [v.strip() for v in str(raw).split(",") if v.strip()]
+    normalized = []
+    seen = set()
+    for token in tokens:
+        mapped = _normalize_canvas_submission_state_token(token)
+        if mapped and mapped not in seen:
+            normalized.append(mapped)
+            seen.add(mapped)
+    return normalized
+
+def _gc_submission_state_explanation(state):
+    if not isinstance(state, str) or not state.strip():
+        return ""
+    state_key = state.strip().upper()
+    return _GC_SUBMISSION_STATE_EXPLANATIONS.get(state_key, "")
+
+def _canvas_submission_state_explanation(state):
+    if not isinstance(state, str) or not state.strip():
+        return ""
+    state_key = state.strip().upper()
+    return _CANVAS_SUBMISSION_STATE_EXPLANATIONS.get(state_key, "")
 
 def en_to_vn_field(field, verbose=False):
     """
@@ -4663,6 +4781,7 @@ def en_to_vn_field(field, verbose=False):
         "Điểm": "Điểm",
         # Canvas section / registered class ID fields
         "Canvas Section": "Lớp học phần",
+        "Canvas ID": "Canvas ID",
         "Section": "Lớp học phần",
         "Registration ID": "Lớp học phần",
         "Registered Class ID": "Lớp học phần",
@@ -4677,6 +4796,12 @@ def en_to_vn_field(field, verbose=False):
         "Google_ID": "Google ID",
         "Google_Classroom_Display_Name": "Google Classroom Display Name",
         "Google_Classroom_Topic_Grades": "Điểm theo chủ đề Google Classroom",
+        "MiniProject_Group_ID": "Mã nhóm mini-project",
+        "MiniProject_Topic": "Đề tài mini-project",
+        "MiniProject_Advisor_Name": "GVHD mini-project",
+        "MiniProject_Advisor_Email": "Email GVHD mini-project",
+        "Submission Status (Google Classroom)": "Trạng thái nộp bài (Google Classroom)",
+        "Submission Status (Canvas)": "Trạng thái nộp bài (Canvas)",
     }
     if field.startswith("Blackboard Count: "):
         date = field[len("Blackboard Count: "):]
@@ -4834,7 +4959,9 @@ def print_all_student_details(students, db_path=None, verbose=False, sort_method
             print("Submissions (Nộp bài):")
             for title in sorted(submissions.keys()):
                 state = submissions.get(title)
-                print(f"  - {title}: {state}")
+                explanation = _gc_submission_state_explanation(state)
+                suffix = f" ({explanation})" if explanation else ""
+                print(f"  - {title}: {state}{suffix}")
         comments = data.get("Canvas Submission Comments")
         if isinstance(comments, dict):
             print("Canvas submission comments (Nhận xét bài nộp Canvas):")
@@ -4892,23 +5019,61 @@ def export_to_excel(students, file_path=None, db_path=None, verbose=False):
     else:
         print(f"Exporting {len(students)} students to Excel...")
 
-    # Only export selected fields
+    gc_titles = set()
+    canvas_titles = set()
+    for s in students:
+        subs = getattr(s, "Submissions", None)
+        if isinstance(subs, dict):
+            for title in subs.keys():
+                if isinstance(title, str) and title.strip():
+                    gc_titles.add(title.strip())
+        canvas_subs = getattr(s, "Canvas Submissions", None)
+        if isinstance(canvas_subs, dict):
+            for title in canvas_subs.keys():
+                if isinstance(title, str) and title.strip():
+                    canvas_titles.add(title.strip())
+    gc_titles = sorted(gc_titles, key=lambda t: t.lower())
+    canvas_titles = sorted(canvas_titles, key=lambda t: t.lower())
+
     export_fields = [
-        "Name",
-        "Student ID",
-        "Total Blackboard Counts",
-        "Max Total Blackboard Counts",
-        "Midterm Reward Points",
-        "Final Reward Points"
+        ("Name", lambda s: getattr(s, "Name", "")),
+        ("Student ID", lambda s: getattr(s, "Student ID", "")),
+        ("Email", _extract_student_email),
+        ("Class", lambda s: getattr(s, "Class", "")),
+        ("Google_ID", lambda s: getattr(s, "Google_ID", "")),
+        ("Canvas ID", lambda s: getattr(s, "Canvas ID", "")),
+        ("MiniProject_Group_ID", lambda s: getattr(s, "MiniProject_Group_ID", "")),
+        ("MiniProject_Topic", lambda s: getattr(s, "MiniProject_Topic", "")),
+        ("MiniProject_Advisor_Name", lambda s: getattr(s, "MiniProject_Advisor_Name", "")),
+        ("MiniProject_Advisor_Email", lambda s: getattr(s, "MiniProject_Advisor_Email", "")),
+        ("Total Blackboard Counts", lambda s: getattr(s, "Total Blackboard Counts", "")),
+        ("Max Total Blackboard Counts", lambda s: getattr(s, "Max Total Blackboard Counts", "")),
+        ("Midterm Reward Points", lambda s: getattr(s, "Midterm Reward Points", "")),
+        ("Final Reward Points", lambda s: getattr(s, "Final Reward Points", "")),
     ]
-    # Translate field names to Vietnamese
-    export_fields_vn = [en_to_vn_field(field) for field in export_fields]
+    export_headers = [en_to_vn_field(field) for field, _ in export_fields]
+    gc_headers = [f"GC Submission: {title}" for title in gc_titles]
+    canvas_headers = [f"Canvas Submission: {title}" for title in canvas_titles]
+    export_headers = export_headers + gc_headers + canvas_headers
+
+    def _sort_key(s):
+        name = str(getattr(s, "Name", "") or "").strip().lower()
+        student_id = str(getattr(s, "Student ID", "") or "").strip().lower()
+        return (name, student_id)
 
     rows = []
-    for s in tqdm(students, desc="Exporting"):
-        row = {en_to_vn_field(field): getattr(s, field, "") for field in export_fields}
+    for s in tqdm(sorted(students, key=_sort_key), desc="Exporting"):
+        row = {}
+        for field, getter in export_fields:
+            row[en_to_vn_field(field)] = getter(s)
+        gc_subs = getattr(s, "Submissions", None) if isinstance(getattr(s, "Submissions", None), dict) else {}
+        canvas_subs = getattr(s, "Canvas Submissions", None) if isinstance(getattr(s, "Canvas Submissions", None), dict) else {}
+        for title in gc_titles:
+            row[f"GC Submission: {title}"] = gc_subs.get(title, "")
+        for title in canvas_titles:
+            row[f"Canvas Submission: {title}"] = canvas_subs.get(title, "")
         rows.append(row)
-    df = pd.DataFrame(rows, columns=export_fields_vn)
+    df = pd.DataFrame(rows, columns=export_headers)
     df.to_excel(file_path, index=False)
 
     # Auto-fit column widths and center numeric columns
@@ -5098,6 +5263,101 @@ def list_students_by_email_domain(students, domain, db_path=None, verbose=False)
                     break
         print(f"{idx}. {name} | {email}")
     return matched
+
+def _extract_student_email(student):
+    email = getattr(student, "Email", "") or ""
+    if isinstance(email, str) and email.strip():
+        return email.strip()
+    email_pattern = re.compile(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$")
+    for value in student.__dict__.values():
+        value_str = str(value).strip()
+        if value_str and email_pattern.match(value_str):
+            return value_str
+    return ""
+
+def _parse_timestamp(value):
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        ts = pd.to_datetime(text, errors="coerce", utc=False)
+    except Exception:
+        return None
+    if ts is pd.NaT:
+        return None
+    try:
+        return ts.to_pydatetime()
+    except Exception:
+        return None
+
+def _format_timestamp(dt_value, fallback=None):
+    if not dt_value:
+        return fallback
+    try:
+        return dt_value.strftime("%Y-%m-%d %H:%M:%S")
+    except Exception:
+        return fallback
+
+def _normalize_name_key(value):
+    if not value:
+        return ""
+    return _normalize_vietnamese_name(str(value))
+
+def _normalize_id_key(value):
+    return _normalize_student_id(value)
+
+def _is_better_display_name(candidate, current):
+    if not candidate:
+        return False
+    if not current:
+        return True
+    cand = str(candidate).strip()
+    cur = str(current).strip()
+    if cand == cur:
+        return False
+    has_diacritic = any(ch not in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz '-" for ch in cand)
+    cur_has_diacritic = any(ch not in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz '-" for ch in cur)
+    if has_diacritic and not cur_has_diacritic:
+        return True
+    if cand.istitle() and not cur.istitle():
+        return True
+    return False
+
+def _generate_group_id(seed_text, existing_ids):
+    base = str(seed_text or "").strip()
+    if not base:
+        base = str(datetime.now().timestamp())
+    while True:
+        suffix = "".join(random.choice("0123456789abcdef") for _ in range(4))
+        digest = hashlib.sha1(f"{base}|{suffix}".encode("utf-8")).hexdigest()
+        group_id = "G" + digest[:15]
+        if group_id not in existing_ids:
+            existing_ids.add(group_id)
+            return group_id
+
+def _normalize_email_domains(domain):
+    if not domain:
+        return []
+    raw_domains = str(domain).strip()
+    domains = [d.strip().lower() for d in raw_domains.split(",") if d.strip()]
+    domains = [d[1:] if d.startswith("@") else d for d in domains]
+    return [d for d in domains if d]
+
+def _filter_students_by_email_domain(students, domain):
+    domains = _normalize_email_domains(domain)
+    if not domains:
+        return [], []
+    matched = []
+    for s in students:
+        candidate = _extract_student_email(s)
+        if not candidate:
+            continue
+        candidate_lower = candidate.lower()
+        if any(candidate_lower.endswith("@" + d) for d in domains):
+            matched.append(s)
+    return matched, domains
 
 def list_students_with_same_full_name(
     students,
@@ -5355,6 +5615,414 @@ def list_students_missing_ids(
         print(f"Missing ID report saved to: {output_path}")
 
     return results
+
+def _normalize_missing_id_categories(categories):
+    raw = (categories or "all")
+    if isinstance(raw, (list, tuple, set)):
+        tokens = [str(v).strip().lower() for v in raw if str(v).strip()]
+    else:
+        tokens = [v.strip().lower() for v in str(raw).split(",") if v.strip()]
+    if not tokens or "all" in tokens:
+        tokens = ["google", "canvas", "student"]
+    return tokens
+
+def _filter_students_missing_ids(students, categories):
+    tokens = _normalize_missing_id_categories(categories)
+    field_map = {
+        "google": ["Google_ID", "Google ID", "GoogleID"],
+        "canvas": ["Canvas ID", "Canvas_ID", "CanvasId"],
+        "student": ["Student ID", "Student_ID", "StudentId"],
+    }
+
+    def _get_value(s, candidates):
+        for key in candidates:
+            value = getattr(s, key, None)
+            if value is None:
+                continue
+            value_str = str(value).strip()
+            if value_str:
+                return value_str
+        return ""
+
+    missing_any = []
+    for s in students:
+        for token in tokens:
+            candidates = field_map.get(token)
+            if not candidates:
+                continue
+            if not _get_value(s, candidates):
+                missing_any.append(s)
+                break
+    return missing_any, tokens
+
+def list_students_by_submission_status(students, status, source="google", assignment=None, db_path=None, verbose=False):
+    """
+    List students by submission status for Google Classroom or Canvas.
+    status: string or comma-separated list of status values for the selected source.
+    """
+    if db_path:
+        students = load_database(db_path)
+    students = students or []
+
+    source_key = str(source).strip().lower()
+    assignment_keys = None
+    if assignment:
+        if isinstance(assignment, (list, tuple, set)):
+            tokens = [str(v).strip().lower() for v in assignment if str(v).strip()]
+        else:
+            tokens = [v.strip().lower() for v in str(assignment).split(",") if v.strip()]
+        assignment_keys = set(tokens) if tokens else None
+    if source_key == "canvas":
+        statuses = _normalize_canvas_submission_states(status)
+        field_name = "Canvas Submissions"
+        explain = _canvas_submission_state_explanation
+        normalize = _normalize_canvas_submission_state_token
+    else:
+        statuses = _normalize_gc_submission_states(status)
+        field_name = "Submissions"
+        explain = _gc_submission_state_explanation
+        normalize = _normalize_gc_submission_state_token
+    if not statuses:
+        print("No valid submission status provided.")
+        return []
+
+    matches = []
+    for s in students:
+        submissions = getattr(s, field_name, None)
+        if not isinstance(submissions, dict):
+            continue
+        matched_titles = []
+        for title, state in submissions.items():
+            if assignment_keys and str(title).strip().lower() not in assignment_keys:
+                continue
+            state_key = normalize(state)
+            if state_key and state_key in statuses:
+                matched_titles.append((title, state))
+        if matched_titles:
+            matches.append((s, matched_titles))
+
+    if verbose:
+        print(f"[SubmissionStatus] Found {len(matches)} student(s) matching: {', '.join(statuses)}.")
+    else:
+        print(f"Found {len(matches)} student(s) matching: {', '.join(statuses)}.")
+
+    for idx, (s, matched_titles) in enumerate(matches, 1):
+        name = getattr(s, "Name", "") or ""
+        student_id = getattr(s, "Student ID", "") or ""
+        email = getattr(s, "Email", "") or ""
+        print(f"{idx}. {name} | {student_id} | {email}")
+        for title, state in sorted(matched_titles, key=lambda item: item[0]):
+            explanation = explain(state)
+            suffix = f" ({explanation})" if explanation else ""
+            print(f"   - {title}: {state}{suffix}")
+    return matches
+
+def _filter_students_by_submission_status(students, status, source="google", assignment=None):
+    source_key = str(source).strip().lower()
+    assignment_keys = None
+    if assignment:
+        if isinstance(assignment, (list, tuple, set)):
+            tokens = [str(v).strip().lower() for v in assignment if str(v).strip()]
+        else:
+            tokens = [v.strip().lower() for v in str(assignment).split(",") if v.strip()]
+        assignment_keys = set(tokens) if tokens else None
+    if source_key == "canvas":
+        statuses = _normalize_canvas_submission_states(status)
+        field_name = "Canvas Submissions"
+        normalize = _normalize_canvas_submission_state_token
+    else:
+        statuses = _normalize_gc_submission_states(status)
+        field_name = "Submissions"
+        normalize = _normalize_gc_submission_state_token
+    if not statuses:
+        return [], []
+    matched = []
+    for s in students:
+        submissions = getattr(s, field_name, None)
+        if not isinstance(submissions, dict):
+            continue
+        for title, state in submissions.items():
+            if assignment_keys and str(title).strip().lower() not in assignment_keys:
+                continue
+            state_key = normalize(state)
+            if state_key and state_key in statuses:
+                matched.append(s)
+                break
+    return matched, statuses
+
+def list_students_by_combined_filters(
+    students,
+    email_domain=None,
+    missing_ids=None,
+    submission_status=None,
+    submission_source="google",
+    submission_assignment=None,
+    db_path=None,
+    verbose=False,
+):
+    if db_path:
+        students = load_database(db_path)
+    students = students or []
+
+    active_filters = []
+    filtered = students
+
+    if email_domain:
+        filtered, domains = _filter_students_by_email_domain(filtered, email_domain)
+        if not domains:
+            print("No valid email domain provided.")
+            return []
+        active_filters.append(f"email_domain={', '.join(domains)}")
+
+    if missing_ids:
+        filtered, tokens = _filter_students_missing_ids(filtered, missing_ids)
+        active_filters.append(f"missing_ids={', '.join(tokens)}")
+
+    if submission_status:
+        filtered, statuses = _filter_students_by_submission_status(
+            filtered,
+            submission_status,
+            source=submission_source,
+            assignment=submission_assignment,
+        )
+        if not statuses:
+            print("No valid submission status provided.")
+            return []
+        if submission_assignment:
+            if isinstance(submission_assignment, (list, tuple, set)):
+                assignment_label = "@" + ", ".join(str(v) for v in submission_assignment)
+            else:
+                assignment_label = f"@{submission_assignment}"
+        else:
+            assignment_label = ""
+        active_filters.append(f"{submission_source}_status={', '.join(statuses)}{assignment_label}")
+
+    def _sort_key(s):
+        name = str(getattr(s, "Name", "") or "").strip().lower()
+        student_id = str(getattr(s, "Student ID", "") or "").strip().lower()
+        return (name, student_id)
+
+    filtered_sorted = sorted(filtered, key=_sort_key)
+    summary = ", ".join(active_filters) if active_filters else "none"
+    if verbose:
+        print(f"[CombinedListing] Found {len(filtered_sorted)} student(s). Filters: {summary}.")
+    else:
+        print(f"Found {len(filtered_sorted)} student(s). Filters: {summary}.")
+    for idx, s in enumerate(filtered_sorted, 1):
+        name = getattr(s, "Name", "") or ""
+        student_id = getattr(s, "Student ID", "") or ""
+        email = _extract_student_email(s)
+        print(f"{idx}. {name} | {student_id} | {email}")
+    return filtered_sorted
+
+def import_mini_project_data_from_sheets(
+    lecturer_sheet_url,
+    student_sheet_url,
+    credentials_path,
+    token_path,
+    db_path,
+    verbose=False,
+):
+    if not db_path:
+        raise ValueError("db_path is required.")
+    if not lecturer_sheet_url or not student_sheet_url:
+        raise ValueError("Both lecturer and student registration sheet URLs are required.")
+
+    temp_dir = tempfile.mkdtemp(prefix="mini_project_import_")
+    lecturer_csv = os.path.join(temp_dir, "lecturers_topics.csv")
+    student_csv = os.path.join(temp_dir, "student_registrations.csv")
+
+    lecturer_csv = download_google_sheet_to_csv(
+        lecturer_sheet_url,
+        output_path=lecturer_csv,
+        credentials_path=credentials_path,
+        token_path=token_path,
+        verbose=verbose,
+    )
+    student_csv = download_google_sheet_to_csv(
+        student_sheet_url,
+        output_path=student_csv,
+        credentials_path=credentials_path,
+        token_path=token_path,
+        verbose=verbose,
+    )
+
+    students = load_database(db_path, verbose=verbose)
+    students = students or []
+
+    existing_group_ids = set()
+    for s in students:
+        gid = getattr(s, "MiniProject Group ID", None)
+        if isinstance(gid, str) and gid.strip():
+            existing_group_ids.add(gid.strip())
+
+    by_id = {}
+    by_email = {}
+    by_name = {}
+    for s in students:
+        sid = _normalize_id_key(getattr(s, "Student ID", None))
+        if sid:
+            by_id[sid] = s
+        email = _extract_student_email(s).lower()
+        if email:
+            by_email[email] = s
+        name_key = _normalize_name_key(getattr(s, "Name", None))
+        if name_key:
+            by_name[name_key] = s
+
+    # Import lecturer topics into a metadata record.
+    lecturer_df = pd.read_csv(lecturer_csv, dtype=str).fillna("")
+    lecturer_topics = []
+    latest_ts = None
+    for _, row in lecturer_df.iterrows():
+        ts = _parse_timestamp(row.get("Timestamp"))
+        if ts and (latest_ts is None or ts > latest_ts):
+            latest_ts = ts
+        lecturer_entry = {
+            "timestamp": _format_timestamp(ts, row.get("Timestamp", "")),
+            "submitter_email": row.get("Email Address", "").strip(),
+            "name": row.get("Họ tên giảng viên", "").strip(),
+            "organization": row.get("Cơ quan công tác", "").strip(),
+            "phone": row.get("Số điện thoại ", "").strip(),
+            "research_area": row.get("Lĩnh vực nghiên cứu", "").strip(),
+            "topics": [],
+        }
+        for idx in range(1, 6):
+            title = row.get(f"Tên đề tài {idx}", "").strip()
+            desc = row.get(f"Mô tả đề tài {idx}", "").strip()
+            if title or desc:
+                lecturer_entry["topics"].append({
+                    "title": title,
+                    "description": desc,
+                })
+        if any(lecturer_entry.values()):
+            lecturer_topics.append(lecturer_entry)
+
+    meta_name = "__META__LECTURER_TOPICS__"
+    meta_record = None
+    for s in students:
+        if getattr(s, "Name", "") == meta_name:
+            meta_record = s
+            break
+    if not meta_record:
+        meta_record = Student(Name=meta_name)
+        students.append(meta_record)
+    meta_record.MiniProject_Lecturer_Topics = lecturer_topics
+    meta_record.MiniProject_Lecturer_Topics_Source = lecturer_sheet_url
+    meta_record.MiniProject_Lecturer_Topics_Updated_At = _format_timestamp(latest_ts, "")
+
+    # Import student registrations.
+    reg_df = pd.read_csv(student_csv, dtype=str).fillna("")
+    created = 0
+    updated = 0
+    skipped_old = 0
+
+    headers = list(reg_df.columns)
+    member_name_cols = []
+    member_id_cols = []
+    for col in headers:
+        if col.startswith("Họ và tên thành viên"):
+            member_name_cols.append(col)
+        if col.startswith("MSV"):
+            member_id_cols.append(col)
+
+    advisor_name_cols = [c for c in headers if c.startswith("Họ tên giảng viên hướng dẫn") or c == "Họ tên GVHD"]
+    advisor_email_cols = [c for c in headers if c == "Email GVHD"]
+    topic_cols = [c for c in headers if c.startswith("Đề tài")]
+    confirm_col = "Đã xác nhận với GVHD?"
+
+    for _, row in reg_df.iterrows():
+        ts = _parse_timestamp(row.get("Timestamp"))
+        submitter_email = row.get("Email Address", "").strip()
+        ts_label = _format_timestamp(ts, row.get("Timestamp", ""))
+        leader_name = row.get("Họ và tên thành viên 1 (trưởng nhóm)", "").strip()
+        leader_id = row.get("Mã sinh viên (MSV)", "").strip()
+        leader_key = _normalize_id_key(leader_id) or _normalize_name_key(leader_name)
+        seed = f"{leader_key}|{ts_label}|{submitter_email}"
+        group_id = _generate_group_id(seed, existing_group_ids)
+
+        members = []
+        for idx, name_col in enumerate(member_name_cols):
+            name_val = row.get(name_col, "").strip()
+            id_val = row.get(member_id_cols[idx], "").strip() if idx < len(member_id_cols) else ""
+            if name_val or id_val:
+                members.append({"name": name_val, "student_id": id_val})
+
+        advisor_names = [row.get(c, "").strip() for c in advisor_name_cols]
+        advisor_emails = [row.get(c, "").strip() for c in advisor_email_cols]
+        topics = [row.get(c, "").strip() for c in topic_cols]
+        choices = []
+        max_len = max(len(advisor_names), len(advisor_emails), len(topics))
+        for i in range(max_len):
+            choice = {
+                "advisor_name": advisor_names[i] if i < len(advisor_names) else "",
+                "advisor_email": advisor_emails[i] if i < len(advisor_emails) else "",
+                "topic": topics[i] if i < len(topics) else "",
+            }
+            if any(choice.values()):
+                choices.append(choice)
+
+        primary_choice = choices[0] if choices else {}
+        confirmed = row.get(confirm_col, "").strip()
+
+        for member in members or [{"name": leader_name, "student_id": leader_id}]:
+            sid_key = _normalize_id_key(member.get("student_id"))
+            name_key = _normalize_name_key(member.get("name"))
+            match = by_id.get(sid_key) if sid_key else None
+            if not match:
+                match = by_name.get(name_key) if name_key else None
+            if not match:
+                student_dict = {}
+                if member.get("name"):
+                    student_dict["Name"] = member.get("name")
+                if member.get("student_id"):
+                    student_dict["Student ID"] = member.get("student_id")
+                match = Student(**student_dict)
+                students.append(match)
+                created += 1
+                if sid_key:
+                    by_id[sid_key] = match
+                if name_key:
+                    by_name[name_key] = match
+
+            prev_ts = _parse_timestamp(getattr(match, "MiniProject Submission Timestamp", None))
+            if prev_ts and ts and ts <= prev_ts:
+                skipped_old += 1
+                continue
+            if prev_ts and not ts:
+                skipped_old += 1
+                continue
+
+            if member.get("name") and _is_better_display_name(member.get("name"), getattr(match, "Name", "")):
+                match.Name = member.get("name")
+            match.MiniProject_Group_ID = group_id
+            leader_display = leader_name or (members[0]["name"] if members else "")
+            if leader_display and _is_better_display_name(leader_display, getattr(match, "MiniProject_Group_Leader", "")):
+                match.MiniProject_Group_Leader = leader_display
+            elif not getattr(match, "MiniProject_Group_Leader", ""):
+                match.MiniProject_Group_Leader = leader_display
+            match.MiniProject_Group_Members = members
+            match.MiniProject_Submission_Timestamp = ts_label
+            match.MiniProject_Submission_Email = submitter_email
+            match.MiniProject_Topic_Choices = choices
+            match.MiniProject_Topic = primary_choice.get("topic", "")
+            match.MiniProject_Advisor_Name = primary_choice.get("advisor_name", "")
+            match.MiniProject_Advisor_Email = primary_choice.get("advisor_email", "")
+            match.MiniProject_Advisor_Confirmed = confirmed
+            match.MiniProject_Lecturer_Topics_Ref = meta_name
+            updated += 1
+
+    save_database(students, db_path, verbose=verbose, audit_source="mini-project-import")
+    if verbose:
+        print(f"[MiniProjectImport] Created: {created}, updated: {updated}, skipped: {skipped_old}")
+    else:
+        print(f"Mini-project import: {created} created, {updated} updated, {skipped_old} skipped.")
+    return {
+        "created": created,
+        "updated": updated,
+        "skipped": skipped_old,
+        "meta_record": meta_name,
+    }
 
 def export_emails_to_txt(students, file_path, db_path=None, verbose=False):
     """
@@ -5643,7 +6311,9 @@ def export_all_details_to_txt(students, file_path=None, db_path=None, verbose=Fa
                 f.write("Submissions (Nộp bài):\n")
                 for title in sorted(submissions.keys()):
                     state = submissions.get(title)
-                    f.write(f"  - {title}: {state}\n")
+                    explanation = _gc_submission_state_explanation(state)
+                    suffix = f" ({explanation})" if explanation else ""
+                    f.write(f"  - {title}: {state}{suffix}\n")
             comments = data.get("Canvas Submission Comments")
             if isinstance(comments, dict):
                 f.write("Canvas submission comments (Nhận xét bài nộp Canvas):\n")

@@ -160,6 +160,8 @@ Populate the following keys in ``config.json`` (or load from a JSON file with
 - ``CREDENTIALS_PATH``
 - ``TOKEN_PATH``
 - ``GOOGLE_SHEET_URL``
+- ``GOOGLE_SHEET_LECTURER_TOPICS_URL``
+- ``GOOGLE_SHEET_STUDENT_REGISTRATION_URL``
 
 Canvas operations will use these defaults unless overridden by flags like
 ``--canvas-course-id``.
@@ -318,6 +320,44 @@ List students missing IDs:
 
    course --list-missing-ids
    course --list-missing-ids google,canvas --missing-ids-format csv --missing-ids-output missing_ids.csv
+
+List Google Classroom students:
+
+.. code-block:: bash
+
+   course --list-google-students
+   course --list-google-students --google-course-id 1234567890
+
+List students by submission status:
+
+.. code-block:: bash
+
+   course --list-submission-status google:turned_in
+   course --list-submission-status canvas:submitted
+   course --list-submission-status google:NEW@Quiz 1
+   course --list-submission-status google:NEW@Quiz 1,Quiz 2
+
+Notes:
+
+- Google Classroom values: ``NEW``, ``CREATED``, ``TURNED_IN``, ``RETURNED``, ``RECLAIMED_BY_STUDENT``.
+- Canvas values: ``UNSUBMITTED``, ``SUBMITTED``, ``GRADED``, ``PENDING_REVIEW``, ``COMPLETE``.
+
+Combine listing filters (AND semantics):
+
+.. code-block:: bash
+
+   course --list-email-domain gmail.com --list-missing-ids student
+   course --list-email-domain gmail.com --list-submission-status google:turned_in
+   course --list-missing-ids student --list-submission-status google:NEW
+   course --list-email-domain gmail.com --list-missing-ids student --list-submission-status google:CREATED
+   course --list-submission-status canvas:UNSUBMITTED --list-missing-ids student
+   course --list-email-domain gmail.com --list-submission-status google:TURNED_IN@Quiz 1
+   course --list-email-domain gmail.com --list-submission-status google:TURNED_IN@Quiz 1,Quiz 2
+
+Notes:
+
+- ``--list-duplicate-names`` and Canvas/Google roster listings cannot be combined with other listing flags.
+- Export options (like ``--missing-ids-output``) are ignored in combined mode; the merged list prints to the console.
 
 Unenroll Canvas students:
 

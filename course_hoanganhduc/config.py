@@ -494,6 +494,8 @@ def load_config(config_path=None, verbose=False):
         "GOOGLE_CLASSROOM_GK_TOPICS",
         "GOOGLE_CLASSROOM_CK_TOPICS",
         "GOOGLE_SHEET_URL",
+        "GOOGLE_SHEET_LECTURER_TOPICS_URL",
+        "GOOGLE_SHEET_STUDENT_REGISTRATION_URL",
         "COURSE_CODE",
         "COURSE_NAME",
         "DEFAULT_RESTRICTED",
@@ -546,6 +548,10 @@ def validate_config(config, verbose=False):
     sheet_url = config.get("GOOGLE_SHEET_URL")
     if sheet_url and not str(sheet_url).strip().lower().startswith("http"):
         warnings.append("GOOGLE_SHEET_URL does not look like a URL.")
+    for key in ("GOOGLE_SHEET_LECTURER_TOPICS_URL", "GOOGLE_SHEET_STUDENT_REGISTRATION_URL"):
+        value = config.get(key)
+        if value and not str(value).strip().lower().startswith("http"):
+            warnings.append(f"{key} does not look like a URL.")
     for key in ("GOOGLE_CLASSROOM_CC_TOPICS", "GOOGLE_CLASSROOM_GK_TOPICS", "GOOGLE_CLASSROOM_CK_TOPICS"):
         if key in config and config.get(key) is not None and not isinstance(config.get(key), (str, list, tuple, set)):
             warnings.append(f"{key} should be a string or list.")

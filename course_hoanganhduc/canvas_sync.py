@@ -302,6 +302,7 @@ def sync_students_with_canvas(students, db_path=None, course_id=None, api_url=CA
         assignment_scores_by_canvas_id = {}
         assignment_comments_by_canvas_id = {}
         assignment_rubrics_by_canvas_id = {}
+        assignment_status_by_canvas_id = {}
         if important_assignments:
             if verbose:
                 print(f"[SyncCanvas] Fetching submissions for {len(important_assignments)} assignments...")
@@ -314,6 +315,7 @@ def sync_students_with_canvas(students, db_path=None, course_id=None, api_url=CA
                                          desc=f"Processing {assignment_info['name']} submissions"):
                         user_id = getattr(submission, "user_id", None)
                         score = getattr(submission, "score", None)
+                        workflow_state = getattr(submission, "workflow_state", None)
                         if user_id and score is not None:
                             if user_id not in assignment_scores_by_canvas_id:
                                 assignment_scores_by_canvas_id[user_id] = {}
@@ -322,6 +324,13 @@ def sync_students_with_canvas(students, db_path=None, course_id=None, api_url=CA
                                 "group": assignment_info["group_name"],
                                 "score": score,
                                 "points_possible": assignment_info["points_possible"]
+                            }
+                        if user_id and workflow_state:
+                            if user_id not in assignment_status_by_canvas_id:
+                                assignment_status_by_canvas_id[user_id] = {}
+                            assignment_status_by_canvas_id[user_id][assignment_id] = {
+                                "name": assignment_info["name"],
+                                "status": workflow_state,
                             }
                         if user_id:
                             comments = getattr(submission, "submission_comments", None)
@@ -432,6 +441,17 @@ def sync_students_with_canvas(students, db_path=None, course_id=None, api_url=CA
                     if updated_rubrics != existing_rubrics:
                         setattr(matched_student, "Canvas Rubric Evaluations", updated_rubrics)
                         changed = True
+                if canvas_id and assignment_status_by_canvas_id.get(int(canvas_id)):
+                    existing_statuses = getattr(matched_student, "Canvas Submissions", None) or {}
+                    updated_statuses = dict(existing_statuses)
+                    for assignment_id, status_info in assignment_status_by_canvas_id[int(canvas_id)].items():
+                        name = important_assignments.get(assignment_id, {}).get("name", str(assignment_id))
+                        status = status_info.get("status") if isinstance(status_info, dict) else status_info
+                        if status:
+                            updated_statuses[name] = status
+                    if updated_statuses != existing_statuses:
+                        setattr(matched_student, "Canvas Submissions", updated_statuses)
+                        changed = True
 
                 if changed:
                     updated_count += 1
@@ -485,6 +505,15 @@ def sync_students_with_canvas(students, db_path=None, course_id=None, api_url=CA
                         name = important_assignments.get(assignment_id, {}).get("name", str(assignment_id))
                         rubrics[name] = rubric
                     new_student_data["Canvas Rubric Evaluations"] = rubrics
+                if canvas_id and assignment_status_by_canvas_id.get(int(canvas_id)):
+                    statuses = {}
+                    for assignment_id, status_info in assignment_status_by_canvas_id[int(canvas_id)].items():
+                        name = important_assignments.get(assignment_id, {}).get("name", str(assignment_id))
+                        status = status_info.get("status") if isinstance(status_info, dict) else status_info
+                        if status:
+                            statuses[name] = status
+                    if statuses:
+                        new_student_data["Canvas Submissions"] = statuses
 
                 students.append(Student(**new_student_data))
                 if canvas_id:

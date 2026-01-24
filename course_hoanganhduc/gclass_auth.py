@@ -76,3 +76,44 @@ def list_google_classroom_courses(credentials_path, token_path, verbose=False):
         if not next_token:
             break
     return courses
+
+
+def list_google_classroom_students(credentials_path, token_path, course_id=None, verbose=False):
+    creds = _get_google_classroom_credentials(credentials_path, token_path, verbose=verbose)
+    service = build("classroom", "v1", credentials=creds)
+
+    if not course_id:
+        courses = list_google_classroom_courses(credentials_path, token_path, verbose=verbose)
+        if not courses:
+            print("No courses found.")
+            return []
+        print("Available Google Classroom courses:")
+        for i, c in enumerate(courses, 1):
+            print(f"{i}. {c.get('name')} (ID: {c.get('id')})")
+        while True:
+            sel = input("Select course number (or 'q' to quit): ").strip().lower()
+            if sel in ("q", "quit"):
+                return []
+            if not sel:
+                continue
+            try:
+                idx = int(sel) - 1
+                if 0 <= idx < len(courses):
+                    course_id = courses[idx].get("id")
+                    break
+            except Exception:
+                continue
+    if not course_id:
+        print("No course selected.")
+        return []
+
+    students = []
+    next_token = None
+    while True:
+        req = service.courses().students().list(courseId=course_id, pageToken=next_token, pageSize=200) if next_token else service.courses().students().list(courseId=course_id, pageSize=200)
+        resp = req.execute()
+        students.extend(resp.get("students", []) or [])
+        next_token = resp.get("nextPageToken")
+        if not next_token:
+            break
+    return students

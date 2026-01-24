@@ -184,6 +184,7 @@ Google Classroom
 - ``--google-token-path`` (``-gtp``): Path to Google Classroom token pickle file
 - ``--grade-google-classroom`` (``-ggc``): Grade Google Classroom assignment submissions
 - ``--list-google-courses`` (``-lgc``): List Google Classroom courses for the current account
+- ``--list-google-students``: List Google Classroom students for a course (uses ``--google-course-id`` or prompts)
 - ``--sync-google-classroom`` (``-sgc``): Sync students in the local database with active students from Google Classroom course
 - ``--unenroll-google-classroom`` (``-ugc``): Unenroll Google Classroom students by email domain
   Successful unenroll removes matching students from the local database (by Email or Google_ID).
@@ -204,6 +205,9 @@ Student Database
 
 - ``--add-file`` (``-a``): Import students from Excel, CSV, or PDF file into the database
 - ``--add-google-sheet`` (``-gsh``): Import students from Google Sheet URL (optional: URL, default from config)
+- ``--import-mini-projects``: Import mini-project data from Google Sheets (lecturer topics + student registrations)
+- ``--mini-project-lecturer-sheet``: Google Sheet URL for lecturer mini-project topics (optional; default from config)
+- ``--mini-project-registration-sheet``: Google Sheet URL for student mini-project registrations (optional; default from config)
 - ``--all-details`` (``-A``): Show details of all students
 - ``--backup-db``: Back up students.db to a timestamped file (optional: backup dir)
 - ``--db`` (``-db``, ``-D``): Database file name (default: students.db, saved in script folder)
@@ -225,6 +229,7 @@ Student Database
 - ``--list-duplicate-names``: List students who share the same full name
 - ``--list-email-domain`` (``-led``): List students whose email matches domain(s) (comma-separated, e.g., gmail.com,outlook.com)
 - ``--list-missing-ids``: List students missing Google/Canvas/Student IDs (optional: google,canvas,student,all or comma-separated)
+- ``--list-submission-status``: List students by submission status (prefix with ``google:`` or ``canvas:``, optional ``@assignment``). Values: Google Classroom = ``NEW``, ``CREATED``, ``TURNED_IN``, ``RETURNED``, ``RECLAIMED_BY_STUDENT``; Canvas = ``UNSUBMITTED``, ``SUBMITTED``, ``GRADED``, ``PENDING_REVIEW``, ``COMPLETE``.
 - ``--load`` (``-l``): Load students from database file
 - ``--load-override-grades`` (``-log``): Load override_grades.xlsx and persist overrides to the database (default: override_grades.xlsx).
 - ``--missing-ids-format``: Output format for missing-ids report (default: txt)

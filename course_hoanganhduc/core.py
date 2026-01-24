@@ -189,103 +189,100 @@ def _format_cli_aliases(parser):
 
 def _build_menu_sections():
     return [
-        ("Student Database", [
-            ("Import students from Excel, CSV, or PDF file", "1"),
-            ("Dry-run preview import (Excel/CSV/PDF, no write)", "59"),
-            ("Import students from Google Sheet URL", "78"),
-            ("Save current students to database", "2"),
+        ("Roster & Database", [
+            ("Import students (Excel/CSV/PDF)", "1"),
+            ("Preview import (dry-run)", "59"),
+            ("Import from Google Sheet URL", "78"),
+            ("Import mini-project data (Google Sheets)", "86"),
             ("Load students from database", "3"),
-            ("Search for students by keyword (name, student id, email, etc.)", "6"),
-            ("Show details of a student", "7"),
-            ("Show details of all students", "8"),
-            ("List students by email domain", "77"),
-            ("List students with the same full name", "81"),
-            ("List students missing IDs (Google/Canvas/Student)", "82"),
-            ("Interactively modify the student database", "14"),
-            ("Load override grades into database", "51"),
+            ("Save current students to database", "2"),
+            ("Search students (name/id/email)", "6"),
+            ("Show student details", "7"),
+            ("Show all student details", "8"),
+            ("Modify student database", "14"),
+            ("Load override grades", "51"),
+            ("Validate student data report", "56"),
             ("Backup students database", "54"),
             ("Restore students database", "55"),
-            ("Validate student data and export report", "56"),
         ]),
-        ("Course Planning", [
-            ("Build course calendar (TXT/MD/ICS)", "71"),
-            ("Import course calendar (ICS) to Canvas", "72"),
+        ("Listings & Filters", [
+            ("List students by email domain", "77"),
+            ("List students with duplicate names", "81"),
+            ("List students missing IDs", "82"),
+            ("List students by submission status", "84"),
         ]),
-        ("Student Exports", [
-            ("Export student list to Excel file", "4"),
-            ("Export all student emails to TXT file", "5"),
-            ("Export all student details to TXT file", "9"),
-            ("Export student names and emails to TXT file", "46"),
-            ("Export student roster to CSV file", "48"),
-            ("Export anonymized roster to CSV file", "60"),
-            ("Update MAT*.xlsx files with grades from database", "37"),
-            ("Sync MAT*.xlsx scores to Canvas assignments", "74"),
+        ("Exports & Reports", [
+            ("Export student list to Excel", "4"),
+            ("Export student emails (TXT)", "5"),
+            ("Export student details (TXT)", "9"),
+            ("Export names + emails (TXT)", "46"),
+            ("Export roster (CSV)", "48"),
+            ("Export anonymized roster (CSV)", "60"),
             ("Export final grade distribution", "43"),
+            ("Update MAT*.xlsx from database", "37"),
+            ("Sync MAT*.xlsx scores to Canvas", "74"),
         ]),
-        ("OCR and PDFs", [
-            ("Extract and add blackboard counts from PDF to database", "10"),
-            ("Extract handwriting text from PDF to TXT file", "11"),
-            ("Print blackboard counts by date for all students", "12"),
-            ("Export blackboard counts by date for all students to TXT/Markdown file", "13"),
-        ]),
-        ("Exams (Multichoice)", [
-            ("Extract multiple-choice exam solutions from PDF", "33"),
-            ("Extract student answers from scanned exam sheet PDF", "34"),
-            ("Evaluate student answers for multiple-choice exam", "35"),
-            ("Sync multichoice exam evaluations to Canvas assignment", "38"),
-        ]),
-        ("Canvas: People and Communication", [
-            ("List all assignments on Canvas LMS", "15"),
-            ("List all members of a Canvas course", "16"),
-            ("Search for a user in Canvas by name or email", "17"),
-            ("Unenroll Canvas students (domain/email/select/missing-id)", "83"),
-            ("Download all submission files for a Canvas assignment", "18"),
-            ("Add a comment to a Canvas assignment submission", "19"),
-            ("Create a Canvas announcement", "20"),
-            ("Invite a single user to Canvas course by email", "21"),
-            ("Invite multiple users to Canvas course from a TXT file", "22"),
-            ("Import students (CSV/XLSX/PDF) and invite if not enrolled", "73"),
-            ("Find and notify students who have not completed required peer reviews", "23"),
-            ("Sync Canvas course members to local database", "24"),
-            ("Grade Canvas assignment submissions", "25"),
-            ("Fetch and reply to Canvas inbox messages", "26"),
-            ("List and edit Canvas course pages", "27"),
-            ("List students with multiple submissions and only the first submission on time", "28"),
-        ]),
-        ("Canvas: Rubrics and Grading", [
-            ("List all unique rubrics used in Canvas course", "29"),
-            ("Export Canvas rubrics to TXT/CSV file", "30"),
-            ("Import rubrics to Canvas course from TXT/CSV file", "31"),
-            ("Update rubrics for Canvas assignments", "32"),
-            ("Export Canvas grading scheme(s) to JSON", "39"),
-            ("Add grading scheme to Canvas course from JSON file", "40"),
-            ("Check similarities between submissions of the same student for different assignments", "41"),
-            ("Send final evaluations to students via Canvas", "42"),
-        ]),
-        ("Canvas: Admin Tools", [
-            ("Change Canvas assignment deadlines", "44"),
-            ("Change Canvas assignment lock dates", "47"),
-            ("Create Canvas groups of students", "45"),
+        ("Canvas", [
+            ("List Canvas assignments", "15"),
+            ("List Canvas course members", "16"),
+            ("Search Canvas user", "17"),
+            ("Unenroll Canvas students", "83"),
+            ("Download Canvas assignment submissions", "18"),
+            ("Comment on Canvas submission", "19"),
+            ("Create Canvas announcement", "20"),
+            ("Invite Canvas user (single)", "21"),
+            ("Invite Canvas users (batch)", "22"),
+            ("Import students and invite", "73"),
+            ("Notify missing peer reviews", "23"),
+            ("Sync Canvas roster to database", "24"),
+            ("Grade Canvas submissions", "25"),
+            ("Reply to Canvas inbox", "26"),
+            ("List/edit Canvas pages", "27"),
+            ("List multi-submission on-time", "28"),
+            ("List Canvas rubrics", "29"),
+            ("Export Canvas rubrics", "30"),
+            ("Import Canvas rubrics", "31"),
+            ("Update Canvas rubrics", "32"),
+            ("Export Canvas grading schemes", "39"),
+            ("Import Canvas grading schemes", "40"),
+            ("Check submission similarity", "41"),
+            ("Send final evaluations", "42"),
+            ("Change assignment deadlines", "44"),
+            ("Change assignment lock dates", "47"),
+            ("Create Canvas groups", "45"),
             ("Delete empty Canvas groups", "50"),
-            ("Grade resubmissions (reuse or override grades)", "66"),
+            ("Grade resubmissions", "66"),
         ]),
-        ("Configuration and Integrations", [
-            ("Load config from JSON file and save to default location", "36"),
-            ("Test AI services (Gemini/HuggingFace)", "52"),
-            ("List AI models for provider", "53"),
-            ("Detect local AI models (Ollama)", "64"),
+        ("Google Classroom", [
             ("List Google Classroom courses", "65"),
-            ("Sync students with Google Classroom", "49"),
-            ("Grade Google Classroom assignment submissions", "75"),
-            ("Download Google Classroom submissions (checks)", "76"),
-            ("Unenroll Google Classroom students (domain/email/select/missing-id)", "79"),
+            ("List Google Classroom students", "85"),
+            ("Sync Google Classroom students", "49"),
+            ("Grade Classroom submissions", "75"),
+            ("Download Classroom submissions", "76"),
+            ("Unenroll Classroom students", "79"),
+        ]),
+        ("OCR & Exams", [
+            ("Add blackboard counts from PDF", "10"),
+            ("Extract handwriting text (PDF)", "11"),
+            ("Print blackboard counts by date", "12"),
+            ("Export blackboard counts by date", "13"),
+            ("Extract exam solutions (PDF)", "33"),
+            ("Extract exam answers (PDF)", "34"),
+            ("Evaluate exam answers", "35"),
+            ("Sync exam evaluations to Canvas", "38"),
+        ]),
+        ("Automation & Config", [
+            ("Run weekly automation", "61"),
+            ("Run weekly automation (local + archive)", "62"),
+            ("Generate weekly GitHub workflow", "63"),
+            ("Build course calendar (TXT/MD/ICS)", "71"),
+            ("Import course calendar to Canvas", "72"),
+            ("Load config from JSON", "36"),
             ("Backup config.json", "57"),
             ("Restore config.json", "58"),
-        ]),
-        ("Weekly Automation", [
-            ("Run weekly automation (Canvas + grading)", "61"),
-            ("Run weekly automation locally and archive reports", "62"),
-            ("Generate weekly GitHub workflow template", "63"),
+            ("Test AI services", "52"),
+            ("List AI models", "53"),
+            ("Detect local AI models", "64"),
         ]),
     ]
 
@@ -466,6 +463,108 @@ def _menu_choice_to_action(choice, sections):
     if choice in action_codes:
         return choice
     return None
+
+def _prompt_submission_source():
+    options = [("google", "Google Classroom"), ("canvas", "Canvas")]
+    print("Select submission source:")
+    for idx, (_, label) in enumerate(options, 1):
+        print(f"{idx}. {label}")
+    print("q. Cancel")
+    while True:
+        raw = input("Choose source (number or name): ").strip().lower()
+        if raw in ("q", "quit", ""):
+            return None
+        if raw.isdigit():
+            sel = int(raw) - 1
+            if 0 <= sel < len(options):
+                return options[sel][0]
+        if raw in ("google", "gc", "gclass", "classroom"):
+            return "google"
+        if raw in ("canvas", "cv"):
+            return "canvas"
+        print("Invalid choice. Try again.")
+
+def _prompt_submission_status(source):
+    options = get_submission_status_options(source)
+    if not options:
+        print("No submission status options available.")
+        return None
+    label = "Google Classroom" if str(source).strip().lower() != "canvas" else "Canvas"
+    print(f"Select {label} submission status:")
+    for idx, (state, explanation) in enumerate(options, 1):
+        suffix = f" - {explanation}" if explanation else ""
+        print(f"{idx}. {state}{suffix}")
+    print("q. Cancel")
+    while True:
+        raw = input("Choose status (number or name): ").strip()
+        if raw.lower() in ("q", "quit", ""):
+            return None
+        if raw.isdigit():
+            sel = int(raw) - 1
+            if 0 <= sel < len(options):
+                return options[sel][0]
+        if str(source).strip().lower() == "canvas":
+            mapped = _normalize_canvas_submission_state_token(raw)
+        else:
+            mapped = _normalize_gc_submission_state_token(raw)
+        if mapped:
+            return mapped
+        print("Invalid choice. Try again.")
+
+def _collect_submission_assignment_titles(students, source):
+    field_name = "Canvas Submissions" if str(source).strip().lower() == "canvas" else "Submissions"
+    titles = set()
+    for s in students or []:
+        submissions = getattr(s, field_name, None)
+        if isinstance(submissions, dict):
+            for title in submissions.keys():
+                if isinstance(title, str) and title.strip():
+                    titles.add(title.strip())
+    return sorted(titles, key=lambda t: t.lower())
+
+def _prompt_submission_assignment(students, source):
+    titles = _collect_submission_assignment_titles(students, source)
+    if not titles:
+        return None
+    print("Assignment filter:")
+    for idx, title in enumerate(titles, 1):
+        print(f"{idx}. {title}")
+    print("a. All listed assignments")
+    print("Enter to skip (any assignment)")
+    while True:
+        raw = input("Select assignment(s) (e.g., 1,3-5, a, or Enter): ").strip().lower()
+        if not raw:
+            return None
+        if raw == "a":
+            return titles
+        indices = parse_selection(raw, len(titles))
+        if indices:
+            return [titles[i - 1] for i in indices]
+        print("Invalid selection. Try again.")
+
+def _parse_submission_status_arg(raw):
+    if raw is None:
+        return None, None, None
+    value = str(raw).strip()
+    if not value:
+        return None, None, None
+    assignment = None
+    if "@" in value:
+        value, assignment = value.split("@", 1)
+        assignment = assignment.strip()
+        if assignment:
+            assignment = [v.strip() for v in assignment.split(",") if v.strip()]
+        else:
+            assignment = None
+    if ":" in value:
+        prefix, token = value.split(":", 1)
+        prefix = prefix.strip().lower()
+        token = token.strip()
+        if prefix in ("canvas", "cv"):
+            return "canvas", token, assignment
+        if prefix in ("google", "gc", "gclass", "classroom"):
+            return "google", token, assignment
+    return None, value, assignment
 
 
 def _print_menu_fallback(sections):
@@ -672,6 +771,9 @@ def main():
     db_group.add_argument('--list-missing-ids', nargs='?', const="all",
                           help="List students missing Google/Canvas/Student IDs (optional: google,canvas,student,all or comma-separated)",
                           dest="list_missing_ids", metavar="TYPES")
+    db_group.add_argument('--list-submission-status', nargs='?', const=True, type=str,
+                          help="List students by submission status (prefix with google: or canvas:, optional @assignment title, e.g., google:turned_in@Quiz 1)",
+                          dest="list_submission_status", metavar="STATUS")
     db_group.add_argument('--missing-ids-format', type=str, default="txt",
                           choices=["txt", "csv", "json"],
                           help="Output format for missing-ids report (default: txt)",
@@ -692,6 +794,15 @@ def main():
     db_group.add_argument('--add-google-sheet', '-gsh', type=str, nargs='?', const=True,
                           help="Import students from Google Sheet URL (optional: URL, default from config)",
                           dest="add_google_sheet", metavar="SHEET_URL")
+    db_group.add_argument('--import-mini-projects', action='store_true',
+                          help="Import mini-project data from Google Sheets (lecturer topics + student registrations)",
+                          dest="import_mini_projects")
+    db_group.add_argument('--mini-project-lecturer-sheet', type=str,
+                          help="Google Sheet URL for lecturer mini-project topics (optional; default from config)",
+                          dest="mini_project_lecturer_sheet", metavar="URL")
+    db_group.add_argument('--mini-project-registration-sheet', type=str,
+                          help="Google Sheet URL for student mini-project registrations (optional; default from config)",
+                          dest="mini_project_registration_sheet", metavar="URL")
 
     ocr_group = parser.add_argument_group("OCR and PDFs")
     ocr_group.add_argument('--add-blackboard-counts', '-b', type=str,
@@ -882,6 +993,9 @@ def main():
     gclass_group.add_argument('--list-google-courses', '-lgc', action='store_true',
                               help="List Google Classroom courses for the current account",
                               dest="list_google_courses")
+    gclass_group.add_argument('--list-google-students', action='store_true',
+                              help="List Google Classroom students for a course (uses --google-course-id or prompts)",
+                              dest="list_google_students")
     gclass_group.add_argument('--grade-google-classroom', '-ggc', action='store_true',
                               help="Grade Google Classroom assignment submissions",
                               dest="grade_google_classroom")
@@ -1329,19 +1443,48 @@ def main():
         backup_database(db_path=db_path, backup_dir=backup_dir, keep=args.db_backup_keep, verbose=args.verbose)
 
     if args.list_google_courses:
-        credentials_path, token_path = _resolve_google_paths(
-            args,
-            config,
-            course_code=args.course_code,
-            verbose=args.verbose,
-        )
-        courses = list_google_classroom_courses(credentials_path, token_path, verbose=args.verbose)
-        if courses:
-            print("Available Google Classroom courses:")
-            for i, c in enumerate(courses, 1):
-                print(f"{i}. {c.get('name')} (ID: {c.get('id')})")
+        if args.list_email_domain or args.list_missing_ids or getattr(args, "list_submission_status", None):
+            print("Error: --list-google-courses cannot be combined with other listing flags (live Google Classroom course listing is not a local DB filter).")
         else:
-            print("No courses found.")
+            credentials_path, token_path = _resolve_google_paths(
+                args,
+                config,
+                course_code=args.course_code,
+                verbose=args.verbose,
+            )
+            courses = list_google_classroom_courses(credentials_path, token_path, verbose=args.verbose)
+            if courses:
+                print("Available Google Classroom courses:")
+                for i, c in enumerate(courses, 1):
+                    print(f"{i}. {c.get('name')} (ID: {c.get('id')})")
+            else:
+                print("No courses found.")
+    if args.list_google_students:
+        if args.list_email_domain or args.list_missing_ids or getattr(args, "list_submission_status", None):
+            print("Error: --list-google-students cannot be combined with other listing flags (live Google Classroom roster is not a local DB filter).")
+        else:
+            credentials_path, token_path = _resolve_google_paths(
+                args,
+                config,
+                course_code=args.course_code,
+                verbose=args.verbose,
+            )
+            students_list = list_google_classroom_students(
+                credentials_path,
+                token_path,
+                course_id=args.google_course_id,
+                verbose=args.verbose,
+            )
+            if students_list:
+                print("Google Classroom students:")
+                for i, entry in enumerate(students_list, 1):
+                    profile = entry.get("profile", {}) or {}
+                    full_name = (profile.get("name", {}) or {}).get("fullName") or ""
+                    email = profile.get("emailAddress") or ""
+                    user_id = entry.get("userId") or ""
+                    print(f"{i}. {full_name} | {email} | ID: {user_id}")
+            else:
+                print("No students found.")
 
     students = []
     if os.path.exists(db_path):
@@ -1575,15 +1718,18 @@ def main():
             print("No assignments found or failed to fetch assignments.")
 
     if args.list_canvas_members:
-        course_id = args.canvas_course_id if hasattr(args, "canvas_course_id") and args.canvas_course_id else CANVAS_LMS_COURSE_ID
-        people = list_canvas_people(
-            api_url=CANVAS_LMS_API_URL,
-            api_key=CANVAS_LMS_API_KEY,
-            course_id=course_id,
-            verbose=args.verbose
-        )
-        print_canvas_people(people, verbose=args.verbose)
-        # Output is already printed in list_canvas_people
+        if args.list_email_domain or args.list_missing_ids or getattr(args, "list_submission_status", None):
+            print("Error: --list-canvas-members cannot be combined with other listing flags (live Canvas roster is not a local DB filter).")
+        else:
+            course_id = args.canvas_course_id if hasattr(args, "canvas_course_id") and args.canvas_course_id else CANVAS_LMS_COURSE_ID
+            people = list_canvas_people(
+                api_url=CANVAS_LMS_API_URL,
+                api_key=CANVAS_LMS_API_KEY,
+                course_id=course_id,
+                verbose=args.verbose
+            )
+            print_canvas_people(people, verbose=args.verbose)
+            # Output is already printed in list_canvas_people
 
     if args.search_canvas_user:
         course_id = args.canvas_course_id if hasattr(args, "canvas_course_id") and args.canvas_course_id else CANVAS_LMS_COURSE_ID
@@ -2249,28 +2395,108 @@ def main():
         export_path = args.export_anonymized if isinstance(args.export_anonymized, str) else None
         export_anonymized_roster(students, file_path=export_path, db_path=db_path, verbose=args.verbose)
 
-    if args.list_email_domain:
-        list_students_by_email_domain(students, args.list_email_domain, db_path=db_path, verbose=args.verbose)
+    listing_flags = {
+        "email_domain": args.list_email_domain,
+        "missing_ids": args.list_missing_ids,
+        "submission_status": getattr(args, "list_submission_status", None),
+    }
+    active_listing_flags = [name for name, value in listing_flags.items() if value]
+    combined_listing = len(active_listing_flags) > 1
+    skip_listings = False
 
-    if getattr(args, "list_duplicate_names", False):
-        list_students_with_same_full_name(
-            students,
-            db_path=db_path,
-            verbose=args.verbose,
-            field_name=getattr(args, "duplicate_name_field", "name"),
-            output_format=getattr(args, "duplicate_name_format", "txt"),
-            output_path=getattr(args, "duplicate_name_output", None),
-        )
+    if getattr(args, "list_duplicate_names", False) and active_listing_flags:
+        print("Error: --list-duplicate-names cannot be combined with other listing flags (duplicate output is group-based, not per-student).")
+        skip_listings = True
 
-    if args.list_missing_ids:
-        list_students_missing_ids(
-            students,
-            categories=args.list_missing_ids,
-            db_path=db_path,
-            verbose=args.verbose,
-            output_format=getattr(args, "missing_ids_format", "txt"),
-            output_path=getattr(args, "missing_ids_output", None),
-        )
+    if (getattr(args, "list_canvas_members", False) or getattr(args, "list_google_students", False) or getattr(args, "list_google_courses", False)) and active_listing_flags:
+        skip_listings = True
+
+    if not skip_listings and combined_listing:
+        status = getattr(args, "list_submission_status", None)
+        source = None
+        assignment = None
+        cancelled = False
+        if status is True:
+            source = _prompt_submission_source()
+            if not source:
+                cancelled = True
+            else:
+                status = _prompt_submission_status(source)
+                if not status:
+                    cancelled = True
+                if not cancelled:
+                    assignment = _prompt_submission_assignment(students, source)
+        elif isinstance(status, str):
+            source, status, assignment = _parse_submission_status_arg(status)
+            if status is None:
+                cancelled = True
+            elif assignment is None:
+                assignment = _prompt_submission_assignment(students, source)
+        if cancelled:
+            print("Listing cancelled.")
+        else:
+            list_students_by_combined_filters(
+                students,
+                email_domain=args.list_email_domain,
+                missing_ids=args.list_missing_ids,
+                submission_status=status,
+                submission_source=source or "google",
+                submission_assignment=assignment,
+                db_path=db_path,
+                verbose=args.verbose,
+            )
+
+    if not skip_listings and not combined_listing:
+        if args.list_email_domain:
+            list_students_by_email_domain(students, args.list_email_domain, db_path=db_path, verbose=args.verbose)
+
+        if getattr(args, "list_duplicate_names", False):
+            list_students_with_same_full_name(
+                students,
+                db_path=db_path,
+                verbose=args.verbose,
+                field_name=getattr(args, "duplicate_name_field", "name"),
+                output_format=getattr(args, "duplicate_name_format", "txt"),
+                output_path=getattr(args, "duplicate_name_output", None),
+            )
+
+        if args.list_missing_ids:
+            list_students_missing_ids(
+                students,
+                categories=args.list_missing_ids,
+                db_path=db_path,
+                verbose=args.verbose,
+                output_format=getattr(args, "missing_ids_format", "txt"),
+                output_path=getattr(args, "missing_ids_output", None),
+            )
+
+        if getattr(args, "list_submission_status", None):
+            status = args.list_submission_status
+            source = None
+            assignment = None
+            if status is True:
+                source = _prompt_submission_source()
+                if not source:
+                    status = None
+                else:
+                    status = _prompt_submission_status(source)
+                    if not status:
+                        status = None
+                    if status:
+                        assignment = _prompt_submission_assignment(students, source)
+            elif isinstance(status, str):
+                source, status, assignment = _parse_submission_status_arg(status)
+                if status and assignment is None:
+                    assignment = _prompt_submission_assignment(students, source)
+            if status:
+                list_students_by_submission_status(
+                    students,
+                    status=status,
+                    source=source or "google",
+                    assignment=assignment,
+                    db_path=db_path,
+                    verbose=args.verbose,
+                )
 
     if args.add_google_sheet:
         sheet_url = None
@@ -2295,6 +2521,39 @@ def main():
             )
             import_students_from_file(
                 temp_csv,
+                db_path=db_path,
+                verbose=args.verbose,
+            )
+
+    if getattr(args, "import_mini_projects", False):
+        lecturer_url = args.mini_project_lecturer_sheet if hasattr(args, "mini_project_lecturer_sheet") else None
+        if not lecturer_url:
+            lecturer_url = config.get("GOOGLE_SHEET_LECTURER_TOPICS_URL") if isinstance(config, dict) else None
+        if not lecturer_url:
+            lecturer_url = input("Lecturer topics sheet URL (or 'q' to quit): ").strip()
+            if lecturer_url.lower() in ("q", "quit"):
+                lecturer_url = None
+        student_url = args.mini_project_registration_sheet if hasattr(args, "mini_project_registration_sheet") else None
+        if not student_url:
+            student_url = config.get("GOOGLE_SHEET_STUDENT_REGISTRATION_URL") if isinstance(config, dict) else None
+        if not student_url:
+            student_url = input("Student registration sheet URL (or 'q' to quit): ").strip()
+            if student_url.lower() in ("q", "quit"):
+                student_url = None
+        if not lecturer_url or not student_url:
+            print("Mini-project import requires both lecturer and student sheet URLs.")
+        else:
+            credentials_path, token_path = _resolve_google_paths(
+                args,
+                config,
+                course_code=args.course_code,
+                verbose=args.verbose,
+            )
+            import_mini_project_data_from_sheets(
+                lecturer_url,
+                student_url,
+                credentials_path=credentials_path,
+                token_path=token_path,
                 db_path=db_path,
                 verbose=args.verbose,
             )
@@ -2583,6 +2842,38 @@ def main():
                     verbose=args.verbose,
                 )
                 students = load_database(db_path, verbose=args.verbose)
+            elif choice == '86':
+                lecturer_url = input("Lecturer topics sheet URL (leave blank to use config default, or 'q' to quit): ").strip()
+                if lecturer_url.lower() in ('q', 'quit'):
+                    continue
+                if not lecturer_url:
+                    lecturer_url = config.get("GOOGLE_SHEET_LECTURER_TOPICS_URL") if isinstance(config, dict) else None
+                if not lecturer_url:
+                    print("Lecturer topics sheet URL not provided. Set GOOGLE_SHEET_LECTURER_TOPICS_URL in config or paste a URL.")
+                    continue
+                student_url = input("Student registration sheet URL (leave blank to use config default, or 'q' to quit): ").strip()
+                if student_url.lower() in ('q', 'quit'):
+                    continue
+                if not student_url:
+                    student_url = config.get("GOOGLE_SHEET_STUDENT_REGISTRATION_URL") if isinstance(config, dict) else None
+                if not student_url:
+                    print("Student registration sheet URL not provided. Set GOOGLE_SHEET_STUDENT_REGISTRATION_URL in config or paste a URL.")
+                    continue
+                credentials_path, token_path = _resolve_google_paths(
+                    args,
+                    config,
+                    course_code=args.course_code,
+                    verbose=args.verbose,
+                )
+                import_mini_project_data_from_sheets(
+                    lecturer_url,
+                    student_url,
+                    credentials_path=credentials_path,
+                    token_path=token_path,
+                    db_path=db_path,
+                    verbose=args.verbose,
+                )
+                students = load_database(db_path, verbose=args.verbose)
             elif choice == '2':
                 save_database(students, db_path=db_path, verbose=args.verbose, audit_source="manual-save")
                 print("Database saved.")
@@ -2660,6 +2951,22 @@ def main():
                     verbose=args.verbose,
                     output_format=output_format,
                     output_path=output_path or None,
+                )
+            elif choice == '84':
+                source = _prompt_submission_source()
+                if not source:
+                    continue
+                status = _prompt_submission_status(source)
+                if not status:
+                    continue
+                assignment = _prompt_submission_assignment(students, source)
+                list_students_by_submission_status(
+                    students,
+                    status=status,
+                    source=source,
+                    assignment=assignment,
+                    db_path=db_path,
+                    verbose=args.verbose,
                 )
             elif choice == '51':
                 override_path = input_with_completion(
@@ -2794,6 +3101,29 @@ def main():
                         print(f"{i}. {c.get('name')} (ID: {c.get('id')})")
                 else:
                     print("No courses found.")
+            elif choice == '85':
+                credentials_path = config.get("CREDENTIALS_PATH") if isinstance(config, dict) else None
+                if not credentials_path:
+                    credentials_path = get_default_credentials_path(course_code=args.course_code)
+                token_path = config.get("TOKEN_PATH") if isinstance(config, dict) else None
+                if not token_path:
+                    token_path = get_default_token_path(course_code=args.course_code)
+                students_list = list_google_classroom_students(
+                    credentials_path,
+                    token_path,
+                    course_id=args.google_course_id,
+                    verbose=args.verbose,
+                )
+                if students_list:
+                    print("Google Classroom students:")
+                    for i, entry in enumerate(students_list, 1):
+                        profile = entry.get("profile", {}) or {}
+                        full_name = (profile.get("name", {}) or {}).get("fullName") or ""
+                        email = profile.get("emailAddress") or ""
+                        user_id = entry.get("userId") or ""
+                        print(f"{i}. {full_name} | {email} | ID: {user_id}")
+                else:
+                    print("No students found.")
             elif choice == '9':
                 export_path = input_with_completion("Enter export TXT file path (or 'q' to quit): ").strip()
                 if export_path.lower() in ('q', 'quit'):
