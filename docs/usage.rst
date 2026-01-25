@@ -105,6 +105,9 @@ course selection prompt.
 Final evaluation weights can be configured via ``WEIGHT_CC``, ``WEIGHT_GK``,
 and ``WEIGHT_CK`` in ``config.json``. The weights must sum to 1.0.
 
+The organization field in VCF exports can be customized via ``UNIVERSITY_NAME``
+in ``config.json``.
+
 OCR dependencies and setup
 --------------------------
 

@@ -11358,12 +11358,10 @@ def export_students_to_vcf(students, file_path=None, db_path=None, verbose=False
                 f.write(_vcf_fold(line_fn) + "\n")
             
             if phone:
-                # Normalize phone number if needed? User example shows +84...
-                # We'll just use as is or maybe a simple check
-                line_tel = f"TEL;type=HOME;type=VOICE;type=pref:{phone}"
+                # Deduplicate: if HOME and CELL are the same, write only one.
+                # Use type=CELL as preferred for students.
+                line_tel = f"TEL;type=CELL;type=VOICE;type=pref:{phone}"
                 f.write(_vcf_fold(line_tel) + "\n")
-                line_tel2 = f"TEL;type=CELL;type=VOICE:{phone}"
-                f.write(_vcf_fold(line_tel2) + "\n")
             
             f.write(f"REV:{rev}\n")
             f.write("END:VCARD\n")
@@ -11491,10 +11489,10 @@ def export_companies_to_vcf(file_path=None, db_path="companies.db", verbose=Fals
                     f.write(_vcf_fold(line_fn) + "\n")
                 
                 if phone:
+                    # Deduplicate: if WORK and CELL are the same, write only one.
+                    # Use type=WORK as preferred for companies.
                     line_tel = f"TEL;type=WORK;type=VOICE;type=pref:{phone}"
                     f.write(_vcf_fold(line_tel) + "\n")
-                    line_tel2 = f"TEL;type=CELL;type=VOICE:{phone}"
-                    f.write(_vcf_fold(line_tel2) + "\n")
                 
                 if email:
                     line_email = f"EMAIL;type=INTERNET;type=WORK;type=pref:{email}"

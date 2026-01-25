@@ -205,6 +205,8 @@ Student Database
 
 - ``--add-file`` (``-a``): Import students from Excel, CSV, or PDF file into the database
 - ``--add-google-sheet`` (``-gsh``): Import students from Google Sheet URL (optional: URL, default from config)
+- ``--import-companies`` (nargs='?'): Import company data from Excel/CSV to companies.db
+- ``--export-companies``: Export company list to Excel file
 - ``--import-mini-projects``: Import mini-project data from Google Sheets (lecturer topics + student registrations)
 - ``--mini-project-lecturer-sheet``: Google Sheet URL for lecturer mini-project topics (optional; default from config)
 - ``--mini-project-registration-sheet``: Google Sheet URL for student mini-project registrations (optional; default from config)

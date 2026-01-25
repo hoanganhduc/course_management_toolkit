@@ -817,6 +817,9 @@ def main():
     db_group.add_argument('--import-companies', nargs='?', const=True,
                           help="Import company data from Excel/CSV to companies.db",
                           dest="import_companies", metavar="PATH")
+    db_group.add_argument('--export-companies', type=str,
+                          help="Export company list to Excel file",
+                          dest="export_companies", metavar="EXCEL")
 
     ocr_group = parser.add_argument_group("OCR and PDFs")
     ocr_group.add_argument('--add-blackboard-counts', '-b', type=str,
@@ -1678,6 +1681,14 @@ def main():
 
     if args.export_excel:
         export_to_excel(students, args.export_excel, db_path=db_path, verbose=args.verbose)
+
+    if args.export_companies:
+        from .data import export_companies_to_excel
+        export_companies_to_excel(
+            args.export_companies,
+            db_path="companies.db",
+            filter_list=list(filter_list) if filter_list and args.export_type == 'company' else None
+        )
 
     if args.export_emails:
         export_emails_to_txt(students, args.export_emails, db_path=db_path, verbose=args.verbose)

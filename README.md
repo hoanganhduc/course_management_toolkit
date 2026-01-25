@@ -229,7 +229,8 @@ course --export-companies companies_export.xlsx
 ```
 
 Notes:
-- MAT*.xlsx imports ignore score columns (CC, GK, CK, totals); only roster fields are imported.
+- `UNIVERSITY_NAME` in `config.json` sets the organization field in VCF exports.
+- `MAT*.xlsx` imports ignore score columns (CC, GK, CK, totals); only roster fields are imported.
 - Internship and Company imports support both Vietnamese and English column headers.
 
 List students by email domain:
