@@ -6484,7 +6484,7 @@ def export_all_details_to_txt(students, file_path=None, db_path=None, verbose=Fa
             remaining_keys = [
                 k for k in data.keys()
                 if k not in seen
-                and k not in ("Grades", "Submissions", "Canvas Submission Comments", "Canvas Rubric Evaluations", "Google_Classroom_Topic_Grades")
+                and k not in ("Grades", "Submissions", "Canvas Submission Comments", "Canvas Rubric Evaluations", "Google_Classroom_Topic_Grades", "Canvas Submission Details", "Google_Classroom_Submission_Details")
                 and (has_canvas_id or k != "Canvas Section")
             ]
             for key in sorted(remaining_keys):
@@ -6649,15 +6649,21 @@ def export_all_details_to_txt(students, file_path=None, db_path=None, verbose=Fa
                     details = canvas_details.get(title) or {}
                     count = details.get("attachment_count", 0)
                     sub_at = details.get("submitted_at") or "unknown"
-                    f.write(f"  - {title}: {count} file(s), submitted at {sub_at}\n")
+                    f.write(f"  - {title}:\n")
+                    f.write(f"      Submitted at: {sub_at}\n")
+                    f.write(f"      Attachment count: {count}\n")
                     files = details.get("files", [])
-                    for file_info in files:
-                        fname = file_info.get("name", "unknown")
-                        size_str = file_info.get("size_str", "")
-                        if size_str:
-                            f.write(f"      * {fname} ({size_str})\n")
-                        else:
-                            f.write(f"      * {fname}\n")
+                    if files:
+                        f.write(f"      Files:\n")
+                        for file_info in files:
+                            fname = file_info.get("name", "unknown")
+                            size_str = file_info.get("size_str", "")
+                            if size_str:
+                                f.write(f"        * {fname} ({size_str})\n")
+                            else:
+                                f.write(f"        * {fname}\n")
+                    else:
+                        f.write(f"      Files: (None)\n")
 
             # Export Google Classroom Submission Details
             gc_details = data.get("Google_Classroom_Submission_Details")
@@ -6667,12 +6673,18 @@ def export_all_details_to_txt(students, file_path=None, db_path=None, verbose=Fa
                     details = gc_details.get(title) or {}
                     count = details.get("attachment_count", 0)
                     sub_at = details.get("submitted_at") or "unknown"
-                    f.write(f"  - {title}: {count} attachment(s), time: {sub_at}\n")
+                    f.write(f"  - {title}:\n")
+                    f.write(f"      Submitted at: {sub_at}\n")
+                    f.write(f"      Attachment count: {count}\n")
                     files = details.get("files", [])
-                    for file_info in files:
-                        fname = file_info.get("name", "unknown")
-                        ext = file_info.get("ext", "")
-                        f.write(f"      * {fname}\n")
+                    if files:
+                        f.write(f"      Files:\n")
+                        for file_info in files:
+                            fname = file_info.get("name", "unknown")
+                            ext = file_info.get("ext", "")
+                            f.write(f"        * {fname}\n")
+                    else:
+                        f.write(f"      Files: (None)\n")
 
             f.write('-' * 40 + '\n')
     if verbose:

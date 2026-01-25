@@ -346,8 +346,9 @@ def sync_students_with_google_classroom(students, db_path=None, course_id=None, 
 
                                     if "driveFile" in att:
                                         drive_file = att["driveFile"]
-                                        name = drive_file.get("title", "Unknown Drive File")
-                                        ext = os.path.splitext(name)[1] if name else ""
+                                        file_title = drive_file.get("title", "Unknown Drive File")
+                                        name = file_title
+                                        ext = os.path.splitext(file_title)[1] if file_title else ""
                                     elif "link" in att:
                                         link = att["link"]
                                         name = link.get("title", link.get("url", "External Link"))
