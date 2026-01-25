@@ -1512,6 +1512,7 @@ def main():
             url = config.get("INTERNSHIP_SHEET_URL")
         
         if url:
+             from .data import import_internship_from_sheet
              import_internship_from_sheet(url, db_path, verbose=args.verbose)
         else:
              print("Error: No internship sheet URL provided and INTERNSHIP_SHEET_URL not found in config.")
@@ -1700,12 +1701,29 @@ def main():
             )
 
     if args.export_vcf:
+
+        # Auto-detect company export type based on DB name
+        is_company_db = False
         if args.export_type == 'company':
+            is_company_db = True
+        elif args.db and "companies.db" in str(args.db).lower():
+            is_company_db = True
+        elif db_path:
+            norm_path = str(db_path).lower().replace("\\", "/") # Normalize path separators and casing
+            if "companies.db" in norm_path:
+                is_company_db = True
+        
+        if is_company_db:
+            # Swap default filename if it matches the student default
+            vcf_path = args.export_vcf
+            if not vcf_path or vcf_path == "students_contacts.vcf":
+                vcf_path = "companies_contacts.vcf"
+                
             from .data import export_companies_to_vcf
-            export_companies_to_vcf(args.export_vcf, db_path="companies.db", verbose=args.verbose, filter_list=filter_list)
+            export_companies_to_vcf(vcf_path, db_path=db_path or "companies.db", verbose=args.verbose, filter_list=filter_list)
         else:
             from .data import export_students_to_vcf
-            uni_name = config.get("UNIVERSITY_NAME", "UET-VNU") if isinstance(config, dict) else "UET-VNU"
+            uni_name = config.get("UNIVERSITY_NAME", "") if isinstance(config, dict) else ""
             export_students_to_vcf(students, args.export_vcf, db_path=db_path, verbose=args.verbose, university_name=uni_name)
 
     if args.load_override_grades:

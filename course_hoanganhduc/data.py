@@ -4531,13 +4531,21 @@ def load_database(db_path, verbose=False):
         conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
         cursor = conn.cursor()
         # Check if tablestudents exists
+        table_name = None
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='students'")
         if cursor.fetchone():
+            table_name = "students"
+        else:
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='companies'")
+            if cursor.fetchone():
+                table_name = "companies"
+
+        if table_name:
             if verbose:
-                print(f"[LoadDatabase] Detected SQLite database.")
+                print(f"[LoadDatabase] Detected SQLite database (table: {table_name}).")
             # Load students from SQLite
             students = []
-            cursor.execute("SELECT * FROM students")
+            cursor.execute(f"SELECT * FROM {table_name}")
             # Get columns to map (assuming standard schema or dynamic)
             # For simplicity, we assume schema matches what we inserted or we map dynamically
             # Let's map dynamically based on column names
@@ -4569,7 +4577,16 @@ def load_database(db_path, verbose=False):
                     "skills": "Skills",
                     "wishlist": "Company Wishlist",
                     "notes": "Notes",
-                    "registration_timestamp": "Registration Time"
+                    "registration_timestamp": "Registration Time",
+                    # Company fields
+                    # We map 'contact_person' to 'Name' so it appears as the contact name in VCF
+                    # We map 'name' to 'Internship Company' (or similar) so it appears as the organization
+                    "name": "Internship Company",  
+                    "contact_person": "Name",
+                    "address": "Address",
+                    "website": "Website",
+                    "email": "Email",
+                    "phone": "Phone Number"
                 }
 
                 for col_name, value in row_dict.items():
@@ -10396,9 +10413,9 @@ def import_internship_from_sheet(sheet_url, db_path, verbose=False):
                 
                 # Map CSV columns to DB columns (support both VN and EN headers)
                 student_id = row.get('Mã sinh viên', row.get('Student ID', '')).strip()
-                if not student_id:
+                if not student_id or student_id.lower() in ("mã sinh viên", "student id", "mssv"):
                     if verbose:
-                        print(f"Skipping row {records_processed}: No student_id")
+                        print(f"Skipping row {records_processed}: Invalid Student ID '{student_id}'")
                     continue
                     
                 full_name = row.get('Họ và tên', row.get('Full Name', '')).strip()
@@ -10804,7 +10821,8 @@ def import_registrations_from_sheet(sheet_url, db_path, verbose=False, sheet_nam
                 records_processed += 1
                 
                 student_id = row.get('Mã sinh viên', row.get('Student ID', '')).strip()
-                if not student_id:
+                # Skip header row or empty ID
+                if not student_id or student_id.lower() in ("mã sinh viên", "student id", "mssv"):
                     continue
                     
                 full_name = row.get('Họ và tên', row.get('Full Name', '')).strip()
@@ -11008,20 +11026,34 @@ def import_companies_from_excel(file_path, db_path="companies.db", verbose=False
     col_map = {}
     for col in df.columns:
         norm = _normalize_company_header(col)
-        if any(x in norm for x in ["tên công ty", "company name", "công ty", "đơn vị"]):
-            col_map["name"] = col
-        elif any(x in norm for x in ["trạng thái", "status", "tình trạng"]):
-            col_map["status"] = col
-        elif any(x in norm for x in ["người liên hệ", "contact person", "phụ trách"]):
-            col_map["contact_person"] = col
-        elif any(x in norm for x in ["email", "mail", "hòm thư"]):
+        
+        # 1. Identity fields (Email, Phone, Website) have specific patterns
+        if any(x in norm for x in ["email", "mail", "hòm thư"]):
             col_map["email"] = col
-        elif any(x in norm for x in ["sđt", "số điện thoại", "phone", "mobile", "tel"]):
+            continue
+        if any(x in norm for x in ["sđt", "số điện thoại", "phone", "mobile", "tel"]):
             col_map["phone"] = col
+            continue
+        if any(x in norm for x in ["website", "trang web", "link", "url"]):
+            col_map["website"] = col
+            continue
+            
+        # 2. Company Name
+        if any(x in norm for x in ["tên công ty", "company name", "công ty", "đơn vị", "doanh nghiệp"]):
+            col_map["name"] = col
+            continue
+            
+        # 3. Contact Person
+        # Exclude if it looks like an email header (already handled) or other conflicting headers
+        if any(x in norm for x in ["người liên hệ", "contact person", "phụ trách", "đại diện", "người đại diện"]):
+            col_map["contact_person"] = col
+            continue
+            
+        # 4. Status/Address/Notes
+        if any(x in norm for x in ["trạng thái", "status", "tình trạng"]):
+            col_map["status"] = col
         elif any(x in norm for x in ["địa chỉ", "address", "trụ sở"]):
             col_map["address"] = col
-        elif any(x in norm for x in ["website", "trang web", "link", "url"]):
-            col_map["website"] = col
         elif any(x in norm for x in ["ghi chú", "note", "desc"]):
             col_map["notes"] = col
 
@@ -11277,6 +11309,7 @@ def export_students_to_vcf(students, file_path=None, db_path=None, verbose=False
     from datetime import datetime
     rev = datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ")
     
+    exported_count = 0
     with open(file_path, 'w', encoding='utf-8') as f:
         for s in students:
             # Handle both Student objects and dictionaries
@@ -11291,6 +11324,10 @@ def export_students_to_vcf(students, file_path=None, db_path=None, verbose=False
             class_name = data.get("Lớp") or data.get("Class") or ""
             company = data.get("Internship Company") or data.get("Công ty thực tập") or ""
             phone = data.get("Phone Number") or data.get("Số điện thoại") or ""
+            
+            # Skip if no phone number
+            if not phone:
+                continue
             
             # Formatting the Organization/Note area for the 'N' and 'FN' fields
             org_info = []
@@ -11330,8 +11367,9 @@ def export_students_to_vcf(students, file_path=None, db_path=None, verbose=False
             
             f.write(f"REV:{rev}\n")
             f.write("END:VCARD\n")
+            exported_count += 1
             
-    print(f"Exported {len(students)} contacts to {file_path}")
+    print(f"Exported {exported_count} contacts to {file_path}")
 
 def export_companies_to_vcf(file_path=None, db_path="companies.db", verbose=False, filter_list=None):
     """Export company representative contact info to a VCF file, optionally filtering by a list of names."""
@@ -11378,14 +11416,62 @@ def export_companies_to_vcf(file_path=None, db_path="companies.db", verbose=Fals
             print("No companies found to export.")
             return
 
+        exported_count = 0
         with open(file_path, 'w', encoding='utf-8') as f:
             for row in rows:
                 data = dict(zip(column_names, row))
                 
-                name = data.get("contact_person") or "Representative"
                 company_name = data.get("name") or ""
                 phone = data.get("phone") or ""
                 email = data.get("email") or ""
+                
+                # Get raw name, default to Representative
+                raw_name = data.get("contact_person") or ""
+                
+                # Safety check: if name looks like an email using basic @ check
+                if "@" in raw_name:
+                    # If email field is empty, move this name to email
+                    if not email:
+                        email = raw_name
+                    # Reset name so it falls back to Representative
+                    raw_name = ""
+                
+                # Fallback: Check raw_data if name or phone is missing
+                if (not raw_name or not phone) and data.get("raw_data"):
+                    try:
+                        import json
+                        raw_json = data["raw_data"]
+                        # raw_data is a JSON string of the dictionary
+                        rd = json.loads(raw_json) if raw_json else {}
+                        
+                        if isinstance(rd, dict):
+                            # Try to find name if missing
+                            if not raw_name:
+                                for k, v in rd.items():
+                                    k_lower = k.lower()
+                                    # Look for common contact person headers
+                                    if any(x in k_lower for x in ["người liên hệ", "contact", "đại diện", "phụ trách", "name"]):
+                                        # Avoid picking up email or phone as name
+                                        if v and isinstance(v, str) and "@" not in v and not any(c.isdigit() for c in v):
+                                             raw_name = v.strip()
+                                             break
+                            
+                            # Try to find phone if missing
+                            if not phone:
+                                for k, v in rd.items():
+                                    k_lower = k.lower()
+                                    if any(x in k_lower for x in ["sđt", "điện thoại", "phone", "tel", "mobile"]):
+                                        if v:
+                                            phone = str(v).strip()
+                                            break
+                    except Exception:
+                        pass # Ignore parsing errors or if raw_data is malformed
+
+                # Skip if no phone number
+                if not phone:
+                    continue
+
+                name = raw_name if raw_name else "Representative"
                 
                 f.write("BEGIN:VCARD\n")
                 f.write("VERSION:3.0\n")
@@ -11416,8 +11502,9 @@ def export_companies_to_vcf(file_path=None, db_path="companies.db", verbose=Fals
                 
                 f.write(f"REV:{rev}\n")
                 f.write("END:VCARD\n")
+                exported_count += 1
                 
-        print(f"Exported {len(rows)} contacts to {file_path}")
+        print(f"Exported {exported_count} contacts to {file_path}")
     except Exception as e:
         print(f"Error exporting company vCards: {e}")
     finally:

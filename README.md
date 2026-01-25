@@ -446,6 +446,7 @@ Optional settings:
 - `DB_BACKUP_KEEP`, `CONFIG_BACKUP_KEEP` for backup retention.
 - `GRADE_AUDIT_ENABLED`, `GRADE_AUDIT_FIELDS` to control grade audit history stored in the database.
 - `COURSE_CODE`, `COURSE_NAME` for calendar titles when not provided via CLI or input files.
+- `UNIVERSITY_NAME` (default: empty) for VCF export organization field.
 - `WEIGHT_CC`, `WEIGHT_GK`, `WEIGHT_CK` for final total score weighting (must sum to 1.0).
 - `GOOGLE_CLASSROOM_GRADE_CATEGORY_METHOD` for topic/category aggregation (average, sum, weighted; default: average).
 - `GOOGLE_CLASSROOM_CC_TOPICS`, `GOOGLE_CLASSROOM_GK_TOPICS`, `GOOGLE_CLASSROOM_CK_TOPICS` for CC/GK/CK mapping (comma-separated topic names).
