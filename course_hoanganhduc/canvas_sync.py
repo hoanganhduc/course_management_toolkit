@@ -22,20 +22,19 @@ from .settings import (
 def sync_students_with_canvas(students, db_path=None, course_id=None, api_url=CANVAS_LMS_API_URL, api_key=CANVAS_LMS_API_KEY, verbose=False):
     """
     Sync students in the local database with active students from Canvas course.
-    Adds new students from Canvas if not present, updates Canvas ID for existing students,
-    and syncs scores of both total course grade and each assignment category.
-
-    Args:
-        students: List of Student objects
-        db_path: Path to save the database
-        course_id: Canvas course ID (uses default if None)
-        api_url: Canvas API URL
-        api_key: Canvas API key
-        verbose: If True, print more details; otherwise, print only important notice
-
-    Returns:
-        (added_count, updated_count): Counts of students added and updated
     """
+    def format_size(size_bytes):
+        if not size_bytes:
+            return ""
+        try:
+            bytes_val = float(size_bytes)
+            for unit in ['B', 'KB', 'MB', 'GB']:
+                if bytes_val < 1024:
+                    return f"{bytes_val:.1f}{unit}"
+                bytes_val /= 1024
+            return f"{bytes_val:.1f}TB"
+        except Exception:
+            return ""
     try:
         def _scale_score_to_ten(score, max_points=None):
             try:
@@ -187,7 +186,8 @@ def sync_students_with_canvas(students, db_path=None, course_id=None, api_url=CA
             print("[SyncCanvas] Fetching assignment groups and scores...")
         try:
             headers = {'Authorization': f'Bearer {api_key}'}
-            group_scores_url = f"{api_url}/api/v1/courses/{course_id}/students/submissions?student_ids[]=all&include[]=assignment&include[]=user&include[]=score&grouped=true"
+            # Fetch group scores
+            group_scores_url = f"{api_url}/api/v1/courses/{course_id}/students/submissions?student_ids[]=all&include[]=assignment&include[]=user&include[]=score&include[]=submission_comments&include[]=rubric_assessment&include[]=submission_history&grouped=true"
             response = requests.get(group_scores_url, headers=headers)
             response.raise_for_status()
             category_scores_data = response.json()
@@ -303,6 +303,8 @@ def sync_students_with_canvas(students, db_path=None, course_id=None, api_url=CA
         assignment_comments_by_canvas_id = {}
         assignment_rubrics_by_canvas_id = {}
         assignment_status_by_canvas_id = {}
+        assignment_details_by_canvas_id = {}
+
         if important_assignments:
             if verbose:
                 print(f"[SyncCanvas] Fetching submissions for {len(important_assignments)} assignments...")
@@ -311,7 +313,7 @@ def sync_students_with_canvas(students, db_path=None, course_id=None, api_url=CA
                     assignment = course.get_assignment(assignment_id)
                     assignment_info = important_assignments[assignment_id]
 
-                    for submission in tqdm(assignment.get_submissions(include=["user", "submission_comments", "rubric_assessment"]),
+                    for submission in tqdm(assignment.get_submissions(include=["user", "submission_comments", "rubric_assessment", "attachments"]),
                                          desc=f"Processing {assignment_info['name']} submissions"):
                         user_id = getattr(submission, "user_id", None)
                         score = getattr(submission, "score", None)
@@ -352,6 +354,32 @@ def sync_students_with_canvas(students, db_path=None, course_id=None, api_url=CA
                                 if user_id not in assignment_rubrics_by_canvas_id:
                                     assignment_rubrics_by_canvas_id[user_id] = {}
                                 assignment_rubrics_by_canvas_id[user_id][assignment_id] = rubric
+
+                        # Capture attachment details
+                        if user_id:
+                            attachments = getattr(submission, "attachments", []) or []
+                            submitted_at = getattr(submission, "submitted_at", None)
+                            if attachments or submitted_at:
+                                if user_id not in assignment_details_by_canvas_id:
+                                    assignment_details_by_canvas_id[user_id] = {}
+                                
+                                files_info = []
+                                for att in attachments:
+                                    fname = getattr(att, "filename", "") or ""
+                                    fsize = getattr(att, "size", 0)
+                                    ext = os.path.splitext(fname)[1] if fname else ""
+                                    files_info.append({
+                                        "name": fname,
+                                        "size": fsize,
+                                        "size_str": format_size(fsize),
+                                        "ext": ext
+                                    })
+
+                                assignment_details_by_canvas_id[user_id][assignment_id] = {
+                                    "attachment_count": len(attachments),
+                                    "submitted_at": submitted_at,
+                                    "files": files_info
+                                }
             except Exception as e:
                 if verbose:
                     print(f"[SyncCanvas] Warning: Error fetching assignment submissions: {e}")
@@ -453,6 +481,16 @@ def sync_students_with_canvas(students, db_path=None, course_id=None, api_url=CA
                         setattr(matched_student, "Canvas Submissions", updated_statuses)
                         changed = True
 
+                if canvas_id and assignment_details_by_canvas_id.get(int(canvas_id)):
+                    existing_details = getattr(matched_student, "Canvas Submission Details", None) or {}
+                    updated_details = dict(existing_details)
+                    for assignment_id, details in assignment_details_by_canvas_id[int(canvas_id)].items():
+                        name = important_assignments.get(assignment_id, {}).get("name", str(assignment_id))
+                        updated_details[name] = details
+                    if updated_details != existing_details:
+                        setattr(matched_student, "Canvas Submission Details", updated_details)
+                        changed = True
+
                 if changed:
                     updated_count += 1
             else:
@@ -514,6 +552,13 @@ def sync_students_with_canvas(students, db_path=None, course_id=None, api_url=CA
                             statuses[name] = status
                     if statuses:
                         new_student_data["Canvas Submissions"] = statuses
+
+                if canvas_id and assignment_details_by_canvas_id.get(int(canvas_id)):
+                    details_map = {}
+                    for assignment_id, details in assignment_details_by_canvas_id[int(canvas_id)].items():
+                        name = important_assignments.get(assignment_id, {}).get("name", str(assignment_id))
+                        details_map[name] = details
+                    new_student_data["Canvas Submission Details"] = details_map
 
                 students.append(Student(**new_student_data))
                 if canvas_id:

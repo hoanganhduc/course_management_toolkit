@@ -1,5 +1,10 @@
 ﻿# Changelog
 
+## [0.1.4] - 2026-01-25
+- Enhanced `list --submission-status` to show attachment details (file count, size, type, upload time).
+- Updated Canvas and Google Classroom sync to fetch detailed attachment info (supports Drive files, Links, Forms, YouTube videos).
+- Updated `--export-all-details` to include full attachment breakdown.
+
 ## [0.1.3] - 2026-01-25
 - Improved `export_companies_to_vcf` with `raw_data` fallback logic to extract contact person and phone numbers.
 - VCF exports (students and companies) now skip entries with no phone number information.

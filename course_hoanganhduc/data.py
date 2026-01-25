@@ -5899,11 +5899,13 @@ def list_students_by_submission_status(students, status, source="google", assign
         field_name = "Canvas Submissions"
         explain = _canvas_submission_state_explanation
         normalize = _normalize_canvas_submission_state_token
+        details_field = "Canvas Submission Details"
     else:
         statuses = _normalize_gc_submission_states(status)
         field_name = "Submissions"
         explain = _gc_submission_state_explanation
         normalize = _normalize_gc_submission_state_token
+        details_field = "Google_Classroom_Submission_Details"
     if not statuses:
         print("No valid submission status provided.")
         return []
@@ -5933,10 +5935,33 @@ def list_students_by_submission_status(students, status, source="google", assign
         student_id = getattr(s, "Student ID", "") or ""
         email = getattr(s, "Email", "") or ""
         print(f"{idx}. {name} | {student_id} | {email}")
+        
+        details_map = getattr(s, details_field, {}) or {}
+        
         for title, state in sorted(matched_titles, key=lambda item: item[0]):
             explanation = explain(state)
             suffix = f" ({explanation})" if explanation else ""
-            print(f"   - {title}: {state}{suffix}")
+            
+            details = details_map.get(title)
+            details_str = ""
+            if details:
+                count = details.get("attachment_count", 0)
+                sub_at = details.get("submitted_at", "unknown")
+                files = details.get("files", [])
+                file_details_str = ""
+                if files:
+                    file_parts = []
+                    for f in files:
+                        fname = f.get("name", "unknown")
+                        size_str = f.get("size_str", "")
+                        if size_str:
+                            file_parts.append(f"{fname} ({size_str})")
+                        else:
+                            file_parts.append(fname)
+                    file_details_str = f" - {', '.join(file_parts)}"
+                details_str = f" [{count} files, {sub_at}]{file_details_str}"
+            
+            print(f"   - {title}: {state}{suffix}{details_str}")
     return matches
 
 def _filter_students_by_submission_status(students, status, source="google", assignment=None):
@@ -6615,6 +6640,40 @@ def export_all_details_to_txt(students, file_path=None, db_path=None, verbose=Fa
                             f.write(f"      * {key}: {detail}\n")
                     else:
                         f.write(f"  - {title}: {rubric}\n")
+            
+            # Export Canvas Submission Details
+            canvas_details = data.get("Canvas Submission Details")
+            if isinstance(canvas_details, dict):
+                f.write("Canvas submission details (Chi tiết bài nộp Canvas):\n")
+                for title in sorted(canvas_details.keys()):
+                    details = canvas_details.get(title) or {}
+                    count = details.get("attachment_count", 0)
+                    sub_at = details.get("submitted_at") or "unknown"
+                    f.write(f"  - {title}: {count} file(s), submitted at {sub_at}\n")
+                    files = details.get("files", [])
+                    for file_info in files:
+                        fname = file_info.get("name", "unknown")
+                        size_str = file_info.get("size_str", "")
+                        if size_str:
+                            f.write(f"      * {fname} ({size_str})\n")
+                        else:
+                            f.write(f"      * {fname}\n")
+
+            # Export Google Classroom Submission Details
+            gc_details = data.get("Google_Classroom_Submission_Details")
+            if isinstance(gc_details, dict):
+                f.write("Google Classroom submission details (Chi tiết bài nộp GC):\n")
+                for title in sorted(gc_details.keys()):
+                    details = gc_details.get(title) or {}
+                    count = details.get("attachment_count", 0)
+                    sub_at = details.get("submitted_at") or "unknown"
+                    f.write(f"  - {title}: {count} attachment(s), time: {sub_at}\n")
+                    files = details.get("files", [])
+                    for file_info in files:
+                        fname = file_info.get("name", "unknown")
+                        ext = file_info.get("ext", "")
+                        f.write(f"      * {fname}\n")
+
             f.write('-' * 40 + '\n')
     if verbose:
         print(f"[ExportAllDetails] Exported all student details to {file_path}")

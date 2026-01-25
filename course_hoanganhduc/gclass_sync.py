@@ -276,6 +276,7 @@ def sync_students_with_google_classroom(students, db_path=None, course_id=None, 
                     continue
                 grades = getattr(s, "Grades", {}) or {}
                 submissions = getattr(s, "Submissions", {}) or {}
+                submission_details = getattr(s, "Google_Classroom_Submission_Details", {}) or {}
                 topic_stats = {}
                 for cw in coursework:
                     cw_id = cw.get("id")
@@ -331,13 +332,52 @@ def sync_students_with_google_classroom(students, db_path=None, course_id=None, 
                                     if raw_max_val is not None:
                                         stats["raw_max_total"] += raw_max_val
                                     stats["count"] += 1
+                                    stats["count"] += 1
                             submissions[title] = state
+                            
+                            # Capture attachment details
+                            attachments = sub.get("assignmentSubmission", {}).get("attachments") or []
+                            submitted_at = sub.get("updateTime") or sub.get("creationTime")
+                            if attachments or submitted_at:
+                                files_info = []
+                                for att in attachments:
+                                    name = "Unknown Attachment"
+                                    ext = ""
+
+                                    if "driveFile" in att:
+                                        drive_file = att["driveFile"]
+                                        name = drive_file.get("title", "Unknown Drive File")
+                                        ext = os.path.splitext(name)[1] if name else ""
+                                    elif "link" in att:
+                                        link = att["link"]
+                                        name = link.get("title", link.get("url", "External Link"))
+                                        ext = ".url"
+                                    elif "form" in att:
+                                        form = att["form"]
+                                        name = form.get("title", form.get("formUrl", "Google Form"))
+                                        ext = ".form"
+                                    elif "youTubeVideo" in att:
+                                        video = att["youTubeVideo"]
+                                        name = video.get("title", f"YouTube Video ({video.get('id', 'Unknown')})")
+                                        ext = ".video"
+
+                                    files_info.append({
+                                        "name": name,
+                                        "ext": ext
+                                    })
+                                
+                                submission_details[title] = {
+                                    "attachment_count": len(attachments),
+                                    "submitted_at": submitted_at,
+                                    "files": files_info
+                                }
                     except Exception:
                         # ignore per-assignment errors but continue
                         if verbose:
                             print(f"[GClassroom] Warning: could not fetch submission for student {getattr(s,'Name','?')} cw:{title}")
                 s.Grades = grades
                 s.Submissions = submissions
+                s.Google_Classroom_Submission_Details = submission_details
                 topic_grades = {}
                 for topic_name, stats in topic_stats.items():
                     count = stats.get("count", 0)

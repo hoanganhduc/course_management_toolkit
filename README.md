@@ -277,6 +277,7 @@ course --list-submission-status google:NEW@Quiz 1,Quiz 2
 Notes:
 - Google Classroom values: `NEW`, `CREATED`, `TURNED_IN`, `RETURNED`, `RECLAIMED_BY_STUDENT`.
 - Canvas values: `UNSUBMITTED`, `SUBMITTED`, `GRADED`, `PENDING_REVIEW`, `COMPLETE`.
+- The output now includes attachment details (file count, upload time, file names, sizes, and types) if data has been synced.
 
 Combine listing filters (AND semantics):
 
@@ -401,6 +402,8 @@ course -E students.txt --student-sort-method first_last
 course -E students.txt --student-sort-method last_first
 course -E students.txt --student-sort-method id
 ```
+
+Note: `--export-all-details` now includes detailed attachment information (file names, sizes, types, upload times) from both Canvas and Google Classroom submissions.
 
 You can also set `STUDENT_SORT_METHOD` in `config.json` (first_last, last_first, id).
 

@@ -711,7 +711,7 @@ def main():
     db_group.add_argument('--modify', '-m', action='store_true', help="Interactively modify the student database", dest="modify")
     db_group.add_argument('--export-excel', '-x', type=str, help="Export student list to Excel file", dest="export_excel", metavar="EXCEL")
     db_group.add_argument('--export-emails', '-e', type=str, help="Export all student emails to TXT file (avoids duplicates)", dest="export_emails", metavar="EMAILS")
-    db_group.add_argument('--export-all-details', '-E', type=str, help="Export all student or company details to TXT file", dest="export_all_details", metavar="DETAILS")
+    db_group.add_argument('--export-all-details', '-E', type=str, help="Export all student or company details (including submission attachments) to TXT file", dest="export_all_details", metavar="DETAILS")
     db_group.add_argument('--export-type', '-et', '-type', type=str, choices=['student', 'company'], default='student',
                           help="Entity type to export with --export-all-details (student/company, default: student)",
                           dest="export_type", metavar="TYPE")
@@ -774,7 +774,7 @@ def main():
                           help="List students missing Google/Canvas/Student IDs (optional: google,canvas,student,all or comma-separated)",
                           dest="list_missing_ids", metavar="TYPES")
     db_group.add_argument('--list-submission-status', nargs='?', const=True, type=str,
-                          help="List students by submission status (prefix with google: or canvas:, optional @assignment title, e.g., google:turned_in@Quiz 1)",
+                          help="List students by submission status (shows attachment details; prefix with google: or canvas:, optional @assignment title)",
                           dest="list_submission_status", metavar="STATUS")
     db_group.add_argument('--missing-ids-format', type=str, default="txt",
                           choices=["txt", "csv", "json"],
