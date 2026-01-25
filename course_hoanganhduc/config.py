@@ -517,8 +517,12 @@ def load_config(config_path=None, verbose=False):
         "MIDTERM_DATE",
         "EXAM_TYPE",
         "CANVAS_MIDTERM_ASSIGNMENT_ID",
-        "CANVAS_FINAL_ASSIGNMENT_ID",
         "CANVAS_CC_ASSIGNMENT_ID",
+        "INTERNSHIP_SHEET_URL",
+        "INTERNSHIP_REGISTRATION_SHEET_URL",
+        "MINI_PROJECT_LECTURER_SHEET_URL",
+        "MINI_PROJECT_REGISTRATION_SHEET_URL",
+        "COMPANIES_SHEET_URL",
     ]
     for key in known_keys:
         if key in config:
@@ -548,6 +552,11 @@ def validate_config(config, verbose=False):
     sheet_url = config.get("GOOGLE_SHEET_URL")
     if sheet_url and not str(sheet_url).strip().lower().startswith("http"):
         warnings.append("GOOGLE_SHEET_URL does not look like a URL.")
+    
+    comp_url = config.get("COMPANIES_SHEET_URL")
+    if comp_url and not str(comp_url).strip().lower().startswith("http"):
+        warnings.append("COMPANIES_SHEET_URL does not look like a URL.")
+
     for key in ("GOOGLE_SHEET_LECTURER_TOPICS_URL", "GOOGLE_SHEET_STUDENT_REGISTRATION_URL"):
         value = config.get(key)
         if value and not str(value).strip().lower().startswith("http"):

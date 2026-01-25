@@ -16,7 +16,9 @@ from .models import *
 from .utils import *
 from .data import *
 from .canvas import *
+from .canvas import *
 from .google_classroom import *
+from .data import import_internship_from_sheet
 
 
 def _apply_config_overrides(config):
@@ -191,6 +193,10 @@ def _build_menu_sections():
     return [
         ("Roster & Database", [
             ("Import students (Excel/CSV/PDF)", "1"),
+            ("Import internship data (Google Sheet URL)", "87"),
+            ("Import internship registrations (Skills/Wishlist)", "92"),
+            ("Import company data (Excel)", "93"),
+            ("Export company data (Excel)", "94"),
             ("Preview import (dry-run)", "59"),
             ("Import from Google Sheet URL", "78"),
             ("Import mini-project data (Google Sheets)", "86"),
@@ -215,6 +221,7 @@ def _build_menu_sections():
             ("Export student list to Excel", "4"),
             ("Export student emails (TXT)", "5"),
             ("Export student details (TXT)", "9"),
+            ("Export contacts (vCard/iOS)", "95"),
             ("Export names + emails (TXT)", "46"),
             ("Export roster (CSV)", "48"),
             ("Export anonymized roster (CSV)", "60"),
@@ -578,46 +585,31 @@ def _print_menu_fallback(sections):
     print("\n0. Exit\n")
 
 
-def _resolve_weekly_assignment_targets(assignment_id, report_root, base_dir, category, verbose):
-    if assignment_id:
-        return [{"id": str(assignment_id), "name": ""}]
+def _get_filter_list(verbose=False):
+    """Prompt user for a filter file and return the list of identifiers."""
+    from .data import load_list_from_file
+    use_filter = input("Filter export using a file (TXT/CSV/XLSX)? (y/n) [n]: ").strip().lower()
+    if use_filter in ("y", "yes"):
+        filter_file = input_with_completion("Enter filter file path (or 'q' to quit): ").strip()
+        if filter_file.lower() in ("q", "quit", ""):
+            return None
+        return load_list_from_file(filter_file, verbose=verbose)
+    return None
 
-    history = load_weekly_automation_history(
-        report_root=report_root,
-        base_dir=base_dir,
-        verbose=verbose,
-    )
-    if history:
-        print("Weekly reports found (already processed):")
-        for entry in sorted(history.values(), key=lambda e: (e.get("assignment_name") or "", e.get("assignment_id") or "")):
-            name = entry.get("assignment_name") or "Unknown assignment"
-            print(f"- {name} (ID: {entry.get('assignment_id')})")
-    else:
-        print("No weekly reports found yet.")
-
-    closed = list_closed_assignments_for_weekly_automation(
-        api_url=CANVAS_LMS_API_URL,
-        api_key=CANVAS_LMS_API_KEY,
-        course_id=CANVAS_LMS_COURSE_ID,
-        category=category,
-        verbose=verbose,
-    )
-    if not closed:
-        print("No closed assignments found for weekly automation.")
-        return []
-
-    pending = [a for a in closed if a.get("id") not in history]
-    if not pending:
-        print("No new closed assignments to process.")
-        return []
-
-    print("Closed assignments not yet processed:")
-    for entry in pending:
-        group = entry.get("group") or "Uncategorized"
-        print(f"- [{group}] {entry.get('name')} (ID: {entry.get('id')})")
-
-    return pending
-
+def _apply_student_filter(students, filter_list):
+    """Filter students list based on a set of identifiers."""
+    if not filter_list:
+        return students
+    original_count = len(students)
+    filtered = [s for s in students if 
+                (hasattr(s, 'student_id') and str(s.student_id) in filter_list) or
+                (hasattr(s, 'id') and str(s.id) in filter_list) or
+                (hasattr(s, 'email') and s.email in filter_list) or 
+                (hasattr(s, 'name') and s.name in filter_list) or
+                (isinstance(s, dict) and (str(s.get('Student ID')) in filter_list or str(s.get('ID')) in filter_list or s.get('Email') in filter_list or s.get('Name') in filter_list or s.get('Họ và Tên') in filter_list))
+               ]
+    print(f"Filtered student list: {len(filtered)}/{original_count} matches found.")
+    return filtered
 
 def main():
     parser = argparse.ArgumentParser(
@@ -719,10 +711,20 @@ def main():
     db_group.add_argument('--modify', '-m', action='store_true', help="Interactively modify the student database", dest="modify")
     db_group.add_argument('--export-excel', '-x', type=str, help="Export student list to Excel file", dest="export_excel", metavar="EXCEL")
     db_group.add_argument('--export-emails', '-e', type=str, help="Export all student emails to TXT file (avoids duplicates)", dest="export_emails", metavar="EMAILS")
-    db_group.add_argument('--export-all-details', '-E', type=str, help="Export all student details to TXT file", dest="export_all_details", metavar="DETAILS")
+    db_group.add_argument('--export-all-details', '-E', type=str, help="Export all student or company details to TXT file", dest="export_all_details", metavar="DETAILS")
+    db_group.add_argument('--export-type', '-et', '-type', type=str, choices=['student', 'company'], default='student',
+                          help="Entity type to export with --export-all-details (student/company, default: student)",
+                          dest="export_type", metavar="TYPE")
+    db_group.add_argument('--filter-file', '-ff', type=str, help="Filter export by identifiers in this file (TXT/CSV/XLSX)", dest="filter_file", metavar="FILTER")
+    db_group.add_argument('--sheet-name', '-sn', type=str, help="Specific sheet name to import from Excel file", dest="sheet_name", metavar="SHEET")
+    db_group.add_argument('--sheet-selection', '-ss', type=str, choices=['first', 'select', 'all', 'merge'], default='first',
+                          help="Sheet selection mode: first (default), select (interactive), all, merge", dest="sheet_selection", metavar="MODE")
     db_group.add_argument('--export-emails-and-names', '-en', nargs='?', const="emails_and_names.txt",
                           help="Export all student emails and names to TXT file (default: emails_and_names.txt)",
                           dest="export_emails_and_names", metavar="EMAILS_NAMES")
+    db_group.add_argument('--export-vcf', '-vcf', type=str, nargs='?', const="students_contacts.vcf",
+                          help="Export student contact info to VCF (iOS compatible). Default: students_contacts.vcf",
+                          dest="export_vcf", metavar="VCF")
     db_group.add_argument('--export-final-grade-distribution', nargs='?', const=True,
                           help="Export final grade distribution to a TXT file. Optionally provide output path (default: ./final_grade_distribution.txt).",
                           dest='export_final_grade_distribution')
@@ -794,6 +796,15 @@ def main():
     db_group.add_argument('--add-google-sheet', '-gsh', type=str, nargs='?', const=True,
                           help="Import students from Google Sheet URL (optional: URL, default from config)",
                           dest="add_google_sheet", metavar="SHEET_URL")
+    db_group.add_argument('--import-internships', nargs='?', const=True,
+                          help="Import student internship data from Google Sheet URL or local CSV/Excel file (optional: URL/Path, default from config)",
+                          dest="import_internships", metavar="URL_OR_PATH")
+    db_group.add_argument('--import-registrations', nargs='?', const=True,
+                          help="Import student registration data from Google Sheet URL or local CSV/Excel file (optional: URL/Path, default from config)",
+                          dest="import_registrations", metavar="URL_OR_PATH")
+    db_group.add_argument('--import-progress-reports', action='store_true',
+                          help="Import student progress reports from their linked Google Sheets",
+                          dest="import_progress_reports")
     db_group.add_argument('--import-mini-projects', action='store_true',
                           help="Import mini-project data from Google Sheets (lecturer topics + student registrations)",
                           dest="import_mini_projects")
@@ -803,6 +814,9 @@ def main():
     db_group.add_argument('--mini-project-registration-sheet', type=str,
                           help="Google Sheet URL for student mini-project registrations (optional; default from config)",
                           dest="mini_project_registration_sheet", metavar="URL")
+    db_group.add_argument('--import-companies', nargs='?', const=True,
+                          help="Import company data from Excel/CSV to companies.db",
+                          dest="import_companies", metavar="PATH")
 
     ocr_group = parser.add_argument_group("OCR and PDFs")
     ocr_group.add_argument('--add-blackboard-counts', '-b', type=str,
@@ -1492,6 +1506,78 @@ def main():
     if args.load:
         print(f"Loaded {len(students)} students from database.")
 
+    if args.import_internships:
+        url = args.import_internships
+        if url is True:
+            url = config.get("INTERNSHIP_SHEET_URL")
+        
+        if url:
+             import_internship_from_sheet(url, db_path, verbose=args.verbose)
+        else:
+             print("Error: No internship sheet URL provided and INTERNSHIP_SHEET_URL not found in config.")
+
+    if args.import_registrations:
+        url = args.import_registrations
+        if url is True:
+            url = config.get("INTERNSHIP_REGISTRATION_SHEET_URL")
+        
+        if url:
+             from .data import import_registrations_from_sheet
+             import_registrations_from_sheet(
+                 url, 
+                 db_path, 
+                 verbose=args.verbose,
+                 sheet_name=args.sheet_name if hasattr(args, 'sheet_name') else None,
+                 sheet_selection=args.sheet_selection if hasattr(args, 'sheet_selection') else 'first',
+             )
+        else:
+             print("Error: No internship registration sheet URL provided and INTERNSHIP_REGISTRATION_SHEET_URL not found in config.")
+
+    if args.import_progress_reports:
+        from .data import import_progress_reports
+        import_progress_reports(db_path, verbose=args.verbose)
+
+    if args.import_companies:
+        path = args.import_companies
+        if path is True: # Flag used without arg
+             # Check config first
+             path = config.get("COMPANIES_SHEET_URL") if isinstance(config, dict) else None
+             if not path:
+                 default_file = "Danh sách công ty liên hệ (không xóa).xlsx"
+                 if os.path.exists(default_file):
+                     path = default_file
+                 else:
+                     print(f"Error: Default file '{default_file}' not found and COMPANIES_SHEET_URL not set in config.")
+                     path = None
+        
+        if path:
+            if isinstance(path, str) and (path.startswith("http://") or path.startswith("https://")):
+                credentials_path, token_path = _resolve_google_paths(
+                    args,
+                    config,
+                    course_code=args.course_code,
+                    verbose=args.verbose,
+                )
+                from .data import import_companies_from_google_sheet
+                import_companies_from_google_sheet(
+                    path, 
+                    db_path="companies.db", 
+                    credentials_path=credentials_path, 
+                    token_path=token_path, 
+                    verbose=args.verbose,
+                    sheet_name=args.sheet_name if hasattr(args, 'sheet_name') else None,
+                    sheet_selection=args.sheet_selection if hasattr(args, 'sheet_selection') else 'first',
+                )
+            else:
+                from .data import import_companies_from_excel
+                import_companies_from_excel(
+                    path, 
+                    db_path="companies.db", 
+                    verbose=args.verbose,
+                    sheet_name=args.sheet_name if hasattr(args, 'sheet_name') else None,
+                    sheet_selection=args.sheet_selection if hasattr(args, 'sheet_selection') else 'first',
+                )
+
     if args.add_file:
         add_files = _expand_cli_paths(args.add_file)
         processed = False
@@ -1509,6 +1595,8 @@ def main():
                             verbose=args.verbose,
                             preview_only=True,
                             preview_rows=args.dry_run_rows,
+                            sheet_name=args.sheet_name if hasattr(args, 'sheet_name') else None,
+                            sheet_selection=args.sheet_selection if hasattr(args, 'sheet_selection') else 'first',
                         )
                     elif ext == ".pdf":
                         read_students_from_pdf(
@@ -1528,6 +1616,8 @@ def main():
                         verbose=args.verbose,
                         ocr_service=args.ocr_service if hasattr(args, "ocr_service") and args.ocr_service else DEFAULT_OCR_METHOD,
                         ocr_lang=args.ocr_lang if hasattr(args, "ocr_lang") and args.ocr_lang else "auto",
+                        sheet_name=args.sheet_name if hasattr(args, 'sheet_name') else None,
+                        sheet_selection=args.sheet_selection if hasattr(args, 'sheet_selection') else 'first',
                     )
                 processed = True
             except Exception as exc:
@@ -1567,6 +1657,24 @@ def main():
         save_database(students, db_path=db_path, verbose=args.verbose, audit_source="manual-save")
         print("Database saved.")
 
+    filter_list = None
+    if args.filter_file:
+        from .data import load_list_from_file
+        filter_list = load_list_from_file(args.filter_file, verbose=args.verbose)
+        if not filter_list:
+            print(f"Warning: Filter file {args.filter_file} is empty or not found.")
+        elif args.export_type == 'student':
+            # Filter students list in-place or for exports
+            original_count = len(students)
+            students = [s for s in students if 
+                        (hasattr(s, 'student_id') and str(s.student_id) in filter_list) or
+                        (hasattr(s, 'id') and str(s.id) in filter_list) or
+                        (hasattr(s, 'email') and s.email in filter_list) or 
+                        (hasattr(s, 'name') and s.name in filter_list) or
+                        (isinstance(s, dict) and (str(s.get('Student ID')) in filter_list or str(s.get('ID')) in filter_list or s.get('Email') in filter_list or s.get('Name') in filter_list or s.get('Họ và Tên') in filter_list))
+                       ]
+            print(f"Filtered student list: {len(students)}/{original_count} matches found.")
+
     if args.export_excel:
         export_to_excel(students, args.export_excel, db_path=db_path, verbose=args.verbose)
 
@@ -1574,13 +1682,31 @@ def main():
         export_emails_to_txt(students, args.export_emails, db_path=db_path, verbose=args.verbose)
 
     if args.export_all_details:
-        export_all_details_to_txt(
-            students,
-            args.export_all_details,
-            db_path=db_path,
-            verbose=args.verbose,
-            sort_method=args.student_sort_method or STUDENT_SORT_METHOD,
-        )
+        if args.export_type == 'company':
+            from .data import export_company_details_to_txt
+            export_company_details_to_txt(
+                args.export_all_details,
+                db_path="companies.db",
+                verbose=args.verbose,
+                filter_list=filter_list if args.export_type == 'company' else None
+            )
+        else:
+            export_all_details_to_txt(
+                students,
+                args.export_all_details,
+                db_path=db_path,
+                verbose=args.verbose,
+                sort_method=args.student_sort_method or STUDENT_SORT_METHOD,
+            )
+
+    if args.export_vcf:
+        if args.export_type == 'company':
+            from .data import export_companies_to_vcf
+            export_companies_to_vcf(args.export_vcf, db_path="companies.db", verbose=args.verbose, filter_list=filter_list)
+        else:
+            from .data import export_students_to_vcf
+            uni_name = config.get("UNIVERSITY_NAME", "UET-VNU") if isinstance(config, dict) else "UET-VNU"
+            export_students_to_vcf(students, args.export_vcf, db_path=db_path, verbose=args.verbose, university_name=uni_name)
 
     if args.load_override_grades:
         override_path = args.load_override_grades if isinstance(args.load_override_grades, str) else "override_grades.xlsx"
@@ -2518,11 +2644,15 @@ def main():
                 credentials_path=credentials_path,
                 token_path=token_path,
                 verbose=args.verbose,
+                sheet_name=args.sheet_name if hasattr(args, 'sheet_name') else None,
+                sheet_selection=args.sheet_selection if hasattr(args, 'sheet_selection') else 'first',
             )
             import_students_from_file(
                 temp_csv,
                 db_path=db_path,
                 verbose=args.verbose,
+                sheet_name=args.sheet_name if hasattr(args, 'sheet_name') else None,
+                sheet_selection=args.sheet_selection if hasattr(args, 'sheet_selection') else 'first',
             )
 
     if getattr(args, "import_mini_projects", False):
@@ -2874,6 +3004,74 @@ def main():
                     verbose=args.verbose,
                 )
                 students = load_database(db_path, verbose=args.verbose)
+            elif choice == '87':
+                sheet_url = input("Internship Sheet URL (leave blank to use config default, or 'q' to quit): ").strip()
+                if sheet_url.lower() in ('q', 'quit'):
+                    continue
+                if not sheet_url:
+                    sheet_url = config.get("INTERNSHIP_SHEET_URL") if isinstance(config, dict) else None
+                if not sheet_url:
+                    print("Internship Sheet URL not provided in config.")
+                    continue
+                from .data import import_internship_from_sheet
+                import_internship_from_sheet(sheet_url, db_path, verbose=args.verbose)
+                students = load_database(db_path, verbose=args.verbose)
+            elif choice == '92':
+                sheet_url = input("Registration Sheet URL or local file path (leave blank to use config default, or 'q' to quit): ").strip()
+                if sheet_url.lower() in ('q', 'quit'):
+                    continue
+                if not sheet_url:
+                    sheet_url = config.get("INTERNSHIP_REGISTRATION_SHEET_URL") if isinstance(config, dict) else None
+                if not sheet_url:
+                    print("Internship Registration Sheet URL not provided in config.")
+                    continue
+                from .data import import_registrations_from_sheet
+                import_registrations_from_sheet(sheet_url, db_path, verbose=args.verbose)
+                students = load_database(db_path, verbose=args.verbose)
+            elif choice == '93':
+                path = input_with_completion("Enter company Excel/CSV file path or Google Sheet URL (leave blank for default file/config, or 'q' to quit): ").strip()
+                if path.lower() in ('q', 'quit'):
+                    continue
+                if not path:
+                    path = config.get("COMPANIES_SHEET_URL") if isinstance(config, dict) else None
+                    if not path:
+                        path = "Danh sách công ty liên hệ (không xóa).xlsx"
+                
+                if path.startswith("http://") or path.startswith("https://"):
+                    credentials_path, token_path = _resolve_google_paths(
+                        args,
+                        config,
+                        course_code=args.course_code,
+                        verbose=args.verbose,
+                    )
+                    from .data import import_companies_from_google_sheet
+                    import_companies_from_google_sheet(
+                        path, 
+                        db_path="companies.db", 
+                        credentials_path=credentials_path, 
+                        token_path=token_path, 
+                        verbose=args.verbose
+                    )
+                else:
+                    from .data import import_companies_from_excel
+                    import_companies_from_excel(path, db_path="companies.db", verbose=args.verbose)
+            elif choice == '94':
+                from .data import export_companies_to_excel, export_company_details_to_txt, export_companies_to_vcf
+                fmt = input("Export format (txt/excel/csv/vcf) [excel]: ").strip().lower() or "excel"
+                ext = ".txt" if fmt == "txt" else (".csv" if fmt == "csv" else (".vcf" if fmt == "vcf" else ".xlsx"))
+                default_path = f"companies_export{ext}"
+                output_path = input_with_completion(f"Enter export path (leave blank for {default_path}, or 'q' to quit): ").strip()
+                if output_path.lower() in ('q', 'quit'):
+                    continue
+                if not output_path:
+                    output_path = default_path
+                
+                if fmt == "txt":
+                    export_company_details_to_txt(output_path, db_path="companies.db", verbose=args.verbose, filter_list=_get_filter_list(verbose=args.verbose))
+                elif fmt == "vcf":
+                    export_companies_to_vcf(output_path, db_path="companies.db", verbose=args.verbose, filter_list=_get_filter_list(verbose=args.verbose))
+                else:
+                    export_companies_to_excel(output_path, db_path="companies.db", filter_list=_get_filter_list(verbose=args.verbose))
             elif choice == '2':
                 save_database(students, db_path=db_path, verbose=args.verbose, audit_source="manual-save")
                 print("Database saved.")
@@ -2884,12 +3082,14 @@ def main():
                 export_path = input_with_completion("Enter export Excel file path (or 'q' to quit): ").strip()
                 if export_path.lower() in ('q', 'quit', ''):
                     continue
-                export_to_excel(students, export_path, verbose=args.verbose)
+                f_list = _get_filter_list(verbose=args.verbose)
+                export_to_excel(_apply_student_filter(students, f_list), export_path, verbose=args.verbose)
             elif choice == '5':
                 export_path = input_with_completion("Enter export TXT file path (or 'q' to quit): ").strip()
                 if export_path.lower() in ('q', 'quit'):
                     continue
-                export_emails_to_txt(students, export_path, verbose=args.verbose)
+                f_list = _get_filter_list(verbose=args.verbose)
+                export_emails_to_txt(_apply_student_filter(students, f_list), export_path, verbose=args.verbose)
             elif choice == '6':
                 query = input("Enter name or student id to search (or 'q' to quit): ").strip()
                 if query.lower() in ('q', 'quit', ''):
@@ -3125,14 +3325,35 @@ def main():
                 else:
                     print("No students found.")
             elif choice == '9':
-                export_path = input_with_completion("Enter export TXT file path (or 'q' to quit): ").strip()
+                fmt = input("Export format (txt/excel/csv) [txt]: ").strip().lower() or "txt"
+                ext = ".txt" if fmt == "txt" else (".csv" if fmt == "csv" else ".xlsx")
+                default_path = f"students_details{ext}"
+                export_path = input_with_completion(f"Enter export path (leave blank for {default_path}, or 'q' to quit): ").strip()
                 if export_path.lower() in ('q', 'quit'):
                     continue
-                sort_method = input(
-                    "Sort method (first_last/last_first/id) [default from config]: "
-                ).strip().lower()
-                sort_method = sort_method or STUDENT_SORT_METHOD
-                export_all_details_to_txt(students, export_path, verbose=args.verbose, sort_method=sort_method)
+                if not export_path:
+                    export_path = default_path
+                
+                if fmt == "txt":
+                    sort_method = input(
+                        "Sort method (first_last/last_first/id) [default from config]: "
+                    ).strip().lower()
+                    sort_method = sort_method or STUDENT_SORT_METHOD
+                    f_list = _get_filter_list(verbose=args.verbose)
+                    export_all_details_to_txt(_apply_student_filter(students, f_list), export_path, verbose=args.verbose, sort_method=sort_method)
+                else:
+                    f_list = _get_filter_list(verbose=args.verbose)
+                    export_to_excel(_apply_student_filter(students, f_list), export_path, db_path=db_path, verbose=args.verbose)
+            elif choice == '95':
+                default_path = "students_contacts.vcf"
+                export_path = input_with_completion(f"Enter export path (leave blank for {default_path}, or 'q' to quit): ").strip()
+                if export_path.lower() in ('q', 'quit'):
+                    continue
+                if not export_path:
+                    export_path = default_path
+                from .data import export_students_to_vcf
+                f_list = _get_filter_list(verbose=args.verbose)
+                export_students_to_vcf(_apply_student_filter(students, f_list), export_path, db_path=db_path, verbose=args.verbose)
             elif choice == '10':
                 pdf_path = input_with_completion("Enter PDF file path (or 'q' to quit): ").strip()
                 if pdf_path.lower() in ('q', 'quit'):

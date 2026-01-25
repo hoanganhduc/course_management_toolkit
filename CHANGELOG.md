@@ -1,5 +1,13 @@
 ﻿# Changelog
 
+## [0.1.2] - 2026-01-24
+- Added `--import-registrations` command to support student internship registration data (skills, wishlist, notes).
+- Added `INTERNSHIP_REGISTRATION_SHEET_URL` configuration key.
+- Added company contact management with `--import-companies` and `--export-companies`, stored in `companies.db`.
+- Improved export formatting for student details (JSON unwrapping for progress reports, translated labels, hidden empty fields).
+- Added support for English headers in internship data and registration imports.
+- Updated documentation and sample data to English.
+
 ## [0.1.1] - 2025-12-28
 - Added multi-file glob support for import/update CLI commands.
 - Added student detail sort methods and clearer export/report formatting.

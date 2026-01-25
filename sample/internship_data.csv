@@ -1,0 +1,4 @@
+Timestamp,Student ID,Full Name,Phone Number,Email,Class,Course,Internship Company,Is Team Leader?,Start Date,Internship Form,Progress Report Link
+21/01/2026 09:00:00,22000001,Student One,0900000001,student1@example.com,K67A1,MAT3371 - Software Construction,Example Tech Corp,No,01/02/2026,Fulltime,https://docs.google.com/spreadsheets/d/1_dummy_sheet_id_1/edit
+21/01/2026 10:00:00,22000002,Student Two,0900000002,student2@example.com,K67A2,MAT3397 - Data Science,Data Solutions Inc,Yes,05/02/2026,Parttime,https://docs.google.com/spreadsheets/d/1_dummy_sheet_id_2/edit
+22/01/2026 14:30:00,22000003,Student Three,0900000003,student3@example.com,K67A3,MAT1203 - Analysis & Design,StartUp Lab,No,10/02/2026,Fulltime,https://docs.google.com/spreadsheets/d/1_dummy_sheet_id_3/edit

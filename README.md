@@ -206,8 +206,31 @@ course --add-google-sheet "https://docs.google.com/spreadsheets/d/FILE_ID/edit#g
 Notes:
 - Google Sheets API must be enabled for the project tied to your credentials.
 
+Import internship data (Active) from Google Sheet or local file:
+
+```bash
+course --import-internships "https://docs.google.com/spreadsheets/d/FILE_ID/edit#gid=0"
+course --import-internships sample/internship_data.csv
+```
+
+Import internship registration data (Skills/Wishlist) from Google Sheet or local file:
+
+```bash
+course --import-registrations "https://docs.google.com/spreadsheets/d/FILE_ID/edit#gid=0"
+course --import-registrations sample/internship_registrations_data.csv
+```
+
+Import and manage company contacts in `companies.db` from a local file or Google Sheet:
+
+```bash
+course --import-companies "Danh sách công ty liên hệ (không xóa).xlsx"
+course --import-companies "https://docs.google.com/spreadsheets/d/FILE_ID/edit#gid=0"
+course --export-companies companies_export.xlsx
+```
+
 Notes:
 - MAT*.xlsx imports ignore score columns (CC, GK, CK, totals); only roster fields are imported.
+- Internship and Company imports support both Vietnamese and English column headers.
 
 List students by email domain:
 
@@ -429,6 +452,8 @@ Optional settings:
 - `GOOGLE_SHEET_URL` for a default Google Sheet import source.
 - `GOOGLE_SHEET_LECTURER_TOPICS_URL` for the lecturer mini-project topics sheet.
 - `GOOGLE_SHEET_STUDENT_REGISTRATION_URL` for the student mini-project registration sheet.
+- `INTERNSHIP_REGISTRATION_SHEET_URL` for the student internship registration sheet.
+- `COMPANIES_SHEET_URL` for the company contact data sheet.
 
 ## Course calendar builder
 

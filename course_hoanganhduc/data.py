@@ -4,6 +4,7 @@
 
 import pandas as pd
 import os
+import sqlite3
 import pickle
 try:
     import readline
@@ -3295,7 +3296,30 @@ def sync_mat_excel_scores_to_canvas(
         "missing_assignment": missing_assignment,
     }
 
-def read_students_from_excel_csv(file_path, db_path=None, verbose=False, preview_only=False, preview_rows=5):
+def list_excel_sheets(file_path, verbose=False):
+    """
+    List all sheet names in an Excel file.
+    Returns a list of sheet names.
+    """
+    ext = os.path.splitext(file_path)[1].lower()
+    if ext not in [".xlsx", ".xls"]:
+        if verbose:
+            print(f"[ListSheets] Not an Excel file: {file_path}")
+        return []
+    
+    try:
+        wb = openpyxl.load_workbook(file_path, data_only=True, read_only=True)
+        sheet_names = wb.sheetnames
+        wb.close()
+        if verbose:
+            print(f"[ListSheets] Found {len(sheet_names)} sheets: {', '.join(sheet_names)}")
+        return sheet_names
+    except Exception as e:
+        if verbose:
+            print(f"[ListSheets] Error reading Excel file: {e}")
+        return []
+
+def read_students_from_excel_csv(file_path, db_path=None, verbose=False, preview_only=False, preview_rows=5, sheet_name=None, sheet_selection='first'):
     """
     Read students from Excel or CSV file, detect and normalize header row, deduplicate, and update database if db_path is given.
     Ignores metadata rows (e.g., rows containing 'ĐẠI HỌC QUỐC GIA HÀ NỘI', 'TRƯỜNG ĐẠI HỌC KHOA HỌC TỰ NHIÊN', etc.).
@@ -3307,6 +3331,10 @@ def read_students_from_excel_csv(file_path, db_path=None, verbose=False, preview
     Extracts registered class ID info (Section) if available in the file.
     Extracts GitHub usernames from columns named "GitHub username" or similar variants.
     If verbose is True, print more details; otherwise, print only important notice.
+    
+    Args:
+        sheet_name: Specific sheet name to import (for Excel files)
+        sheet_selection: Mode for sheet selection - 'first' (default), 'select' (interactive), 'all', or 'merge'
     """
     if verbose:
         print(f"[ExcelCSV] Reading file: {file_path}")
@@ -3318,26 +3346,99 @@ def read_students_from_excel_csv(file_path, db_path=None, verbose=False, preview
     is_mat_file = filename.startswith("MAT") and filename.lower().endswith(".xlsx")
 
     ext = os.path.splitext(file_path)[1].lower()
-    # For Excel: unmerge merged cells before loading into DataFrame
+    # For Excel: handle sheet selection
     if ext in [".xlsx", ".xls"]:
-        wb = openpyxl.load_workbook(file_path, data_only=True)
-        ws = wb.active
+        # Get all sheet names
+        all_sheets = list_excel_sheets(file_path, verbose=verbose)
+        
+        if not all_sheets:
+            print("Error: Could not read sheets from Excel file.")
+            return
+        
+        # Determine which sheet(s) to import
+        selected_sheets = []
+        
+        if sheet_name:
+            # Specific sheet requested
+            if sheet_name in all_sheets:
+                selected_sheets = [sheet_name]
+            else:
+                print(f"Error: Sheet '{sheet_name}' not found. Available sheets: {', '.join(all_sheets)}")
+                return
+        elif sheet_selection == 'select':
+            # Interactive selection
+            print(f"\nAvailable sheets in {filename}:")
+            for i, s in enumerate(all_sheets, 1):
+                print(f"  {i}. {s}")
+            
+            choice = input(f"\nSelect sheet number(s) (1-{len(all_sheets)}, comma-separated for multiple, or 'all'): ").strip().lower()
+            
+            if choice == 'all':
+                selected_sheets = all_sheets
+                print(f"[ExcelCSV] Selected all {len(all_sheets)} sheets for merging")
+            else:
+                # Parse comma-separated sheet numbers
+                try:
+                    sheet_indices = [int(x.strip()) - 1 for x in choice.split(',')]
+                    for idx in sheet_indices:
+                        if 0 <= idx < len(all_sheets):
+                            selected_sheets.append(all_sheets[idx])
+                        else:
+                            print(f"Warning: Sheet number {idx + 1} out of range, skipping")
+                    
+                    if not selected_sheets:
+                        print("No valid sheets selected. Using first sheet.")
+                        selected_sheets = [all_sheets[0]]
+                except ValueError:
+                    print("Invalid input. Using first sheet.")
+                    selected_sheets = [all_sheets[0]]
+        elif sheet_selection in ['all', 'merge']:
+            # Import all sheets
+            selected_sheets = all_sheets
+            if verbose:
+                print(f"[ExcelCSV] Importing all {len(all_sheets)} sheets for merging")
+        else:
+            # Default: first sheet
+            selected_sheets = [all_sheets[0]]
+        
+        if verbose or len(selected_sheets) > 1:
+            print(f"[ExcelCSV] Selected sheet(s): {', '.join(selected_sheets)}")
+        
+        # Load and merge sheets
+        all_dfs = []
+        for sheet in selected_sheets:
+            if len(selected_sheets) > 1 and verbose:
+                print(f"[ExcelCSV] Reading sheet: {sheet}")
+            
+            wb = openpyxl.load_workbook(file_path, data_only=True)
+            ws = wb[sheet]
 
-        # Unmerge all merged cells (horizontal and vertical)
-        merged_ranges = list(ws.merged_cells.ranges)
-        for merged_range in merged_ranges:
-            min_row, min_col, max_row, max_col = merged_range.min_row, merged_range.min_col, merged_range.max_row, merged_range.max_col
-            value = ws.cell(row=min_row, column=min_col).value
-            ws.unmerge_cells(str(merged_range))
-            for row in range(min_row, max_row + 1):
-                for col in range(min_col, max_col + 1):
-                    ws.cell(row=row, column=col).value = value
+            # Unmerge all merged cells (horizontal and vertical)
+            merged_ranges = list(ws.merged_cells.ranges)
+            for merged_range in merged_ranges:
+                min_row, min_col, max_row, max_col = merged_range.min_row, merged_range.min_col, merged_range.max_row, merged_range.max_col
+                value = ws.cell(row=min_row, column=min_col).value
+                ws.unmerge_cells(str(merged_range))
+                for row in range(min_row, max_row + 1):
+                    for col in range(min_col, max_col + 1):
+                        ws.cell(row=row, column=col).value = value
 
-        # Read all rows into a list of lists
-        data = []
-        for row in ws.iter_rows(values_only=True):
-            data.append(list(row))
-        df_raw = pd.DataFrame(data)
+            # Read all rows into a list of lists
+            data = []
+            for row in ws.iter_rows(values_only=True):
+                data.append(list(row))
+            
+            df_sheet = pd.DataFrame(data)
+            all_dfs.append(df_sheet)
+        
+        # Merge all DataFrames
+        if len(all_dfs) > 1:
+            if verbose:
+                print(f"[ExcelCSV] Merging {len(all_dfs)} sheets...")
+            # Concatenate all DataFrames
+            df_raw = pd.concat(all_dfs, ignore_index=True)
+        else:
+            df_raw = all_dfs[0]
     elif ext == ".csv":
         df_raw = pd.read_csv(file_path, header=None)
     else:
@@ -3977,6 +4078,8 @@ def import_students_from_file(
     verbose=False,
     ocr_service=DEFAULT_OCR_METHOD,
     ocr_lang="auto",
+    sheet_name=None,
+    sheet_selection='first',
 ):
     """
     Import students from CSV/XLSX/PDF into the database (if db_path provided).
@@ -3987,7 +4090,13 @@ def import_students_from_file(
     _, ext = os.path.splitext(file_path)
     ext = ext.lower()
     if ext in {".csv", ".xlsx", ".xls"}:
-        return read_students_from_excel_csv(file_path, db_path=db_path, verbose=verbose)
+        return read_students_from_excel_csv(
+            file_path, 
+            db_path=db_path, 
+            verbose=verbose,
+            sheet_name=sheet_name,
+            sheet_selection=sheet_selection
+        )
     if ext == ".pdf":
         return read_students_from_pdf(
             file_path,
@@ -4407,12 +4516,79 @@ def load_database(db_path, verbose=False):
         print(f"[LoadDatabase] Loading database from {db_path}...")
     else:
         print(f"Loading database from {db_path}...")
+    
+    import sqlite3
     class _LegacyStudentUnpickler(pickle.Unpickler):
         def find_class(self, module, name):
             if module == "__main__" and name == "Student":
                 from .models import Student
                 return Student
             return super().find_class(module, name)
+
+    
+    # Try reading as SQLite first
+    try:
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        cursor = conn.cursor()
+        # Check if tablestudents exists
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='students'")
+        if cursor.fetchone():
+            if verbose:
+                print(f"[LoadDatabase] Detected SQLite database.")
+            # Load students from SQLite
+            students = []
+            cursor.execute("SELECT * FROM students")
+            # Get columns to map (assuming standard schema or dynamic)
+            # For simplicity, we assume schema matches what we inserted or we map dynamically
+            # Let's map dynamically based on column names
+            col_names = [description[0] for description in cursor.description]
+            
+            from .models import Student
+            rows = cursor.fetchall()
+            for row in rows:
+                s = Student()
+                row_dict = dict(zip(col_names, row))
+                
+                # Map known columns to Student attributes with friendly names
+                # DB: student_id -> Student obj: "Student ID"
+                field_map = {
+                    "student_id": "Student ID",
+                    "full_name": "Name",
+                    "email": "Email",
+                    "phone_number": "Phone Number",
+                    "class_name": "Class",
+                    "course_name": "Course",
+                    "internship_company": "Internship Company",
+                    "is_team_leader": "Team Leader",
+                    "start_date": "Start Date",
+                    "internship_form": "Internship Form",
+                    "report_link": "report_link",
+                    "timestamp": "timestamp",
+                    "progress_report_data": "progress_report_data",
+                    # New registration fields
+                    "skills": "Skills",
+                    "wishlist": "Company Wishlist",
+                    "notes": "Notes",
+                    "registration_timestamp": "Registration Time"
+                }
+
+                for col_name, value in row_dict.items():
+                    # Use friendly name if available, otherwise use column name
+                    attr_name = field_map.get(col_name, col_name)
+                    if value is not None:
+                        setattr(s, attr_name, value)
+                
+                # Store all data in __dict__ for generic access if needed
+                # (But usually Student object relies on specific attributes)
+                
+                students.append(s)
+            
+            conn.close()
+            return students
+        conn.close()
+    except (sqlite3.DatabaseError, sqlite3.OperationalError):
+        # Not a SQLite DB or other error, fall back to pickle
+        pass
 
     with open(db_path, 'rb') as f:
         return _LegacyStudentUnpickler(f).load()
@@ -4602,6 +4778,31 @@ def print_student_details(students, identifier, db_path=None, verbose=False):
                         suffix = f" ({explanation})" if explanation else ""
                         print(f"  - {title}: {state}{suffix}")
                     continue
+                
+                # Check for internship fields and print them nicely
+                if k == "progress_report_data" and v:
+                    try:
+                        import json
+                        data = json.loads(v)
+                        print("Progress Report Data:")
+                        print(f"  - Last Modified: {data.get('last_modified', 'N/A')}")
+                        print(f"  - Weeks Reported: {data.get('weeks_reported', 0)}")
+                        print(f"  - Latest Week: {data.get('latest_week_time', 'N/A')}")
+                        print(f"  - Latest Task: {data.get('latest_task', 'N/A')}")
+                        print(f"  - Latest Completion: {data.get('latest_completion', 'N/A')}")
+                        print(f"  - Link: {data.get('raw_link', 'N/A')}")
+                        continue
+                    except:
+                        pass
+                
+                # Format registration fields nicely
+                if k in ["Skills", "Company Wishlist", "Notes"] and v:
+                    print(f"{k}:")
+                    # Handle multiline content by indenting
+                    for line in str(v).split('\n'):
+                        print(f"  {line}")
+                    continue
+                
                 print(f"{k}: {v}")
             found = True
             break
@@ -6225,9 +6426,12 @@ def export_all_details_to_txt(students, file_path=None, db_path=None, verbose=Fa
                 "Điểm học phần", "Course Grade",
                 "Tổng điểm (DB)", "Total Score",
                 "Tổng điểm (Canvas)", "Total Final Score",
-                "Email",
                 "Google_ID",
                 "Google_Classroom_Display_Name",
+                "Internship Company",
+                "Start Date",
+                "Internship Form",
+                "Report Link",
             ]
             seen = set()
             ordered_keys = []
@@ -6245,13 +6449,54 @@ def export_all_details_to_txt(students, file_path=None, db_path=None, verbose=Fa
                 ordered_keys.append(key)
             for k in ordered_keys:
                 v = data.get(k)
+                if k == "progress_report_data" and v:
+                    try:
+                        import json
+                        p_data = json.loads(v)
+                        f.write(f"Progress Report Data (Thông tin báo cáo):\n")
+                        f.write(f"  - Last Modified: {p_data.get('last_modified', 'N/A')}\n")
+                        f.write(f"  - Weeks Reported: {p_data.get('weeks_reported', 0)}\n")
+                        f.write(f"  - Latest Week: {p_data.get('latest_week_time', 'N/A')}\n")
+                        f.write(f"  - Latest Task: {p_data.get('latest_task', 'N/A')}\n")
+                        f.write(f"  - Latest Completion: {p_data.get('latest_completion', 'N/A')}\n")
+                        f.write(f"  - Link: {p_data.get('raw_link', 'N/A')}\n")
+                        continue
+                    except:
+                        pass
+
                 if isinstance(k, str) and k in display_labels:
                     en_k = display_labels[k]
                 elif isinstance(k, str) and k in vn_to_en:
                     en_k = vn_to_en[k]
                 else:
                     en_k = k if isinstance(k, str) else str(k)
-                vn_k = en_to_vn_field(k, verbose=verbose) if isinstance(k, str) else str(k)
+                
+                
+                vn_custom_map = {
+                    "report_link": "Link báo cáo",
+                    "Report Link": "Link báo cáo",
+                    "timestamp": "Dấu thời gian",
+                    "Timestamp": "Dấu thời gian",
+                    "skills": "Sở trường/Sở đoản",
+                    "wishlist": "Nguyện vọng",
+                    "notes": "Ghi chú",
+                    "registration_timestamp": "Thời gian đăng ký",
+                    "Internship Company": "Công ty thực tập",
+                    "Phone Number": "Số điện thoại",
+                    "Start Date": "Ngày bắt đầu",
+                    "Internship Form": "Hình thức",
+                    "Course": "Môn học",
+                    "Is Team Leader": "Nhóm trưởng",
+                }
+                
+                # Skip empty report fields and other empty new fields to reduce clutter
+                if str(k).lower() in ["progress_report_data", "report_link", "report link", "timestamp", "skills", "wishlist", "notes", "registration_timestamp"] and not v:
+                    continue
+
+                if isinstance(k, str) and k in vn_custom_map:
+                    vn_k = vn_custom_map[k]
+                else:
+                    vn_k = en_to_vn_field(k, verbose=verbose) if isinstance(k, str) else str(k)
                 f.write(f"{en_k} ({vn_k}): {v}\n")
             grades = data.get("Grades")
             if isinstance(grades, dict):
@@ -10049,3 +10294,1180 @@ def build_and_export_course_calendar(input_path=None, weeks=None, extra_week=Non
         verbose=verbose,
     )
     return export_course_calendar_all(events, output_dir=output_dir, base_name=base_name, course_name=course_title, verbose=verbose)
+
+
+def import_internship_from_sheet(sheet_url, db_path, verbose=False):
+    """Imports student internship data from a Google Sheet URL to SQLite."""
+    import csv
+    import sqlite3
+    from .gclass_sheets import download_google_sheet_to_csv
+
+    if not sheet_url:
+        print("Error: Google Sheet URL or local file path is required.")
+        return
+
+    # Check if input is a local file
+    is_local_file = os.path.exists(sheet_url) and os.path.isfile(sheet_url)
+    csv_path = None
+    
+    if is_local_file:
+        if verbose:
+            print(f"Detected local file: {sheet_url}")
+        
+        # If it's an Excel file, convert to CSV or read via pandas (but let's stick to the CSV flow for minimal changes if possible, 
+        # or just read it directly if it is CSV).
+        # For simplicity and robustness with existing code, if it's Excel, we might need pandas.
+        # The existing code uses csv module.
+        
+        lower_path = sheet_url.lower()
+        if lower_path.endswith('.xlsx') or lower_path.endswith('.xls'):
+            try:
+                import pandas as pd
+                df = pd.read_excel(sheet_url)
+                # handle NaN as empty string
+                df = df.fillna('')
+                # Create a temp csv
+                fd, csv_path = tempfile.mkstemp(suffix='.csv', text=True)
+                os.close(fd)
+                df.to_csv(csv_path, index=False, encoding='utf-8')
+                if verbose:
+                    print(f"Converted Excel to temporary CSV: {csv_path}")
+            except Exception as e:
+                print(f"Error converting Excel file: {e}")
+                return
+        else:
+            # Assume CSV
+            csv_path = sheet_url
+    else:
+        # Download Sheet to temporary CSV
+        try:
+            if verbose:
+                print(f"Downloading Google Sheet from: {sheet_url}")
+            csv_path = download_google_sheet_to_csv(sheet_url, output_path=None, verbose=verbose)
+        except Exception as e:
+            print(f"Error downloading Google Sheet: {e}")
+            return
+
+    if not csv_path or not os.path.exists(csv_path):
+        print(f"Error: Temporary CSV file '{csv_path}' not found.")
+        return
+
+    try:
+        # Ensure DB directory exists
+        db_dir = os.path.dirname(os.path.abspath(db_path))
+        if db_dir and not os.path.exists(db_dir):
+            os.makedirs(db_dir, exist_ok=True)
+
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        
+        # Create table if not exists (schema matching plan)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS students (
+                student_id TEXT PRIMARY KEY,
+                full_name TEXT,
+                email TEXT,
+                phone_number TEXT,
+                class_name TEXT,
+                course_name TEXT,
+                internship_company TEXT,
+                is_team_leader TEXT,
+                start_date TEXT,
+                internship_form TEXT,
+                report_link TEXT,
+                timestamp TEXT,
+                progress_report_data TEXT
+            )
+        ''')
+        conn.commit()
+
+        if verbose:
+            print(f"Reading temporary CSV: {csv_path}")
+
+        # Read CSV and insert data
+        with open(csv_path, mode='r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            
+            records_processed = 0
+            records_inserted = 0
+            
+            for row in reader:
+                records_processed += 1
+                
+                # Map CSV columns to DB columns (support both VN and EN headers)
+                student_id = row.get('Mã sinh viên', row.get('Student ID', '')).strip()
+                if not student_id:
+                    if verbose:
+                        print(f"Skipping row {records_processed}: No student_id")
+                    continue
+                    
+                full_name = row.get('Họ và tên', row.get('Full Name', '')).strip()
+                email = row.get('Email', '').strip()
+                phone_number = row.get('Điện thoại', row.get('Phone Number', '')).strip()
+                class_name = row.get('Lớp (VD K66A4)', row.get('Class', '')).strip()
+                course_name = row.get('Môn học (Mã môn - Tên môn)', row.get('Course', '')).strip()
+                
+                # Dynamic key lookup for long company column name
+                company_col = [k for k in row.keys() if k and (k.startswith('Công ty thực tập') or k == 'Internship Company')]
+                internship_company = row.get(company_col[0], '').strip() if company_col else ''
+                
+                is_team_leader = row.get('Bạn có là nhóm trưởng không? (do GV phân công)', row.get('Is Team Leader?', '')).strip()
+                start_date = row.get('Ngày bắt đầu thực tập', row.get('Start Date', '')).strip()
+                internship_form = row.get('Hình thức thực tập', row.get('Internship Form', '')).strip()
+                report_link = row.get('Link báo cáo thường xuyên', row.get('Progress Report Link', '')).strip()
+                timestamp = row.get('Dấu thời gian', row.get('Timestamp', '')).strip()
+                
+                cursor.execute('''
+                    INSERT OR REPLACE INTO students (
+                        student_id, full_name, email, phone_number, class_name, 
+                        course_name, internship_company, is_team_leader, 
+                        start_date, internship_form, report_link, timestamp
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    student_id, full_name, email, phone_number, class_name, 
+                    course_name, internship_company, is_team_leader, 
+                    start_date, internship_form, report_link, timestamp
+                ))
+            
+            # ... (rest of import_internship_from_sheet) ...
+
+# ... (skip to import_registrations_from_sheet loop) ...
+
+            for row in reader:
+                records_processed += 1
+                
+                student_id = row.get('Mã sinh viên', row.get('Student ID', '')).strip()
+                if not student_id:
+                    continue
+                    
+                full_name = row.get('Họ và tên', row.get('Full Name', '')).strip()
+                email = row.get('Email', '').strip()
+                phone_number = row.get('Điện thoại', row.get('Phone Number', '')).strip()
+                class_name = row.get('Lớp (ghi vắn tắt, VD K67A4)', row.get('Class', '')).strip()
+                
+                # Map registration specific fields
+                skills = row.get('Sở trường', row.get('Strengths', '')).strip()
+                so_doan = row.get('Sở đoản', row.get('Weaknesses', '')).strip()
+                
+                # If using English headers, maybe they are separate or combined? Assuming separate based on previous structure
+                
+                if so_doan:
+                    skills = f"Strengths: {skills}\nWeaknesses: {so_doan}" if 'Strengths' in row else f"Sở trường: {skills}\nSở đoản: {so_doan}"
+                elif skills and 'Strengths' in row:
+                     skills = f"Strengths: {skills}"
+
+                # Wishlist (long header)
+                wishlist_vn = 'Bạn muốn chọn công ty nào (ghi tối đa 3 nguyện vọng theo thứ tự ưu tiên, nếu bạn nào đã được nhận thì ghi tên công ty, ghi rõ đang làm/ đã được nhận ở mục Ghi chú)'
+                wishlist_en = 'Company Wishlist'
+                wishlist = row.get(wishlist_vn, row.get(wishlist_en, '')).strip()
+                
+                notes = row.get('Ghi chú', row.get('Notes', '')).strip()
+                reg_timestamp = row.get('Dấu thời gian', row.get('Timestamp', '')).strip()
+                
+                # Direction field (was not in standard db schema but used in analysis? Actually strict schema in import_registrations_from_sheet only saves skills, wishlist, notes)
+                # The prompt mentioned "Desired Direction" map to... wait, looking at my implementation in Step 570
+                # I mapped 'Sở trường' to 'skills'. 
+                # What about "Bạn muốn thực tập theo hướng nào..."?
+                # In Step 570 I ignored it! 
+                # Let's add it to "skills" or "notes" if present? 
+                # Or just ignore it as I did before. I'll stick to updating existing logic.
+                
+                direction_vn = 'Bạn muốn thực tập theo hướng nào (mô tả chi tiết) VD web, mobile, AI, DS, Computer Vision, NLP, VRP,....'
+                direction_en = 'Desired Direction'
+                direction = row.get(direction_vn, row.get(direction_en, '')).strip()
+                if direction:
+                    notes = f"Direction: {direction}\n{notes}" if notes else f"Direction: {direction}"
+
+                # Check if student exists
+                records_inserted += 1
+                
+        conn.commit()
+        print(f"Processed {records_processed} rows.")
+        print(f"Upserted {records_inserted} records into '{db_path}'.")
+        
+    except Exception as e:
+        print(f"Error processing import: {e}")
+    finally:
+        if 'conn' in locals():
+            conn.close()
+        # Clean up temp file (only if it's not the original local CSV)
+        # If we downloaded it, it's a temp file. If we converted Excel, it's a temp file.
+        # If user passed a local CSV, is_local_file is True and csv_path == sheet_url.
+        should_remove = True
+        if 'is_local_file' in locals() and is_local_file:
+            lower_path = str(sheet_url).lower()
+            if not (lower_path.endswith('.xlsx') or lower_path.endswith('.xls')):
+                 should_remove = False
+
+
+        if should_remove and 'csv_path' in locals() and csv_path and os.path.exists(csv_path):
+            try:
+                os.remove(csv_path)
+                if verbose:
+                    print(f"Removed temporary CSV: {csv_path}")
+            except OSError:
+                pass
+
+
+def import_progress_reports(db_path, verbose=False):
+    """
+    Import progress reports for students who have a valid 'report_link'.
+    - Fetches last modified time via Google Drive API.
+    - Downloads the sheet content to extract summary.
+    - Stores result in 'progress_report_data' column (JSON string).
+    """
+    import csv
+    import sqlite3
+    import json
+    import re
+    from .gclass_sheets import download_google_sheet_to_csv, get_google_file_metadata
+
+    if not os.path.exists(db_path):
+        print(f"Database not found at {db_path}")
+        return
+
+    conn = sqlite3.connect(db_path)
+    # Ensure column exists (if adding to existing DB)
+    try:
+        conn.execute("ALTER TABLE students ADD COLUMN progress_report_data TEXT")
+    except sqlite3.OperationalError:
+        pass  # Column likely already exists
+
+    cursor = conn.cursor()
+    cursor.execute("SELECT student_id, full_name, report_link FROM students WHERE report_link IS NOT NULL AND report_link != ''")
+    rows = cursor.fetchall()
+    
+    if not rows:
+        print("No students with progress report links found.")
+        conn.close()
+        return
+
+    print(f"Found {len(rows)} students with report links. Processing...")
+    
+    updated_count = 0
+    for sid, name, url in rows:
+        if not url or "docs.google.com" not in url:
+            continue
+            
+        # Extract Sheet ID
+        match = re.search(r"/spreadsheets/d/([a-zA-Z0-9-_]+)", url)
+        if not match:
+            if verbose:
+                print(f"Invalid Google Sheet URL for {name}: {url}")
+            continue
+        sheet_id = match.group(1)
+        
+        if verbose:
+            print(f"Processing report for {name} ({sid})...")
+            
+        meta = get_google_file_metadata(sheet_id, verbose=verbose)
+        last_modified = meta.get('modifiedTime') if meta else None
+        
+        # Download and parse content
+        csv_path = None
+        summary_data = {
+            "last_modified": last_modified,
+            "weeks_reported": 0,
+            "latest_week_time": "",
+            "latest_task": "",
+            "latest_completion": "",
+            "raw_link": url
+        }
+        
+        try:
+            csv_path = download_google_sheet_to_csv(url, output_path=None, verbose=False)
+            if csv_path and os.path.exists(csv_path):
+                with open(csv_path, 'r', encoding='utf-8') as f:
+                    reader = csv.reader(f)
+                    lines = list(reader)
+                    
+                # Find header row
+                header_idx = -1
+                col_map = {} # time, task, completion
+                
+                for idx, row in enumerate(lines):
+                    # Join row to search for keywords
+                    row_str = " ".join(row).lower()
+                    if "thời gian" in row_str and "công việc" in row_str and "mức độ" in row_str:
+                        header_idx = idx
+                        # Map columns
+                        for c_idx, cell in enumerate(row):
+                            c_val = cell.lower()
+                            if "thời gian" in c_val:
+                                col_map["time"] = c_idx
+                            elif "công việc" in c_val:
+                                col_map["completion"] = c_idx  # Note: logic might be tricky if task is middle, let check key words specifically
+                                if "hoàn thành" in c_val and "mức độ" in c_val:
+                                    col_map["completion"] = c_idx
+                            elif "công việc" in c_val:
+                                col_map["task"] = c_idx
+                        
+                        # Fallback for completion if simple "mức độ" check failed above due to "công việc" taking precedence or vice versa
+                        # Re-scan carefully
+                        for c_idx, cell in enumerate(row):
+                            c_val = cell.lower()
+                            if "mức độ" in c_val and "completion" not in col_map:
+                                col_map["completion"] = c_idx
+
+                        break
+                
+                if header_idx != -1 and col_map:
+                    # Parse rows below header
+                    entries = []
+                    for r_idx in range(header_idx + 1, len(lines)):
+                        row = lines[r_idx]
+                        # Check if row is empty or effectively empty
+                        if not "".join(row).strip():
+                            continue
+                            
+                        # Extract data
+                        time_val = row[col_map["time"]] if "time" in col_map and len(row) > col_map["time"] else ""
+                        task_val = row[col_map["task"]] if "task" in col_map and len(row) > col_map["task"] else ""
+                        comp_val = row[col_map["completion"]] if "completion" in col_map and len(row) > col_map["completion"] else ""
+                        
+                        if time_val or task_val:
+                            entries.append({
+                                "time": time_val.strip(),
+                                "task": task_val.strip(),
+                                "completion": comp_val.strip()
+                            })
+                            
+                    summary_data["weeks_reported"] = len(entries)
+                    if entries:
+                        latest = entries[-1]
+                        summary_data["latest_week_time"] = latest["time"]
+                        summary_data["latest_task"] = latest["task"]
+                        summary_data["latest_completion"] = latest["completion"]
+                        
+        except Exception as e:
+            if verbose:
+                print(f"Error processing content for {name}: {e}")
+        finally:
+            if csv_path and os.path.exists(csv_path):
+                try:
+                    os.remove(csv_path)
+                except:
+                    pass
+        
+        # Update DB
+        json_data = json.dumps(summary_data, ensure_ascii=False)
+        cursor.execute("UPDATE students SET progress_report_data = ? WHERE student_id = ?", (json_data, sid))
+        updated_count += 1
+        
+    conn.commit()
+    conn.close()
+    print(f"Updated progress report data for {updated_count} students.")
+
+
+def import_registrations_from_sheet(sheet_url, db_path, verbose=False, sheet_name=None, sheet_selection='first'):
+    """
+    Imports internship registration data (skills, wishlist, notes) from a Google Sheet or local CSV/Excel.
+    Merges with existing data based on Student ID.
+    Enriches existing records or creates new ones with 'Registered - No Report Link' status implication.
+    """
+    import csv
+    import sqlite3
+    from .gclass_sheets import download_google_sheet_to_csv
+
+    if not sheet_url:
+        print("Error: Google Sheet URL or local file path is required.")
+        return
+
+    # Check if input is a local file
+    is_local_file = os.path.exists(sheet_url) and os.path.isfile(sheet_url)
+    csv_path = None
+    temp_file_created = False
+    
+    if is_local_file:
+        if verbose:
+            print(f"Detected local file: {sheet_url}")
+        
+        # Check if it's an Excel file
+        ext = os.path.splitext(sheet_url)[1].lower()
+        if ext in ['.xlsx', '.xls']:
+            # Convert Excel to CSV with sheet selection
+            if verbose:
+                print(f"Converting Excel file to CSV...")
+            
+            import pandas as pd
+            # Handle sheet selection for Excel files
+            all_sheets = list_excel_sheets(sheet_url, verbose=verbose)
+            if not all_sheets:
+                print("Error: Could not read sheets from Excel file.")
+                return
+            
+            selected_sheet = None
+            if sheet_name:
+                if sheet_name in all_sheets:
+                    selected_sheet = sheet_name
+                else:
+                    print(f"Error: Sheet '{sheet_name}' not found. Available: {', '.join(all_sheets)}")
+                    return
+            elif sheet_selection == 'select':
+                print(f"\nAvailable sheets in {os.path.basename(sheet_url)}:")
+                for i, s in enumerate(all_sheets, 1):
+                    print(f"  {i}. {s}")
+                choice = input(f"\nSelect sheet number (1-{len(all_sheets)}): ").strip()
+                try:
+                    idx = int(choice) - 1
+                    if 0 <= idx < len(all_sheets):
+                        selected_sheet = all_sheets[idx]
+                    else:
+                        selected_sheet = all_sheets[0]
+                except ValueError:
+                    selected_sheet = all_sheets[0]
+            else:
+                selected_sheet = all_sheets[0]
+            
+            if verbose:
+                print(f"Reading sheet: {selected_sheet}")
+            
+            df = pd.read_excel(sheet_url, sheet_name=selected_sheet)
+            
+            # Create temp CSV
+            import tempfile
+            fd, csv_path = tempfile.mkstemp(suffix=".csv")
+            os.close(fd)
+            df.to_csv(csv_path, index=False)
+            temp_file_created = True
+        else:
+            csv_path = sheet_url
+    else:
+        try:
+            if verbose:
+                print(f"Downloading Google Sheet from: {sheet_url}")
+            csv_path = download_google_sheet_to_csv(
+                sheet_url, 
+                output_path=None, 
+                verbose=verbose,
+                sheet_name=sheet_name,
+                sheet_selection=sheet_selection,
+            )
+            temp_file_created = True
+        except Exception as e:
+            print(f"Error downloading Google Sheet: {e}")
+            return
+
+    if not csv_path or not os.path.exists(csv_path):
+        print(f"Error: Temporary CSV file '{csv_path}' not found.")
+        return
+
+    try:
+        # Ensure DB directory exists
+        db_dir = os.path.dirname(os.path.abspath(db_path))
+        if db_dir and not os.path.exists(db_dir):
+            os.makedirs(db_dir, exist_ok=True)
+
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        
+        # Ensure table exists (create if not exists)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS students (
+                student_id TEXT PRIMARY KEY,
+                full_name TEXT,
+                email TEXT,
+                phone_number TEXT,
+                class_name TEXT,
+                course_name TEXT,
+                internship_company TEXT,
+                is_team_leader TEXT,
+                start_date TEXT,
+                internship_form TEXT,
+                report_link TEXT,
+                timestamp TEXT,
+                progress_report_data TEXT
+            )
+        ''')
+        
+        # Add new columns for registration data if they don't exist
+        for col in ["skills", "wishlist", "notes", "registration_timestamp"]:
+            try:
+                cursor.execute(f"ALTER TABLE students ADD COLUMN {col} TEXT")
+            except sqlite3.OperationalError:
+                pass # Column exists
+
+        conn.commit()
+
+        if verbose:
+            print(f"Reading CSV: {csv_path}")
+
+        # Read CSV and upsert data
+        with open(csv_path, mode='r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            
+            records_processed = 0
+            records_updated = 0
+            records_created = 0
+            
+            for row in reader:
+                records_processed += 1
+                
+                student_id = row.get('Mã sinh viên', row.get('Student ID', '')).strip()
+                if not student_id:
+                    continue
+                    
+                full_name = row.get('Họ và tên', row.get('Full Name', '')).strip()
+                email = row.get('Email', '').strip()
+                phone_number = row.get('Điện thoại', row.get('Phone Number', '')).strip()
+                class_name = row.get('Lớp (ghi vắn tắt, VD K67A4)', row.get('Class', '')).strip()
+                
+                # Map registration specific fields
+                skills = row.get('Sở trường', row.get('Strengths', '')).strip()
+                so_doan = row.get('Sở đoản', row.get('Weaknesses', '')).strip()
+                
+                if so_doan:
+                    skills_label = "Strengths" if 'Strengths' in row else "Sở trường"
+                    weak_label = "Weaknesses" if 'Weaknesses' in row else "Sở đoản"
+                    skills = f"{skills_label}: {skills}\n{weak_label}: {so_doan}"
+                
+                wishlist_vn = 'Bạn muốn chọn công ty nào (ghi tối đa 3 nguyện vọng theo thứ tự ưu tiên, nếu bạn nào đã được nhận thì ghi tên công ty, ghi rõ đang làm/ đã được nhận ở mục Ghi chú)'
+                wishlist_en = 'Company Wishlist'
+                wishlist = row.get(wishlist_vn, row.get(wishlist_en, '')).strip()
+                
+                notes = row.get('Ghi chú', row.get('Notes', '')).strip()
+                reg_timestamp = row.get('Dấu thời gian', row.get('Timestamp', '')).strip()
+                
+                # Incorporate "Direction" into notes as we don't have a column for it
+                direction_vn = 'Bạn muốn thực tập theo hướng nào (mô tả chi tiết) VD web, mobile, AI, DS, Computer Vision, NLP, VRP,....'
+                direction_en = 'Desired Direction'
+                direction = row.get(direction_vn, row.get(direction_en, '')).strip()
+                if direction:
+                    prefix = "Direction: " if 'Desired Direction' in row else "Hướng: "
+                    notes = f"{prefix}{direction}\n{notes}" if notes else f"{prefix}{direction}"
+                
+                # Check if student exists
+                cursor.execute("SELECT student_id FROM students WHERE student_id = ?", (student_id,))
+                exists = cursor.fetchone()
+                
+                if exists:
+                    # Update enrichment fields
+                    cursor.execute('''
+                        UPDATE students SET 
+                            skills = ?, 
+                            wishlist = ?, 
+                            notes = ?,
+                            registration_timestamp = ?
+                        WHERE student_id = ?
+                    ''', (skills, wishlist, notes, reg_timestamp, student_id))
+                    records_updated += 1
+                else:
+                    # Insert new record (minimal info + registration info)
+                    cursor.execute('''
+                        INSERT INTO students (
+                            student_id, full_name, email, phone_number, class_name,
+                            skills, wishlist, notes, registration_timestamp
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (
+                        student_id, full_name, email, phone_number, class_name,
+                        skills, wishlist, notes, reg_timestamp
+                    ))
+                    records_created += 1
+                
+        conn.commit()
+        if verbose:
+            print(f"[ImportRegistrations] Processed {records_processed} row(s).")
+            print(f"[ImportRegistrations] - Updated: {records_updated}")
+            print(f"[ImportRegistrations] - Created: {records_created}")
+        else:
+            print(f"Imported registrations: {records_processed} processed ({records_updated} updated, {records_created} new).")
+        
+    except Exception as e:
+        print(f"Error processing registration import: {e}")
+    finally:
+        if 'conn' in locals():
+            conn.close()
+        # Clean up temp file if we created it
+        if temp_file_created and csv_path and os.path.exists(csv_path):
+            try:
+                os.remove(csv_path)
+            except OSError:
+                pass
+
+
+def init_companies_db(db_path="companies.db"):
+    """Initialize the companies database."""
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS companies (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE NOT NULL,
+            status TEXT,
+            contact_person TEXT,
+            email TEXT,
+            phone TEXT,
+            address TEXT,
+            website TEXT,
+            notes TEXT,
+            updated_at TEXT,
+            raw_data TEXT
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+def _normalize_company_header(header):
+    if not header:
+        return ""
+    return str(header).lower().strip().replace("\n", " ").replace("  ", " ")
+
+def import_companies_from_excel(file_path, db_path="companies.db", verbose=False, sheet_name=None, sheet_selection='first'):
+    """
+    Import companies from Excel/CSV to SQLite.
+    
+    Args:
+        sheet_name: Specific sheet name to import (for Excel files)
+        sheet_selection: Mode for sheet selection - 'first' (default), 'select' (interactive), 'all', or 'merge'
+    """
+    if not os.path.exists(file_path):
+        print(f"Error: File not found: {file_path}")
+        return
+
+    try:
+        if file_path.endswith('.csv'):
+            df = pd.read_csv(file_path)
+        else:
+            # Handle sheet selection for Excel files
+            if file_path.lower().endswith(('.xlsx', '.xls')):
+                all_sheets = list_excel_sheets(file_path, verbose=verbose)
+                
+                if not all_sheets:
+                    print("Error: Could not read sheets from Excel file.")
+                    return
+                
+                # Determine which sheet(s) to import
+                selected_sheets = []
+                
+                if sheet_name:
+                    if sheet_name in all_sheets:
+                        selected_sheets = [sheet_name]
+                    else:
+                        print(f"Error: Sheet '{sheet_name}' not found. Available sheets: {', '.join(all_sheets)}")
+                        return
+                elif sheet_selection == 'select':
+                    print(f"\nAvailable sheets in {os.path.basename(file_path)}:")
+                    for i, s in enumerate(all_sheets, 1):
+                        print(f"  {i}. {s}")
+                    
+                    choice = input(f"\nSelect sheet number(s) (1-{len(all_sheets)}, comma-separated for multiple, or 'all'): ").strip().lower()
+                    
+                    if choice == 'all':
+                        selected_sheets = all_sheets
+                        print(f"[ImportCompanies] Selected all {len(all_sheets)} sheets for merging")
+                    else:
+                        try:
+                            sheet_indices = [int(x.strip()) - 1 for x in choice.split(',')]
+                            for idx in sheet_indices:
+                                if 0 <= idx < len(all_sheets):
+                                    selected_sheets.append(all_sheets[idx])
+                                else:
+                                    print(f"Warning: Sheet number {idx + 1} out of range, skipping")
+                            
+                            if not selected_sheets:
+                                print("No valid sheets selected. Using first sheet.")
+                                selected_sheets = [all_sheets[0]]
+                        except ValueError:
+                            print("Invalid input. Using first sheet.")
+                            selected_sheets = [all_sheets[0]]
+                elif sheet_selection in ['all', 'merge']:
+                    selected_sheets = all_sheets
+                    if verbose:
+                        print(f"[ImportCompanies] Importing all {len(all_sheets)} sheets for merging")
+                else:
+                    selected_sheets = [all_sheets[0]]
+                
+                if verbose or len(selected_sheets) > 1:
+                    print(f"[ImportCompanies] Selected sheet(s): {', '.join(selected_sheets)}")
+                
+                # Read and merge sheets
+                all_dfs = []
+                for sheet in selected_sheets:
+                    if len(selected_sheets) > 1 and verbose:
+                        print(f"[ImportCompanies] Reading sheet: {sheet}")
+                    all_dfs.append(pd.read_excel(file_path, sheet_name=sheet))
+                
+                # Merge all DataFrames
+                if len(all_dfs) > 1:
+                    if verbose:
+                        print(f"[ImportCompanies] Merging {len(all_dfs)} sheets...")
+                    df = pd.concat(all_dfs, ignore_index=True)
+                else:
+                    df = all_dfs[0]
+            else:
+                df = pd.read_excel(file_path)
+    except Exception as e:
+        print(f"Error reading file: {e}")
+        return
+
+    init_companies_db(db_path)
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+    # Map columns
+    col_map = {}
+    for col in df.columns:
+        norm = _normalize_company_header(col)
+        if any(x in norm for x in ["tên công ty", "company name", "công ty", "đơn vị"]):
+            col_map["name"] = col
+        elif any(x in norm for x in ["trạng thái", "status", "tình trạng"]):
+            col_map["status"] = col
+        elif any(x in norm for x in ["người liên hệ", "contact person", "phụ trách"]):
+            col_map["contact_person"] = col
+        elif any(x in norm for x in ["email", "mail", "hòm thư"]):
+            col_map["email"] = col
+        elif any(x in norm for x in ["sđt", "số điện thoại", "phone", "mobile", "tel"]):
+            col_map["phone"] = col
+        elif any(x in norm for x in ["địa chỉ", "address", "trụ sở"]):
+            col_map["address"] = col
+        elif any(x in norm for x in ["website", "trang web", "link", "url"]):
+            col_map["website"] = col
+        elif any(x in norm for x in ["ghi chú", "note", "desc"]):
+            col_map["notes"] = col
+
+    if "name" not in col_map:
+        # Try finding the first column that looks like names? 
+        # Or error out. Let's try first distinct text column.
+        print("Warning: Could not auto-detect 'Name' column. Trying first column.")
+        col_map["name"] = df.columns[0]
+
+    updated = 0
+    created = 0
+
+    for index, row in df.iterrows():
+        name = str(row[col_map["name"]]).strip()
+        if not name or name.lower() == "nan":
+            continue
+
+        data_row = {}
+        for db_col, df_col in col_map.items():
+            if db_col == "name": continue
+            val = row.get(df_col)
+            if pd.notna(val):
+                data_row[db_col] = str(val).strip()
+            else:
+                data_row[db_col] = ""
+
+        # Raw data for other columns
+        raw = {}
+        for col in df.columns:
+            if col not in col_map.values():
+                val = row[col]
+                if pd.notna(val):
+                    raw[col] = str(val)
+        
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Check exist
+        cursor.execute("SELECT id FROM companies WHERE name = ?", (name,))
+        exists = cursor.fetchone()
+
+        if exists:
+            # Update
+            cursor.execute('''
+                UPDATE companies SET
+                    status=coalesce(?, status),
+                    contact_person=coalesce(?, contact_person),
+                    email=coalesce(?, email),
+                    phone=coalesce(?, phone),
+                    address=coalesce(?, address),
+                    website=coalesce(?, website),
+                    notes=coalesce(?, notes),
+                    updated_at=?,
+                    raw_data=?
+                WHERE name=?
+            ''', (
+                data_row.get("status"), data_row.get("contact_person"), data_row.get("email"),
+                data_row.get("phone"), data_row.get("address"), data_row.get("website"),
+                data_row.get("notes"), now, json.dumps(raw, ensure_ascii=False), name
+            ))
+            updated += 1
+        else:
+            # Insert
+            cursor.execute('''
+                INSERT INTO companies (name, status, contact_person, email, phone, address, website, notes, updated_at, raw_data)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                name, data_row.get("status"), data_row.get("contact_person"), data_row.get("email"),
+                data_row.get("phone"), data_row.get("address"), data_row.get("website"),
+                data_row.get("notes"), now, json.dumps(raw, ensure_ascii=False)
+            ))
+            created += 1
+
+    conn.commit()
+    conn.close()
+    if verbose:
+        print(f"Imported companies: {created} created, {updated} updated.")
+    else:
+        print(f"Imported {created} new companies, updated {updated}.")
+
+def import_companies_from_google_sheet(sheet_url, db_path="companies.db", credentials_path=None, token_path=None, verbose=False, sheet_name=None, sheet_selection='first'):
+    """Import companies from a Google Sheet URL."""
+    try:
+        # Create a temporary file for the CSV
+        fd, temp_path = tempfile.mkstemp(suffix=".csv")
+        os.close(fd)
+        
+        if verbose:
+            print(f"Downloading Google Sheet to {temp_path}...")
+            
+        download_google_sheet_to_csv(
+            sheet_url, 
+            output_path=temp_path, 
+            credentials_path=credentials_path, 
+            token_path=token_path, 
+            verbose=verbose,
+            sheet_name=sheet_name,
+            sheet_selection=sheet_selection,
+        )
+        
+        # Import from the temporary CSV
+        import_companies_from_excel(
+            temp_path, 
+            db_path=db_path, 
+            verbose=verbose,
+            sheet_name=sheet_name,
+            sheet_selection=sheet_selection
+        )
+        
+        # Cleanup
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+            
+    except Exception as e:
+        print(f"Error importing from Google Sheet: {e}")
+
+def export_companies_to_excel(output_path, db_path="companies.db", filter_list=None):
+    """Export companies DB to Excel, optionally filtering by a list of names."""
+    conn = sqlite3.connect(db_path)
+    try:
+        if filter_list:
+            # Create placeholders for SQL query
+            placeholders = ','.join(['?'] * len(filter_list))
+            query = f"SELECT * FROM companies WHERE name IN ({placeholders})"
+            df = pd.read_sql_query(query, conn, params=list(filter_list))
+        else:
+            df = pd.read_sql_query("SELECT * FROM companies", conn)
+        
+        if df.empty:
+            print("No matching companies found to export.")
+            return
+
+        if output_path.endswith('.csv'):
+            df.to_csv(output_path, index=False, encoding='utf-8-sig')
+        else:
+            if not output_path.endswith('.xlsx'):
+                output_path += ".xlsx"
+            df.to_excel(output_path, index=False)
+        print(f"Exported {len(df)} companies to {output_path}")
+    except Exception as e:
+        print(f"Error exporting: {e}")
+    finally:
+        conn.close()
+
+def export_company_details_to_txt(file_path=None, db_path="companies.db", verbose=False, filter_list=None):
+    """Export company details to a formatted TXT file, optionally filtering by a list of names."""
+    if not os.path.exists(db_path):
+        if verbose:
+            print(f"[ExportCompanyDetails] Database not found: {db_path}")
+        else:
+            print(f"Database not found: {db_path}")
+        return
+
+    if not file_path:
+        file_path = os.path.join(os.getcwd(), "companies_details.txt")
+
+    if DRY_RUN:
+        print(f"[ExportCompanyDetails] Dry run: would export details to {file_path}")
+        return
+
+    conn = sqlite3.connect(db_path)
+    try:
+        cursor = conn.cursor()
+        if filter_list:
+            placeholders = ','.join(['?'] * len(filter_list))
+            cursor.execute(f"SELECT * FROM companies WHERE name IN ({placeholders}) ORDER BY name ASC", list(filter_list))
+        else:
+            cursor.execute("SELECT * FROM companies ORDER BY name ASC")
+        rows = cursor.fetchall()
+        
+        # Get column names
+        column_names = [description[0] for description in cursor.description]
+        
+        if not rows:
+            print("No companies found to export.")
+            return
+
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(f"Total Companies: {len(rows)}\n")
+            f.write('-' * 40 + '\n')
+            
+            for idx, row in enumerate(rows, 1):
+                f.write(f"Company {idx}/{len(rows)}:\n")
+                data = dict(zip(column_names, row))
+                
+                # Preferred order
+                keys = ["name", "status", "contact_person", "email", "phone", "address", "website", "notes", "updated_at"]
+                
+                for k in keys:
+                    v = data.get(k)
+                    if v is not None:
+                        # Translate label for display
+                        label = k.replace("_", " ").title()
+                        f.write(f"{label}: {v}\n")
+                
+                # Handle raw_data (legacy/extra columns)
+                raw_str = data.get("raw_data")
+                if raw_str:
+                    try:
+                        raw = json.loads(raw_str)
+                        if raw:
+                            f.write("Extra Info:\n")
+                            for rk, rv in raw.items():
+                                if rv:
+                                    f.write(f"  - {rk}: {rv}\n")
+                    except:
+                        pass
+                
+                f.write('-' * 20 + '\n')
+                
+        print(f"Exported company details to {file_path}")
+    except Exception as e:
+        print(f"Error exporting company details: {e}")
+    finally:
+        conn.close()
+
+def export_students_to_vcf(students, file_path=None, db_path=None, verbose=False, university_name=""):
+    """Export student contact info to a VCF file compatible with iOS."""
+    if db_path:
+        students = load_database(db_path)
+    if not students:
+        if verbose:
+            print("[ExportVCF] No students to export.")
+        else:
+            print("No students to export.")
+        return
+    if not file_path:
+        file_path = os.path.join(os.getcwd(), "students_contacts.vcf")
+    
+    if DRY_RUN:
+        print(f"[ExportVCF] Dry run: would export vCards to {file_path}")
+        return
+
+    def _vcf_fold(line):
+        """Fold a line according to VCF/vCard specs (75 chars limit)."""
+        # VCF 3.0 uses CRLF, but Python's text mode writes \n. 
+        # We need to output \n + space for folding in the file.
+        # But since we write to a text file, valid folding is usually just `\n `
+        # Strict limit is 75 octets.
+        if len(line) <= 75:
+            return line
+        
+        # Simple folding: split at 75 chars
+        # First section 75 chars
+        folded = line[:75]
+        remainder = line[75:]
+        
+        # Subsequent sections: newline + space + 74 chars (1 char indent)
+        while remainder:
+            folded += "\n " + remainder[:74]
+            remainder = remainder[74:]
+        return folded
+
+    from datetime import datetime
+    rev = datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ")
+    
+    with open(file_path, 'w', encoding='utf-8') as f:
+        for s in students:
+            # Handle both Student objects and dictionaries
+            if hasattr(s, "__dict__"):
+                data = s.__dict__
+            elif isinstance(s, dict):
+                data = s
+            else:
+                continue
+
+            name = data.get("Họ và Tên") or data.get("Name") or "Unknown Student"
+            class_name = data.get("Lớp") or data.get("Class") or ""
+            company = data.get("Internship Company") or data.get("Công ty thực tập") or ""
+            phone = data.get("Phone Number") or data.get("Số điện thoại") or ""
+            
+            # Formatting the Organization/Note area for the 'N' and 'FN' fields
+            org_info = []
+            if class_name:
+                org_info.append(class_name)
+            if university_name:
+                org_info.append(university_name)
+            
+            # User requested to exclude company info for students
+            # if company:
+            #    org_info.append(company)
+            org_str = ", ".join(org_info)
+            
+            f.write("BEGIN:VCARD\n")
+            f.write("VERSION:3.0\n")
+            f.write("PRODID:-//Apple Inc.//iOS 17.5.1//EN\n")
+            
+            # N:(<class name if have, university/company name 1>);<contact name 1>;;;
+            if org_str:
+                line = f"N:({org_str});{name};;;"
+                f.write(_vcf_fold(line) + "\n")
+                line_fn = f"FN:{name} ({org_str})"
+                f.write(_vcf_fold(line_fn) + "\n")
+            else:
+                line = f"N:;{name};;;"
+                f.write(_vcf_fold(line) + "\n")
+                line_fn = f"FN:{name}"
+                f.write(_vcf_fold(line_fn) + "\n")
+            
+            if phone:
+                # Normalize phone number if needed? User example shows +84...
+                # We'll just use as is or maybe a simple check
+                line_tel = f"TEL;type=HOME;type=VOICE;type=pref:{phone}"
+                f.write(_vcf_fold(line_tel) + "\n")
+                line_tel2 = f"TEL;type=CELL;type=VOICE:{phone}"
+                f.write(_vcf_fold(line_tel2) + "\n")
+            
+            f.write(f"REV:{rev}\n")
+            f.write("END:VCARD\n")
+            
+    print(f"Exported {len(students)} contacts to {file_path}")
+
+def export_companies_to_vcf(file_path=None, db_path="companies.db", verbose=False, filter_list=None):
+    """Export company representative contact info to a VCF file, optionally filtering by a list of names."""
+    if not os.path.exists(db_path):
+        if verbose:
+            print(f"[ExportCompanyVCF] Database not found: {db_path}")
+        else:
+            print(f"Database not found: {db_path}")
+        return
+
+    if not file_path:
+        file_path = os.path.join(os.getcwd(), "companies_contacts.vcf")
+
+    if DRY_RUN:
+        print(f"[ExportCompanyVCF] Dry run: would export vCards to {file_path}")
+        return
+
+    def _vcf_fold(line):
+        """Fold a line according to VCF/vCard specs (75 chars limit)."""
+        if len(line) <= 75:
+            return line
+        folded = line[:75]
+        remainder = line[75:]
+        while remainder:
+            folded += "\n " + remainder[:74]
+            remainder = remainder[74:]
+        return folded
+
+    from datetime import datetime
+    rev = datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    conn = sqlite3.connect(db_path)
+    try:
+        cursor = conn.cursor()
+        if filter_list:
+            placeholders = ','.join(['?'] * len(filter_list))
+            cursor.execute(f"SELECT * FROM companies WHERE name IN ({placeholders}) ORDER BY name ASC", list(filter_list))
+        else:
+            cursor.execute("SELECT * FROM companies ORDER BY name ASC")
+        rows = cursor.fetchall()
+        column_names = [description[0] for description in cursor.description]
+
+        if not rows:
+            print("No companies found to export.")
+            return
+
+        with open(file_path, 'w', encoding='utf-8') as f:
+            for row in rows:
+                data = dict(zip(column_names, row))
+                
+                name = data.get("contact_person") or "Representative"
+                company_name = data.get("name") or ""
+                phone = data.get("phone") or ""
+                email = data.get("email") or ""
+                
+                f.write("BEGIN:VCARD\n")
+                f.write("VERSION:3.0\n")
+                f.write("PRODID:-//Apple Inc.//iOS 17.5.1//EN\n")
+                
+                # N:(<university/company name>);<contact name>;;;
+                # N:(<university/company name>);<contact name>;;;
+                if company_name:
+                    line = f"N:({company_name});{name};;;"
+                    f.write(_vcf_fold(line) + "\n")
+                    line_fn = f"FN:{name} ({company_name})"
+                    f.write(_vcf_fold(line_fn) + "\n")
+                else:
+                    line = f"N:;{name};;;"
+                    f.write(_vcf_fold(line) + "\n")
+                    line_fn = f"FN:{name}"
+                    f.write(_vcf_fold(line_fn) + "\n")
+                
+                if phone:
+                    line_tel = f"TEL;type=WORK;type=VOICE;type=pref:{phone}"
+                    f.write(_vcf_fold(line_tel) + "\n")
+                    line_tel2 = f"TEL;type=CELL;type=VOICE:{phone}"
+                    f.write(_vcf_fold(line_tel2) + "\n")
+                
+                if email:
+                    line_email = f"EMAIL;type=INTERNET;type=WORK;type=pref:{email}"
+                    f.write(_vcf_fold(line_email) + "\n")
+                
+                f.write(f"REV:{rev}\n")
+                f.write("END:VCARD\n")
+                
+        print(f"Exported {len(rows)} contacts to {file_path}")
+    except Exception as e:
+        print(f"Error exporting company vCards: {e}")
+    finally:
+        conn.close()
+
+def load_list_from_file(file_path, verbose=False):
+    """
+    Load a list of identifiers (names, IDs, emails) from a file.
+    Supports .txt, .csv, and .xlsx.
+    """
+    if not os.path.exists(file_path):
+        if verbose:
+            print(f"[LoadList] File not found: {file_path}")
+        return set()
+
+    ext = os.path.splitext(file_path)[1].lower()
+    identifiers = set()
+
+    try:
+        if ext == ".txt":
+            with open(file_path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    val = line.strip()
+                    if val:
+                        identifiers.add(val)
+        elif ext == ".csv":
+            df = pd.read_csv(file_path)
+            if not df.empty:
+                # Use first column if no common header
+                col = df.columns[0]
+                for c in ["Student ID", "ID", "Name", "Họ và Tên", "name"]:
+                    if c in df.columns:
+                        col = c
+                        break
+                identifiers.update(df[col].dropna().astype(str).str.strip().tolist())
+        elif ext in [".xlsx", ".xls"]:
+            df = pd.read_excel(file_path)
+            if not df.empty:
+                col = df.columns[0]
+                for c in ["Student ID", "ID", "Name", "Họ và Tên", "name"]:
+                    if c in df.columns:
+                        col = c
+                        break
+                identifiers.update(df[col].dropna().astype(str).str.strip().tolist())
+        else:
+            if verbose:
+                print(f"[LoadList] Unsupported file extension: {ext}")
+    except Exception as e:
+        print(f"Error loading list from {file_path}: {e}")
+
+    if verbose:
+        print(f"[LoadList] Loaded {len(identifiers)} unique entries from {file_path}")
+    return identifiers

@@ -12,9 +12,10 @@ Announcement samples (`sample/announcements/`):
 - `announcement_input_vi.txt`: Sample announcement input in Vietnamese.
 - `announcement_refined_output_vi.txt`: Sample announcement output in Vietnamese after AI refinement.
 
-Gradebook samples (`sample/mat/`, `sample/overrides/`):
+Gradebook and Company samples (`sample/mat/`, `sample/overrides/`, `sample/`):
 - `MAT-examples.xlsx`: Sample course grade sheet used at VNU University of Science (Hanoi), with the original header/footer layout preserved, 10 placeholder students, and CC/GK/CK columns filled with sample values.
 - `override_grades.xlsx`: Example override file. Columns required: Ma Sinh Viˆn or H? v… Tˆn, plus at least one of CC/GK/CK (order does not matter). `STT` and `Ly do` are optional. Common header aliases are accepted (for example `MSSV`, `H? tˆn`, `Midterm`, `Final`, `Reason`). Non-empty CC/GK/CK cells replace computed grades; Ly do explains why.
+- `companies_sample.csv`: Sample companies data in English for testing imports.
 
 Config samples (`sample/config/`):
 - `config.sample.json`: Full configuration template for local setup.

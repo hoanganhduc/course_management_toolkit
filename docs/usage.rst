@@ -162,6 +162,7 @@ Populate the following keys in ``config.json`` (or load from a JSON file with
 - ``GOOGLE_SHEET_URL``
 - ``GOOGLE_SHEET_LECTURER_TOPICS_URL``
 - ``GOOGLE_SHEET_STUDENT_REGISTRATION_URL``
+- ``INTERNSHIP_REGISTRATION_SHEET_URL``
 
 Canvas operations will use these defaults unless overridden by flags like
 ``--canvas-course-id``.
@@ -293,6 +294,26 @@ Notes:
 Notes:
 
 - MAT*.xlsx imports ignore score columns (CC, GK, CK, totals); only roster fields are imported.
+
+Import internship registrations (Skills/Wishlist):
+
+.. code-block:: bash
+
+   course --import-internships "https://docs.google.com/spreadsheets/d/FILE_ID/edit#gid=0"
+   course --import-internships sample/internship_data.csv
+   course --import-registrations "https://docs.google.com/spreadsheets/d/FILE_ID/edit#gid=0"
+   course --import-registrations sample/internship_registrations_data.csv
+
+Manage company contact data in ``companies.db``:
+
+.. code-block:: bash
+
+   course --import-companies "Danh sách công ty liên hệ (không xóa).xlsx"
+   course --import-companies "https://docs.google.com/spreadsheets/d/FILE_ID/edit#gid=0"
+   course --export-companies companies_export.xlsx
+
+Notes:
+- Internship and Company imports support both Vietnamese and English column headers.
 
 List students by email domain:
 
