@@ -8,7 +8,7 @@ Last updated: |today|
 Package information
 -------------------
 
-- Version: 0.1.1
+- Version: 0.1.3
 - GitHub: https://github.com/hoanganhduc/course_management_toolkit
 - Donations:
   - Buy Me a Coffee: https://www.buymeacoffee.com/hoanganhduc

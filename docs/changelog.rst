@@ -1,6 +1,28 @@
 Changelog
 =========
 
+Version 0.1.3 (2026-01-25)
+--------------------------
+
+- Improved ``export_companies_to_vcf`` with ``raw_data`` fallback logic to extract contact person and phone numbers.
+- VCF exports (students and companies) now skip entries with no phone number information.
+- Enhanced company VCF export filename detection to use ``companies_contacts.vcf`` by default.
+- Improved company data import column mapping (better Vietnamese keyword support and email priority).
+- Fixed ``UnboundLocalError`` in ``course --import-internships`` by adding missing local import.
+- Fixed ``UnpicklingError`` in ``course --export-vcf`` (and other commands) when loading SQLite databases with ``companies`` table.
+- Added company field mappings for VCF export and student loading.
+- VCF export now strictly uses ``UNIVERSITY_NAME`` from config (defaults to empty if not set) instead of hardcoded default.
+
+Version 0.1.2 (2026-01-24)
+--------------------------
+
+- Added ``--import-registrations`` command to support student internship registration data (skills, wishlist, notes).
+- Added ``INTERNSHIP_REGISTRATION_SHEET_URL`` configuration key.
+- Added company contact management with ``--import-companies`` and ``--export-companies``, stored in ``companies.db``.
+- Improved export formatting for student details (JSON unwrapping for progress reports, translated labels, hidden empty fields).
+- Added support for English headers in internship data and registration imports.
+- Updated documentation and sample data to English.
+
 Version 0.1.1 (2025-12-27)
 --------------------------
 
