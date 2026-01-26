@@ -5024,6 +5024,7 @@ def en_to_vn_field(field, verbose=False):
         "MiniProject_Advisor_Email": "Email GVHD mini-project",
         "Submission Status (Google Classroom)": "Trạng thái nộp bài (Google Classroom)",
         "Submission Status (Canvas)": "Trạng thái nộp bài (Canvas)",
+        "Phone Number": "Số điện thoại",
     }
     if field.startswith("Blackboard Count: "):
         date = field[len("Blackboard Count: "):]
@@ -5308,6 +5309,67 @@ def _select_export_columns(available_columns, pre_selected=None):
     return final_cols
 
 
+def _natural_keys(text):
+    '''
+    alist.sort(key=_natural_keys) sorts in human order
+    http://nedbatchelder.com/blog/200712/human_sorting.html
+    '''
+    return [ int(c) if c.isdigit() else c.lower() for c in re.split(r'(\d+)', str(text)) ]
+
+def _transform_vn_string(text):
+    """
+    Transform Vietnamese string to a sortable string.
+    Maps:
+    ă -> a1, â -> a2
+    đ -> d1
+    ê -> e1
+    ô -> o1, ơ -> o2
+    ư -> u1
+    And handles case/accents for proper ordering if needed, but primary level is base char.
+    """
+    if not text:
+        return ""
+    
+    text = text.lower()
+    # Simple replacement map for primary sorting order
+    # Note: We append a suffix to ensure correct order relative to base char.
+    # a < ă < â < b
+    # d < đ < e
+    # e < ê < f
+    # o < ô < ơ < p
+    # u < ư < v
+    
+    # We can use multiple replace passes or a dict lookup.
+    # Given the complexity, a direct char map is safer.
+    chars = {
+        'à': 'a', 'á': 'a', 'ả': 'a', 'ã': 'a', 'ạ': 'a',
+        'ă': 'a1', 'ằ': 'a1', 'ắ': 'a1', 'ẳ': 'a1', 'ẵ': 'a1', 'ặ': 'a1',
+        'â': 'a2', 'ầ': 'a2', 'ấ': 'a2', 'ẩ': 'a2', 'ẫ': 'a2', 'ậ': 'a2',
+        'đ': 'd1',
+        'è': 'e', 'é': 'e', 'ẻ': 'e', 'ẽ': 'e', 'ẹ': 'e',
+        'ê': 'e1', 'ề': 'e1', 'ế': 'e1', 'ể': 'e1', 'ễ': 'e1', 'ệ': 'e1',
+        'ì': 'i', 'í': 'i', 'ỉ': 'i', 'ĩ': 'i', 'ị': 'i',
+        'ò': 'o', 'ó': 'o', 'ỏ': 'o', 'õ': 'o', 'ọ': 'o',
+        'ô': 'o1', 'ồ': 'o1', 'ố': 'o1', 'ổ': 'o1', 'ỗ': 'o1', 'ộ': 'o1',
+        'ơ': 'o2', 'ờ': 'o2', 'ớ': 'o2', 'ở': 'o2', 'ỡ': 'o2', 'ợ': 'o2',
+        'ù': 'u', 'ú': 'u', 'ủ': 'u', 'ũ': 'u', 'ụ': 'u',
+        'ư': 'u1', 'ừ': 'u1', 'ứ': 'u1', 'ử': 'u1', 'ữ': 'u1', 'ự': 'u1',
+        'ỳ': 'y', 'ý': 'y', 'ỷ': 'y', 'ỹ': 'y', 'ỵ': 'y',
+    }
+    
+    res = []
+    for char in text:
+        res.append(chars.get(char, char))
+    return "".join(res)
+
+def _split_vietnamese_name(full_name):
+    if not full_name:
+        return "", ""
+    parts = full_name.strip().rsplit(' ', 1)
+    if len(parts) == 1:
+        return "", parts[0] # No spaces, treat as First Name (or just name)
+    return parts[0], parts[1] # Last Name Part, First Name Part
+
 def export_to_excel(students, file_path=None, db_path=None, verbose=False):
     # If db_path is provided, load students from database
     if db_path:
@@ -5344,11 +5406,20 @@ def export_to_excel(students, file_path=None, db_path=None, verbose=False):
     gc_titles = sorted(gc_titles, key=lambda t: t.lower())
     canvas_titles = sorted(canvas_titles, key=lambda t: t.lower())
 
+    # Sort students: Section (natural) > First Name > Last Name
+    # Use _transform_vn_string for names to handle Vietnamese collation
+    students.sort(key=lambda s: (
+        _natural_keys(getattr(s, "Section", "") or getattr(s, "Canvas Section", "") or ""),
+        _transform_vn_string(_split_vietnamese_name(getattr(s, "Name", ""))[1]),
+        _transform_vn_string(_split_vietnamese_name(getattr(s, "Name", ""))[0])
+    ))
     export_fields = [
         ("Name", lambda s: getattr(s, "Name", "")),
         ("Student ID", lambda s: getattr(s, "Student ID", "")),
         ("Email", _extract_student_email),
         ("Class", lambda s: getattr(s, "Class", "")),
+        ("Section", lambda s: getattr(s, "Section", "") or getattr(s, "Canvas Section", "")),
+        ("Phone Number", lambda s: getattr(s, "Phone Number", "")),
         ("Google_ID", lambda s: getattr(s, "Google_ID", "")),
         ("Canvas ID", lambda s: getattr(s, "Canvas ID", "")),
         ("MiniProject_Group_ID", lambda s: getattr(s, "MiniProject_Group_ID", "")),
@@ -5429,6 +5500,18 @@ def export_to_excel(students, file_path=None, db_path=None, verbose=False):
          df = pd.DataFrame(columns=selected_headers)
     else:
         df = pd.DataFrame(rows, columns=selected_headers)
+
+    # Convert numeric-looking columns (IDs) to actual numbers to avoid Excel warnings
+    # Identify Vietnamese headers for ID fields
+    id_header = en_to_vn_field("Student ID", verbose=False)
+    section_header = en_to_vn_field("Section", verbose=False)
+    
+    cols_to_convert = [id_header, section_header]
+    for col in cols_to_convert:
+        if col in df.columns:
+            # converting to numeric, coercing errors to NaN, then filling with original values
+            numeric_vals = pd.to_numeric(df[col], errors='coerce')
+            df[col] = numeric_vals.fillna(df[col])
     
     df.to_excel(file_path, index=False)
 
