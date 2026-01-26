@@ -5221,6 +5221,93 @@ def print_all_student_details(students, db_path=None, verbose=False, sort_method
                     print(f"  - {title}: {rubric}")
         print('-' * 40)
 
+
+def _select_export_columns(available_columns, pre_selected=None):
+    """
+    Interactive column selection helper.
+    available_columns: list of column names (strings).
+    pre_selected: list of column names to be selected by default (if None, all are selected).
+    Returns a list of selected column names.
+    """
+    if not available_columns:
+        return []
+    
+    # If in non-interactive mode (e.g. piped input), just return defaults or all
+    # For now, we assume interactive if we are here, but let's check basic tty or just proceed.
+    # Actually, the user requirement is "ask user", so we must prompt.
+    
+    print("\nAvailable columns for export:")
+    for idx, col in enumerate(available_columns, 1):
+        mark = "x" if (pre_selected is None or col in pre_selected) else " "
+        print(f"{idx}. [{mark}] {col}")
+    
+    print("\nActions:")
+    print(" - Enter numbers (comma-separated) to toggle selection (e.g. 1,3,5)")
+    print(" - 'a' or 'all' to select all")
+    print(" - 'n' or 'none' to select none")
+    print(" - Press Enter to confirm current selection")
+    
+    selected_indices = set()
+    if pre_selected is None:
+        selected_indices = set(range(len(available_columns)))
+    else:
+        for idx, col in enumerate(available_columns):
+            if col in pre_selected:
+                selected_indices.add(idx)
+
+    while True:
+        choice = input("\nSelect columns (or Enter to confirm): ").strip().lower()
+        if not choice:
+            break
+        
+        if choice in ('a', 'all'):
+            selected_indices = set(range(len(available_columns)))
+        elif choice in ('n', 'none'):
+            selected_indices = set()
+        else:
+            # Parse numbers
+            parts = [p.strip() for p in choice.split(",") if p.strip()]
+            for p in parts:
+                # Handle ranges like 1-5
+                if "-" in p:
+                    try:
+                        start, end = map(int, p.split("-"))
+                        for i in range(start, end + 1):
+                             idx = i - 1
+                             if 0 <= idx < len(available_columns):
+                                if idx in selected_indices:
+                                    selected_indices.remove(idx)
+                                else:
+                                    selected_indices.add(idx)
+                    except ValueError:
+                        pass
+                elif p.isdigit():
+                    idx = int(p) - 1
+                    if 0 <= idx < len(available_columns):
+                        if idx in selected_indices:
+                            selected_indices.remove(idx)
+                        else:
+                            selected_indices.add(idx)
+        
+        # Redisplay status
+        print("\nCurrent selection:")
+        count = 0
+        for idx, col in enumerate(available_columns):
+            if idx in selected_indices:
+                mark = "x"
+                count += 1
+            else:
+                mark = " "
+            print(f"{idx + 1}. [{mark}] {col}")
+        print(f"({count}/{len(available_columns)} selected)")
+
+    final_cols = [available_columns[i] for i in sorted(selected_indices)]
+    if not final_cols:
+        print("Warning: No columns selected. Defaulting to all.")
+        return available_columns
+    return final_cols
+
+
 def export_to_excel(students, file_path=None, db_path=None, verbose=False):
     # If db_path is provided, load students from database
     if db_path:
@@ -5273,10 +5360,43 @@ def export_to_excel(students, file_path=None, db_path=None, verbose=False):
         ("Midterm Reward Points", lambda s: getattr(s, "Midterm Reward Points", "")),
         ("Final Reward Points", lambda s: getattr(s, "Final Reward Points", "")),
     ]
-    export_headers = [en_to_vn_field(field) for field, _ in export_fields]
+
+    # Prepare all potential column headers
+    base_headers = [en_to_vn_field(field) for field, _ in export_fields]
     gc_headers = [f"GC Submission: {title}" for title in gc_titles]
     canvas_headers = [f"Canvas Submission: {title}" for title in canvas_titles]
-    export_headers = export_headers + gc_headers + canvas_headers
+    
+    all_headers = base_headers + gc_headers + canvas_headers
+    
+    # Prompt user for column selection
+    if not verbose: # Only skip if specifically designed to be quiet, but standard export should be interactive
+        # Actually verbose flag is often used for debug. Let's assume we always ask unless DRY_RUN (already handled)
+        # We can default to all important columns pre-selected?
+        # Let's pre-select Name, ID, Email, and maybe Class.
+        pass
+
+    # Default selection: standard fields are usually desired.
+    # But user might want everything.
+    # Let's prompt with all selected by default.
+    selected_headers = _select_export_columns(all_headers)
+    
+    # Map back selection to getters
+    # This requires looking up which getter corresponds to which header
+    
+    # Create a mapping from header -> getter/value fetcher
+    header_map = {}
+    for (name, getter) in export_fields:
+        header_map[en_to_vn_field(name)] = {"type": "field", "getter": getter}
+    
+    for header in gc_headers:
+        # header is "GC Submission: {title}"
+        title = header.replace("GC Submission: ", "")
+        header_map[header] = {"type": "gc", "title": title}
+        
+    for header in canvas_headers:
+         # header is "Canvas Submission: {title}"
+        title = header.replace("Canvas Submission: ", "")
+        header_map[header] = {"type": "canvas", "title": title}
 
     def _sort_key(s):
         name = str(getattr(s, "Name", "") or "").strip().lower()
@@ -5286,16 +5406,30 @@ def export_to_excel(students, file_path=None, db_path=None, verbose=False):
     rows = []
     for s in tqdm(sorted(students, key=_sort_key), desc="Exporting"):
         row = {}
-        for field, getter in export_fields:
-            row[en_to_vn_field(field)] = getter(s)
         gc_subs = getattr(s, "Submissions", None) if isinstance(getattr(s, "Submissions", None), dict) else {}
         canvas_subs = getattr(s, "Canvas Submissions", None) if isinstance(getattr(s, "Canvas Submissions", None), dict) else {}
-        for title in gc_titles:
-            row[f"GC Submission: {title}"] = gc_subs.get(title, "")
-        for title in canvas_titles:
-            row[f"Canvas Submission: {title}"] = canvas_subs.get(title, "")
+        
+        for header in selected_headers:
+            info = header_map.get(header)
+            if not info:
+                row[header] = ""
+                continue
+            
+            if info["type"] == "field":
+                row[header] = info["getter"](s)
+            elif info["type"] == "gc":
+                row[header] = gc_subs.get(info["title"], "")
+            elif info["type"] == "canvas":
+                row[header] = canvas_subs.get(info["title"], "")
+        
         rows.append(row)
-    df = pd.DataFrame(rows, columns=export_headers)
+        
+    if not rows:
+         # Create empty df with columns if no students, but we checked students earlier
+         df = pd.DataFrame(columns=selected_headers)
+    else:
+        df = pd.DataFrame(rows, columns=selected_headers)
+    
     df.to_excel(file_path, index=False)
 
     # Auto-fit column widths and center numeric columns
@@ -5380,18 +5514,26 @@ def export_anonymized_roster(students, file_path=None, db_path=None, verbose=Fal
         if key in columns:
             ordered_columns.append(key)
     ordered_columns.extend(sorted([c for c in columns if c not in ordered_columns]))
+    
+    # Prompt for selection
+    selected_columns = _select_export_columns(ordered_columns, pre_selected=ordered_columns)
 
     rows = []
     for s in students:
-        row = {col: getattr(s, col, "") for col in ordered_columns}
-        anon_name, anon_id = _anonymize_student(row.get("Name", ""), row.get("Student ID", ""))
+        row = {col: getattr(s, col, "") for col in selected_columns}
+        # Apply anonymization regardless of selection if Name/ID are present
+        anon_name, anon_id = _anonymize_student(getattr(s, "Name", ""), getattr(s, "Student ID", ""))
+        
+        # If user explicitly selected Name or Student ID, we replace them with anonymized versions.
+        # If user selected other columns, we keep them as is (assuming they are not PII, or user accepts responsibility).
+        
         if "Name" in row:
             row["Name"] = anon_name
         if "Student ID" in row:
             row["Student ID"] = anon_id
         rows.append(row)
 
-    df = pd.DataFrame(rows, columns=ordered_columns)
+    df = pd.DataFrame(rows, columns=selected_columns)
     df.to_csv(file_path, index=False)
     if verbose:
         print(f"[ExportAnon] Exported {len(students)} students to {file_path}")
@@ -9596,14 +9738,43 @@ def export_roster_to_csv(students, file_path=None, verbose=False):
         print(f"[RosterExport] Dry run: would export roster to {file_path}")
         return
 
+    export_fields = [
+        ("Name", lambda s: getattr(s, "Name", "")),
+        ("Student ID", lambda s: getattr(s, "Student ID", "")),
+        ("Email", _extract_student_email),
+        ("Class", lambda s: getattr(s, "Class", "")),
+        ("Google_ID", lambda s: getattr(s, "Google_ID", "")),
+        ("Canvas ID", lambda s: getattr(s, "Canvas ID", "")),
+    ]
+    # Use localized headers
+    headers = [en_to_vn_field(field) for field, _ in export_fields]
+    
+    # Let user select columns
+    selected_headers = _select_export_columns(headers, pre_selected=[en_to_vn_field("Name"), en_to_vn_field("Student ID")])
+
+    # Map headers back to getters
+    header_map = {}
+    for (name, getter) in export_fields:
+        header_map[en_to_vn_field(name)] = getter
+    
+    # Fallback for "identifier" compatibility if user selects nothing or weird stuff (though helper ensures non-empty key)
+    # The original function wrote "identifier" as header for Name. 
+    # If user selected "Name" (localized), we stick to localized header.
+    
     with open(file_path, 'w', newline='', encoding='utf-8') as csvfile:
         writer = csv.writer(csvfile)
         # Write header
-        writer.writerow(["identifier"])
-        # Write each student's identifier (name)
+        writer.writerow(selected_headers)
+        # Write rows
         for student in students:
-            identifier = getattr(student, 'Name', '') or ''
-            writer.writerow([identifier])
+            row = []
+            for header in selected_headers:
+                getter = header_map.get(header)
+                if getter:
+                     row.append(getter(student))
+                else:
+                     row.append("")
+            writer.writerow(row)
 
     # Print the path to the exported file if successful
     print(f"Roster exported to {file_path}")
