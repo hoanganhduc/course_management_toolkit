@@ -10739,15 +10739,85 @@ def import_internship_from_sheet(sheet_url, db_path, verbose=False):
         # Read CSV and insert data
         with open(csv_path, mode='r', encoding='utf-8') as f:
             reader = csv.DictReader(f)
+            rows = list(reader)
+
+            def _normalize_header(value):
+                if value is None:
+                    return ""
+                text = unicodedata.normalize("NFKD", str(value))
+                text = text.encode("ascii", "ignore").decode("ascii")
+                text = re.sub(r"[^a-z0-9]+", "", text.lower())
+                return text
+
+            def _normalize_student_id(value):
+                if value is None:
+                    return ""
+                value = str(value).strip()
+                if not value:
+                    return ""
+                if value.endswith(".0"):
+                    value = value[:-2]
+                return value
+
+            def _looks_like_student_id(value):
+                if value is None:
+                    return False
+                value = _normalize_student_id(value)
+                if not value or not value.isdigit():
+                    return False
+                return 6 <= len(value) <= 12
+
+            def _pick_student_id_key(fieldnames, data_rows):
+                fieldnames = fieldnames or []
+                aliases = {
+                    "masinhvien",
+                    "mssv",
+                    "studentid",
+                    "studentnumber",
+                    "studentno",
+                    "studentcode",
+                    "idstudent",
+                    "idsv",
+                    "msv",
+                }
+                for name in fieldnames:
+                    norm = _normalize_header(name)
+                    if norm in aliases:
+                        return name
+
+                best_name = None
+                best_ratio = 0.0
+                sample_rows = data_rows[:50]
+                if not sample_rows:
+                    return None
+                for name in fieldnames:
+                    matched = 0
+                    checked = 0
+                    for row in sample_rows:
+                        checked += 1
+                        if _looks_like_student_id(row.get(name)):
+                            matched += 1
+                    ratio = matched / checked if checked else 0.0
+                    if ratio > best_ratio:
+                        best_ratio = ratio
+                        best_name = name
+                return best_name if best_ratio >= 0.6 else None
+
+            student_id_key = _pick_student_id_key(reader.fieldnames, rows)
             
             records_processed = 0
             records_inserted = 0
             
-            for row in reader:
+            for row in rows:
                 records_processed += 1
                 
                 # Map CSV columns to DB columns (support both VN and EN headers)
-                student_id = row.get('Mã sinh viên', row.get('Student ID', '')).strip()
+                student_id = ""
+                if student_id_key:
+                    student_id = row.get(student_id_key, "")
+                if not student_id:
+                    student_id = row.get('Mã sinh viên', row.get('Student ID', ''))
+                student_id = _normalize_student_id(student_id)
                 if not student_id or student_id.lower() in ("mã sinh viên", "student id", "mssv"):
                     if verbose:
                         print(f"Skipping row {records_processed}: Invalid Student ID '{student_id}'")
