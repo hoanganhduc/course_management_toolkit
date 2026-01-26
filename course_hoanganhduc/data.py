@@ -5406,13 +5406,25 @@ def export_to_excel(students, file_path=None, db_path=None, verbose=False):
     gc_titles = sorted(gc_titles, key=lambda t: t.lower())
     canvas_titles = sorted(canvas_titles, key=lambda t: t.lower())
 
-    # Sort students: Section (natural) > First Name > Last Name
-    # Use _transform_vn_string for names to handle Vietnamese collation
-    students.sort(key=lambda s: (
-        _natural_keys(getattr(s, "Section", "") or getattr(s, "Canvas Section", "") or ""),
-        _transform_vn_string(_split_vietnamese_name(getattr(s, "Name", ""))[1]),
-        _transform_vn_string(_split_vietnamese_name(getattr(s, "Name", ""))[0])
-    ))
+    # Sort students: Section (natural) > First Name > Last Name > Student ID
+    def _student_export_sort_key(s):
+        # 1. Section (Natural Sort)
+        sec = getattr(s, "Section", "") or getattr(s, "Canvas Section", "") or ""
+        k_sec = _natural_keys(sec)
+
+        # 2. Name (First > Last, Vietnamese aware)
+        full_name = getattr(s, "Name", "") or ""
+        last, first = _split_vietnamese_name(full_name)
+        k_first = _transform_vn_string(first.lower())
+        k_last = _transform_vn_string(last.lower())
+
+        # 3. Student ID (Tie breaker)
+        sid = getattr(s, "Student ID", "") or ""
+        k_id = str(sid)
+        
+        return (k_sec, k_first, k_last, k_id)
+
+    students.sort(key=_student_export_sort_key)
     export_fields = [
         ("Name", lambda s: getattr(s, "Name", "")),
         ("Student ID", lambda s: getattr(s, "Student ID", "")),
@@ -5469,13 +5481,11 @@ def export_to_excel(students, file_path=None, db_path=None, verbose=False):
         title = header.replace("Canvas Submission: ", "")
         header_map[header] = {"type": "canvas", "title": title}
 
-    def _sort_key(s):
-        name = str(getattr(s, "Name", "") or "").strip().lower()
-        student_id = str(getattr(s, "Student ID", "") or "").strip().lower()
-        return (name, student_id)
+
 
     rows = []
-    for s in tqdm(sorted(students, key=_sort_key), desc="Exporting"):
+    # Use the students list which has already been sorted above
+    for s in tqdm(students, desc="Exporting"):
         row = {}
         gc_subs = getattr(s, "Submissions", None) if isinstance(getattr(s, "Submissions", None), dict) else {}
         canvas_subs = getattr(s, "Canvas Submissions", None) if isinstance(getattr(s, "Canvas Submissions", None), dict) else {}

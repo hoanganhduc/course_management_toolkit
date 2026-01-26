@@ -190,6 +190,8 @@ course --export-roster
 course -ero
 ```
 
+Note: The default export sort order is **Section > First Name (Vietnamese) > Last Name > Student ID**. Vietnamese characters are handled correctly (e.g., "Â" comes before "B").
+
 Preview an import without writing to the database:
 
 ```bash

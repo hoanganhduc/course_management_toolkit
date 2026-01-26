@@ -4,9 +4,11 @@ Changelog
 Version 0.1.4 (2026-01-25)
 --------------------------
 
-- Enhanced ``list --submission-status`` to show attachment details (file count, size, type, upload time).
+- Enhanced ``--list-submission-status`` to show attachment details (file count, size, type, upload time).
 - Updated Canvas and Google Classroom sync to fetch detailed attachment info (supports Drive files, Links, Forms, YouTube videos).
 - Updated ``--export-all-details`` to include full attachment breakdown.
+- Refined default sort order for roster exports: Section > First Name > Last Name > Student ID.
+- Implemented Vietnamese-specific collation for correct alphabetical sorting (e.g., handles 'Â', 'Đ' correctly).
 
 Version 0.1.3 (2026-01-25)
 --------------------------
