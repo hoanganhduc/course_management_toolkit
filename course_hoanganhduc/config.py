@@ -498,6 +498,7 @@ def load_config(config_path=None, verbose=False):
         "GOOGLE_SHEET_STUDENT_REGISTRATION_URL",
         "COURSE_CODE",
         "COURSE_NAME",
+        "UNIVERSITY_NAME",
         "DEFAULT_RESTRICTED",
         "WEIGHT_CC",
         "WEIGHT_GK",
