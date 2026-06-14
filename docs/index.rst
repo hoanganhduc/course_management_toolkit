@@ -13,7 +13,6 @@ Package information
 - Donations:
   - Buy Me a Coffee: https://www.buymeacoffee.com/hoanganhduc
   - Ko-fi: https://ko-fi.com/hoanganhduc
-  - Crypto: https://bmacc.app/tip/hoanganhduc
 
 Recent updates
 --------------
