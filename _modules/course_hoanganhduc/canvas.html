@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>course_hoanganhduc.canvas &#8212; Course Management Toolkit 0.1.4 documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="../../_static/basic.css?v=686e5160" />
+    <link rel="stylesheet" type="text/css" href="../../_static/alabaster.css?v=27fed22d" />
+    <script src="../../_static/documentation_options.js?v=fd825880"></script>
+    <script src="../../_static/doctools.js?v=9bcbadda"></script>
+    <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+   
+  <link rel="stylesheet" href="../../_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <h1>Source code for course_hoanganhduc.canvas</h1><div class="highlight"><pre>
+<span></span><span class="c1"># -*- coding: utf-8 -*-</span>
+<span class="c1"># Canvas API: https://canvas.instructure.com/doc/api/</span>
+<span class="c1"># Course Management Script</span>
+
+<span class="sd">&quot;&quot;&quot;Canvas LMS helpers.&quot;&quot;&quot;</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">.canvas_calendar</span><span class="w"> </span><span class="kn">import</span> <span class="n">import_canvas_calendar_from_ics</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.canvas_assignments</span><span class="w"> </span><span class="kn">import</span> <span class="n">list_canvas_assignments</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.canvas_people</span><span class="w"> </span><span class="kn">import</span> <span class="n">list_canvas_people</span><span class="p">,</span> <span class="n">print_canvas_people</span><span class="p">,</span> <span class="n">search_canvas_user</span><span class="p">,</span> <span class="n">unenroll_canvas_students</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.canvas_announcements</span><span class="w"> </span><span class="kn">import</span> <span class="n">add_canvas_announcement</span><span class="p">,</span> <span class="n">send_final_evaluations_via_canvas</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.canvas_messages</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">send_canvas_message_to_students</span><span class="p">,</span>
+    <span class="n">fetch_and_reply_canvas_messages</span><span class="p">,</span>
+    <span class="n">notify_incomplete_canvas_peer_reviews</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.canvas_pages</span><span class="w"> </span><span class="kn">import</span> <span class="n">list_and_update_canvas_pages</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.canvas_submissions</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">download_canvas_assignment_submissions</span><span class="p">,</span>
+    <span class="n">download_canvas_assignment_submissions_auto</span><span class="p">,</span>
+    <span class="n">add_comment_to_canvas_submission</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.canvas_checks</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">compare_texts_from_pdfs_in_folder</span><span class="p">,</span>
+    <span class="n">detect_meaningful_level_and_notify_students</span><span class="p">,</span>
+    <span class="n">extract_canvas_id_from_filename</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.canvas_weekly</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">notify_missing_submissions_after_due</span><span class="p">,</span>
+    <span class="n">run_weekly_canvas_automation</span><span class="p">,</span>
+    <span class="n">list_closed_assignments_for_weekly_automation</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.canvas_grading</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">download_and_check_student_submissions</span><span class="p">,</span>
+    <span class="n">grade_canvas_assignment_submissions</span><span class="p">,</span>
+    <span class="n">list_students_with_multiple_submissions_on_time</span><span class="p">,</span>
+    <span class="n">grade_resubmissions</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.canvas_invites</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">invite_students_if_not_enrolled</span><span class="p">,</span>
+    <span class="n">invite_user_to_canvas_course</span><span class="p">,</span>
+    <span class="n">invite_users_to_canvas_course</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.canvas_admin</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">change_canvas_deadlines</span><span class="p">,</span>
+    <span class="n">change_canvas_lock_dates</span><span class="p">,</span>
+    <span class="n">create_canvas_groups</span><span class="p">,</span>
+    <span class="n">delete_empty_canvas_groups</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.canvas_rubrics</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">list_and_export_canvas_rubrics</span><span class="p">,</span>
+    <span class="n">import_canvas_rubrics</span><span class="p">,</span>
+    <span class="n">update_canvas_rubrics_for_assignments</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.canvas_grading_schemes</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">list_and_download_canvas_grading_standards</span><span class="p">,</span>
+    <span class="n">add_canvas_grading_scheme</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.canvas_sync</span><span class="w"> </span><span class="kn">import</span> <span class="n">sync_students_with_canvas</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">.data</span><span class="w"> </span><span class="kn">import</span> <span class="n">load_database</span><span class="p">,</span> <span class="n">save_database</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.models</span><span class="w"> </span><span class="kn">import</span> <span class="n">Student</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_input_with_timeout</span><span class="p">,</span> <span class="n">prefill_input_with_timeout</span>
+
+<div class="viewcode-block" id="interactive_modify_database">
+<a class="viewcode-back" href="../../api.html#course_hoanganhduc.canvas.interactive_modify_database">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">interactive_modify_database</span><span class="p">(</span><span class="n">students</span><span class="p">,</span> <span class="n">db_path</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Interactively modify student records in the database.</span>
+<span class="sd">    Allows searching, editing, adding, and deleting students.</span>
+<span class="sd">    When editing a field, pre-fill the old value for easy modification.</span>
+<span class="sd">    After editing a field, ask if the user wants to continue editing other fields of the same student,</span>
+<span class="sd">    edit another student, or quit. Always allow quitting at any step.</span>
+<span class="sd">    If no response after 60 seconds from user then quit.</span>
+<span class="sd">    If verbose is True, print more details; otherwise, print only important notice.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">db_path</span><span class="p">:</span>
+            <span class="n">students</span> <span class="o">=</span> <span class="n">load_database</span><span class="p">(</span><span class="n">db_path</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="n">verbose</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">students</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">verbose</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;[ModifyDB] No students in the database.&quot;</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;No students in the database.&quot;</span><span class="p">)</span>
+            <span class="k">return</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">list_students</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">verbose</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;[ModifyDB] List of students:&quot;</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;List of students:&quot;</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="n">s</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">students</span><span class="p">,</span> <span class="mi">1</span><span class="p">):</span>
+                <span class="n">name</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="s2">&quot;Name&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+                <span class="n">sid</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="s2">&quot;Student ID&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">idx</span><span class="si">}</span><span class="s2">. </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="n">sid</span><span class="si">}</span><span class="s2">)&quot;</span><span class="p">)</span>
+
+        <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">verbose</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">[ModifyDB] Modify Menu:&quot;</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Modify Menu:&quot;</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;1. List students&quot;</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;2. Edit a student&quot;</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;3. Add a new student&quot;</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;4. Delete a student&quot;</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;0. Exit modify menu&quot;</span><span class="p">)</span>
+            
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">choice</span> <span class="o">=</span> <span class="n">get_input_with_timeout</span><span class="p">(</span><span class="s2">&quot;Choose an option (or &#39;q&#39; to quit): &quot;</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+            <span class="k">except</span> <span class="ne">TimeoutError</span><span class="p">:</span>
+                <span class="k">return</span>
+            <span class="k">except</span> <span class="ne">KeyboardInterrupt</span><span class="p">:</span>
+                <span class="k">return</span>
+            
+            <span class="k">if</span> <span class="n">choice</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;0&quot;</span><span class="p">,</span> <span class="s2">&quot;q&quot;</span><span class="p">,</span> <span class="s2">&quot;Q&quot;</span><span class="p">):</span>
+                <span class="k">break</span>
+            <span class="k">elif</span> <span class="n">choice</span> <span class="o">==</span> <span class="s2">&quot;1&quot;</span><span class="p">:</span>
+                <span class="n">list_students</span><span class="p">()</span>
+            <span class="k">elif</span> <span class="n">choice</span> <span class="o">==</span> <span class="s2">&quot;2&quot;</span><span class="p">:</span>
+                <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+                    <span class="n">list_students</span><span class="p">()</span>
+                    <span class="k">try</span><span class="p">:</span>
+                        <span class="n">idx</span> <span class="o">=</span> <span class="n">get_input_with_timeout</span><span class="p">(</span><span class="s2">&quot;Enter the number of the student to edit (or &#39;q&#39; to quit): &quot;</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+                    <span class="k">except</span> <span class="ne">TimeoutError</span><span class="p">:</span>
+                        <span class="k">return</span>
+                    <span class="k">except</span> <span class="ne">KeyboardInterrupt</span><span class="p">:</span>
+                        <span class="k">return</span>
+                    
+                    <span class="k">if</span> <span class="n">idx</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;q&quot;</span><span class="p">,</span> <span class="s2">&quot;quit&quot;</span><span class="p">):</span>
+                        <span class="k">break</span>
+                    <span class="k">if</span> <span class="ow">not</span> <span class="n">idx</span><span class="o">.</span><span class="n">isdigit</span><span class="p">()</span> <span class="ow">or</span> <span class="nb">int</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">1</span> <span class="ow">or</span> <span class="nb">int</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span> <span class="o">&gt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">students</span><span class="p">):</span>
+                        <span class="k">if</span> <span class="n">verbose</span><span class="p">:</span>
+                            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;[ModifyDB] Invalid index.&quot;</span><span class="p">)</span>
+                        <span class="k">else</span><span class="p">:</span>
+                            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Invalid index.&quot;</span><span class="p">)</span>
+                        <span class="k">continue</span>
+                    <span class="n">s</span> <span class="o">=</span> <span class="n">students</span><span class="p">[</span><span class="nb">int</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span>
+                    <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+                        <span class="k">if</span> <span class="n">verbose</span><span class="p">:</span>
+                            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;[ModifyDB] Current fields:&quot;</span><span class="p">)</span>
+                        <span class="k">else</span><span class="p">:</span>
+                            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Current fields:&quot;</span><span class="p">)</span>
+                        <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">s</span><span class="o">.</span><span class="vm">__dict__</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">k</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">v</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                        
+                        <span class="k">try</span><span class="p">:</span>
+                            <span class="n">field</span> <span class="o">=</span> <span class="n">get_input_with_timeout</span><span class="p">(</span><span class="s2">&quot;Enter field to edit (or leave blank to cancel, or &#39;q&#39; to quit): &quot;</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+                        <span class="k">except</span> <span class="ne">TimeoutError</span><span class="p">:</span>
+                            <span class="k">return</span>
+                        <span class="k">except</span> <span class="ne">KeyboardInterrupt</span><span class="p">:</span>
+                            <span class="k">return</span>
+                        
+                        <span class="k">if</span> <span class="ow">not</span> <span class="n">field</span> <span class="ow">or</span> <span class="n">field</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="o">==</span> <span class="s2">&quot;q&quot;</span><span class="p">:</span>
+                            <span class="k">break</span>
+                        <span class="n">old_value</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">field</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+                        <span class="c1"># Pre-fill old value for editing</span>
+                        <span class="k">try</span><span class="p">:</span>
+                            <span class="n">value</span> <span class="o">=</span> <span class="n">prefill_input_with_timeout</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Enter new value for &#39;</span><span class="si">{</span><span class="n">field</span><span class="si">}</span><span class="s2">&#39; [</span><span class="si">{</span><span class="n">old_value</span><span class="si">}</span><span class="s2">]: &quot;</span><span class="p">,</span> <span class="n">old_value</span><span class="p">)</span>
+                        <span class="k">except</span> <span class="ne">TimeoutError</span><span class="p">:</span>
+                            <span class="k">return</span>
+                        <span class="k">except</span> <span class="ne">KeyboardInterrupt</span><span class="p">:</span>
+                            <span class="k">return</span>
+                        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                            <span class="k">try</span><span class="p">:</span>
+                                <span class="n">value</span> <span class="o">=</span> <span class="n">get_input_with_timeout</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Enter new value for &#39;</span><span class="si">{</span><span class="n">field</span><span class="si">}</span><span class="s2">&#39; (old: </span><span class="si">{</span><span class="n">old_value</span><span class="si">}</span><span class="s2">): &quot;</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+                                <span class="k">if</span> <span class="ow">not</span> <span class="n">value</span><span class="p">:</span>
+                                    <span class="n">value</span> <span class="o">=</span> <span class="n">old_value</span>
+                            <span class="k">except</span> <span class="ne">TimeoutError</span><span class="p">:</span>
+                                <span class="k">return</span>
+                            <span class="k">except</span> <span class="ne">KeyboardInterrupt</span><span class="p">:</span>
+                                <span class="k">return</span>
+                        
+                        <span class="k">if</span> <span class="n">value</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="o">==</span> <span class="s2">&quot;q&quot;</span><span class="p">:</span>
+                            <span class="k">break</span>
+                        <span class="nb">setattr</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">field</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
+                        <span class="k">if</span> <span class="n">verbose</span><span class="p">:</span>
+                            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[ModifyDB] Student updated: </span><span class="si">{</span><span class="n">field</span><span class="si">}</span><span class="s2"> = </span><span class="si">{</span><span class="n">value</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                        <span class="k">else</span><span class="p">:</span>
+                            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Student updated.&quot;</span><span class="p">)</span>
+                        <span class="k">if</span> <span class="n">db_path</span><span class="p">:</span>
+                            <span class="n">save_database</span><span class="p">(</span><span class="n">students</span><span class="p">,</span> <span class="n">db_path</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="n">verbose</span><span class="p">)</span>
+                        <span class="c1"># Ask if continue editing this student, edit another student, or quit</span>
+                        <span class="k">try</span><span class="p">:</span>
+                            <span class="n">next_action</span> <span class="o">=</span> <span class="n">get_input_with_timeout</span><span class="p">(</span><span class="s2">&quot;Continue editing other fields of this student (c), edit another student (a), or quit (q)? [c/a/q]: &quot;</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+                        <span class="k">except</span> <span class="ne">TimeoutError</span><span class="p">:</span>
+                            <span class="k">return</span>
+                        <span class="k">except</span> <span class="ne">KeyboardInterrupt</span><span class="p">:</span>
+                            <span class="k">return</span>
+                        
+                        <span class="k">if</span> <span class="n">next_action</span> <span class="o">==</span> <span class="s2">&quot;q&quot;</span><span class="p">:</span>
+                            <span class="k">return</span>
+                        <span class="k">elif</span> <span class="n">next_action</span> <span class="o">==</span> <span class="s2">&quot;a&quot;</span><span class="p">:</span>
+                            <span class="k">break</span>
+                        <span class="c1"># else continue editing this student</span>
+            <span class="k">elif</span> <span class="n">choice</span> <span class="o">==</span> <span class="s2">&quot;3&quot;</span><span class="p">:</span>
+                <span class="n">fields</span> <span class="o">=</span> <span class="p">{}</span>
+                <span class="k">if</span> <span class="n">verbose</span><span class="p">:</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;[ModifyDB] Enter new student information (leave blank to skip a field, or &#39;q&#39; to quit):&quot;</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Enter new student information (leave blank to skip a field, or &#39;q&#39; to quit):&quot;</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">field</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">&quot;Name&quot;</span><span class="p">,</span> <span class="s2">&quot;Student ID&quot;</span><span class="p">,</span> <span class="s2">&quot;Email&quot;</span><span class="p">,</span> <span class="s2">&quot;Class&quot;</span><span class="p">]:</span>
+                    <span class="k">try</span><span class="p">:</span>
+                        <span class="n">value</span> <span class="o">=</span> <span class="n">get_input_with_timeout</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">field</span><span class="si">}</span><span class="s2">: &quot;</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+                    <span class="k">except</span> <span class="ne">TimeoutError</span><span class="p">:</span>
+                        <span class="k">return</span>
+                    <span class="k">except</span> <span class="ne">KeyboardInterrupt</span><span class="p">:</span>
+                        <span class="k">return</span>
+                    
+                    <span class="k">if</span> <span class="n">value</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="o">==</span> <span class="s2">&quot;q&quot;</span><span class="p">:</span>
+                        <span class="k">if</span> <span class="n">verbose</span><span class="p">:</span>
+                            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;[ModifyDB] Cancelled adding new student.&quot;</span><span class="p">)</span>
+                        <span class="k">else</span><span class="p">:</span>
+                            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Cancelled adding new student.&quot;</span><span class="p">)</span>
+                        <span class="k">break</span>
+                    <span class="k">if</span> <span class="n">value</span><span class="p">:</span>
+                        <span class="n">fields</span><span class="p">[</span><span class="n">field</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">students</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">Student</span><span class="p">(</span><span class="o">**</span><span class="n">fields</span><span class="p">))</span>
+                    <span class="k">if</span> <span class="n">verbose</span><span class="p">:</span>
+                        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[ModifyDB] Student added: </span><span class="si">{</span><span class="n">fields</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Student added.&quot;</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">db_path</span><span class="p">:</span>
+                        <span class="n">save_database</span><span class="p">(</span><span class="n">students</span><span class="p">,</span> <span class="n">db_path</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="n">verbose</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="n">choice</span> <span class="o">==</span> <span class="s2">&quot;4&quot;</span><span class="p">:</span>
+                <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+                    <span class="n">list_students</span><span class="p">()</span>
+                    <span class="k">try</span><span class="p">:</span>
+                        <span class="n">idx</span> <span class="o">=</span> <span class="n">get_input_with_timeout</span><span class="p">(</span><span class="s2">&quot;Enter the number of the student to delete (or &#39;q&#39; to quit): &quot;</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+                    <span class="k">except</span> <span class="ne">TimeoutError</span><span class="p">:</span>
+                        <span class="k">return</span>
+                    <span class="k">except</span> <span class="ne">KeyboardInterrupt</span><span class="p">:</span>
+                        <span class="k">return</span>
+                    
+                    <span class="k">if</span> <span class="n">idx</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;q&quot;</span><span class="p">,</span> <span class="s2">&quot;quit&quot;</span><span class="p">):</span>
+                        <span class="k">break</span>
+                    <span class="k">if</span> <span class="ow">not</span> <span class="n">idx</span><span class="o">.</span><span class="n">isdigit</span><span class="p">()</span> <span class="ow">or</span> <span class="nb">int</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">1</span> <span class="ow">or</span> <span class="nb">int</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span> <span class="o">&gt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">students</span><span class="p">):</span>
+                        <span class="k">if</span> <span class="n">verbose</span><span class="p">:</span>
+                            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;[ModifyDB] Invalid index.&quot;</span><span class="p">)</span>
+                        <span class="k">else</span><span class="p">:</span>
+                            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Invalid index.&quot;</span><span class="p">)</span>
+                        <span class="k">continue</span>
+                    <span class="k">del</span> <span class="n">students</span><span class="p">[</span><span class="nb">int</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span>
+                    <span class="k">if</span> <span class="n">verbose</span><span class="p">:</span>
+                        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;[ModifyDB] Student deleted.&quot;</span><span class="p">)</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Student deleted.&quot;</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">db_path</span><span class="p">:</span>
+                        <span class="n">save_database</span><span class="p">(</span><span class="n">students</span><span class="p">,</span> <span class="n">db_path</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="n">verbose</span><span class="p">)</span>
+                    <span class="k">break</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">verbose</span><span class="p">:</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;[ModifyDB] Invalid option.&quot;</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Invalid option.&quot;</span><span class="p">)</span>
+    
+    <span class="k">except</span> <span class="ne">TimeoutError</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">verbose</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">[ModifyDB] Timeout occurred. Exiting modify menu.&quot;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Timeout occurred. Exiting modify menu.&quot;</span><span class="p">)</span>
+        <span class="k">return</span>
+    <span class="k">except</span> <span class="ne">KeyboardInterrupt</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">verbose</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">[ModifyDB] Operation cancelled by user. Exiting modify menu.&quot;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Operation cancelled by user. Exiting modify menu.&quot;</span><span class="p">)</span>
+        <span class="k">return</span></div>
+
+
+</pre></div>
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="../../index.html">Course Management Toolkit</a></h1>
+
+
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../usage.html">Usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../cli_reference.html">CLI Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../api.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../changelog.html">Changelog</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../../index.html">Documentation overview</a><ul>
+  <li><a href="../index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &#169;2026, Duc A. Hoang.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 8.1.3</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+    </div>
+
+    
+
+    
+  </body>
+</html>

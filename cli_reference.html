@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>CLI Reference &#8212; Course Management Toolkit 0.1.4 documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="_static/basic.css?v=686e5160" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=27fed22d" />
+    <script src="_static/documentation_options.js?v=fd825880"></script>
+    <script src="_static/doctools.js?v=9bcbadda"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="API Reference" href="api.html" />
+    <link rel="prev" title="Usage" href="usage.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <section id="cli-reference">
+<h1>CLI Reference<a class="headerlink" href="#cli-reference" title="Link to this heading">¶</a></h1>
+<p>This reference is generated from the <code class="docutils literal notranslate"><span class="pre">course</span></code> argument parser
+(<code class="docutils literal notranslate"><span class="pre">course_hoanganhduc/core.py</span></code> plus Classroom50 flags from
+<code class="docutils literal notranslate"><span class="pre">course_hoanganhduc/c50_flags.py</span></code>) and lists CLI flags grouped by section.</p>
+<p>Agent-restricted entrypoints (<code class="docutils literal notranslate"><span class="pre">python</span> <span class="pre">-m</span> <span class="pre">course_hoanganhduc.c50_agent</span></code>,
+<code class="docutils literal notranslate"><span class="pre">canvas_agent</span></code>, <code class="docutils literal notranslate"><span class="pre">gclass_agent</span></code>, <code class="docutils literal notranslate"><span class="pre">db_agent</span></code>) are documented under
+<a class="reference internal" href="usage.html"><span class="doc">Usage</span></a> and are <strong>not</strong> the full interactive <code class="docutils literal notranslate"><span class="pre">course</span></code> surface.</p>
+<section id="automation">
+<h2>Automation<a class="headerlink" href="#automation" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">--generate-weekly-workflow</span></code>: Generate a sample GitHub Actions workflow for weekly automation</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--run-weekly-automation</span></code>: Run weekly automation for a closed assignment</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--run-weekly-local</span></code>: Run weekly automation locally and archive reports</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--weekly-assignment-id</span></code>: Canvas assignment ID for weekly automation</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--weekly-category</span></code>: Assignment group/category filter for missing-submission reminders</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--weekly-dest-dir</span></code>: Output directory for weekly downloads</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--weekly-local-root</span></code>: Local folder for weekly report archiving (default: cwd)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--weekly-meaningful-threshold</span></code>: Meaningfulness threshold for weekly automation</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--weekly-notify-missing</span></code>: Send reminders for missing submissions after due date</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--weekly-ocr-lang</span></code>: OCR language for weekly automation</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--weekly-ocr-service</span></code>: OCR service for weekly automation</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--weekly-refine</span></code>: AI refinement method for weekly notices</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--weekly-score</span></code>: Score to assign to clean submissions (default: 10)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--weekly-similarity-threshold</span></code>: Similarity threshold for weekly automation</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--weekly-teacher-canvas-id</span></code>: Canvas user ID for summary notifications</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--workflow-assignment-id</span></code>: Assignment ID placeholder for workflow</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--workflow-course-code</span></code>: Course code placeholder for workflow</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--workflow-course-id</span></code>: Course ID placeholder for workflow</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--workflow-students-branch</span></code>: Deprecated alias for –workflow-toolkit-branch</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--workflow-students-repo</span></code>: Deprecated alias for –workflow-toolkit-repo</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--workflow-teacher-canvas-id</span></code>: Teacher Canvas ID placeholder for workflow</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--workflow-toolkit-branch</span></code>: Branch for course toolkit repo</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--workflow-toolkit-repo</span></code>: Repo URL for course toolkit</p></li>
+</ul>
+</section>
+<section id="canvas-admin-tools">
+<h2>Canvas: Admin Tools<a class="headerlink" href="#canvas-admin-tools" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">--canvas-deadline-category</span></code> (<code class="docutils literal notranslate"><span class="pre">-cdc</span></code>): Assignment category (group) to filter when changing deadlines</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--canvas-lock-category</span></code> (<code class="docutils literal notranslate"><span class="pre">-clc</span></code>): Assignment category (group) to filter when changing lock dates</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--change-canvas-deadlines</span></code> (<code class="docutils literal notranslate"><span class="pre">-ccd</span></code>): Change deadlines for one or more Canvas assignments (provide assignment IDs, or leave blank to select interactively)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--change-canvas-lock-dates</span></code> (<code class="docutils literal notranslate"><span class="pre">-ccl</span></code>): Change lock dates (lock_at) for one or more Canvas assignments (provide assignment IDs, or leave blank to select interactively)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--create-canvas-groups</span></code>: Create groups in a Canvas course group set</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--delete-empty-canvas-groups</span></code> (<code class="docutils literal notranslate"><span class="pre">-deg</span></code>): Delete all empty groups (groups with no members) from a Canvas course group set</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--grade-resubmission</span></code> (<code class="docutils literal notranslate"><span class="pre">-grs</span></code>): List resubmissions and regrade them (optionally provide assignment IDs)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--group-name-pattern</span></code>: Pattern for group names, e.g., ‘Group {i}’ (default: ‘Group {i}’)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--group-set-id</span></code>: Canvas group set ID to create groups in (leave blank to select interactively)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--keep-old-grade</span></code>: Keep previous grade for resubmissions without prompting</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--new-canvas-due-date</span></code> (<code class="docutils literal notranslate"><span class="pre">-ncd</span></code>): New due date for Canvas assignments (format: YYYY-MM-DD HH:MM)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--new-canvas-lock-date</span></code> (<code class="docutils literal notranslate"><span class="pre">-ncl</span></code>): New lock date for Canvas assignments (format: YYYY-MM-DD HH:MM)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--no-restricted</span></code> (<code class="docutils literal notranslate"><span class="pre">-nres</span></code>): Disable restricted mode for grading Canvas assignments (list all assignments with submissions and all students who submitted)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--num-groups</span></code>: Number of groups to create (default: 5)</p></li>
+</ul>
+</section>
+<section id="canvas-people-and-communication">
+<h2>Canvas: People and Communication<a class="headerlink" href="#canvas-people-and-communication" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">--add-canvas-announcement</span></code> (<code class="docutils literal notranslate"><span class="pre">-aa</span></code>): Create a new announcement in Canvas course</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--announcement-file</span></code>: TXT file with announcement body</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--announcement-message</span></code>: Short message for Canvas announcement</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--announcement-title</span></code>: Title for Canvas announcement</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--canvas-assignment-category</span></code> (<code class="docutils literal notranslate"><span class="pre">-cac</span></code>): Assignment category (group) to filter when listing Canvas assignments</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--canvas-course-id</span></code> (<code class="docutils literal notranslate"><span class="pre">-cc</span></code>): Canvas course ID (overrides default)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--canvas-unenroll-all</span></code>: Unenroll all matched Canvas students without selection</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--canvas-unenroll-domain</span></code>: Email domain(s) to match for Canvas unenroll (comma-separated)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--canvas-unenroll-email</span></code>: Email(s) to match for Canvas unenroll (comma-separated)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--canvas-unenroll-missing-student-id</span></code>: Unenroll Canvas students missing Student ID in local database</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--canvas-unenroll-select</span></code>: Select Canvas students to unenroll from a list</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--comment-canvas-submission</span></code> (<code class="docutils literal notranslate"><span class="pre">-cs</span></code>): Add a comment to a Canvas assignment submission</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--download-canvas-assignment</span></code> (<code class="docutils literal notranslate"><span class="pre">-da</span></code>): Download all submission files for a Canvas assignment (optionally provide assignment ID)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--download-dest-dir</span></code> (<code class="docutils literal notranslate"><span class="pre">-dd</span></code>): Destination directory for downloaded Canvas assignment files</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--edit-canvas-pages</span></code> (<code class="docutils literal notranslate"><span class="pre">-ep</span></code>): List and edit Canvas course pages</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--fetch-canvas-messages</span></code> (<code class="docutils literal notranslate"><span class="pre">-fm</span></code>): Fetch and reply to Canvas inbox messages</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--grade-canvas-assignment</span></code> (<code class="docutils literal notranslate"><span class="pre">-ga</span></code>): Grade Canvas assignment submissions interactively</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--invite</span></code>: Invite students after –add-file import (skips those already enrolled)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--invite-canvas-email</span></code> (<code class="docutils literal notranslate"><span class="pre">-ie</span></code>): Invite a single user to Canvas course by email</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--invite-canvas-file</span></code> (<code class="docutils literal notranslate"><span class="pre">-if</span></code>): Invite multiple users to Canvas course from a TXT file or string of pairs/emails</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--invite-canvas-name</span></code>: Name for Canvas invite (for single user)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--invite-canvas-role</span></code> (<code class="docutils literal notranslate"><span class="pre">-ir</span></code>): Role for Canvas invite (student/teacher/ta, default: student)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--invite-role</span></code>: Role for –invite (student/teacher/ta, default: student)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--invite-section</span></code>: Default Canvas section name for –invite (optional)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--list-canvas-assignments</span></code>: List all assignments on Canvas LMS</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--list-canvas-members</span></code> (<code class="docutils literal notranslate"><span class="pre">-cm</span></code>): List all members (teachers, TAs, students) of a Canvas course</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--list-multiple-submissions-on-time</span></code> (<code class="docutils literal notranslate"><span class="pre">-lm</span></code>): List students who submitted twice or more to an assignment and the first submission is on time (optionally provide assignment ID)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--notify-incomplete-reviews</span></code> (<code class="docutils literal notranslate"><span class="pre">-nr</span></code>): Find and notify students who have not completed required peer reviews for a Canvas assignment</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--review-assignment-id</span></code> (<code class="docutils literal notranslate"><span class="pre">-rai</span></code>): Canvas assignment ID for peer review notification</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--search-canvas-user</span></code> (<code class="docutils literal notranslate"><span class="pre">-cu</span></code>): Search for a user in Canvas by name or email</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--sync-canvas</span></code> (<code class="docutils literal notranslate"><span class="pre">-sc</span></code>): Sync Canvas course members to local database</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--unenroll-canvas</span></code>: Unenroll Canvas students by domain/email/select/missing-id</p></li>
+</ul>
+</section>
+<section id="canvas-rubrics-and-grading">
+<h2>Canvas: Rubrics and Grading<a class="headerlink" href="#canvas-rubrics-and-grading" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">--add-canvas-grading-scheme</span></code> (<code class="docutils literal notranslate"><span class="pre">-ags</span></code>): Add a grading scheme to Canvas course from JSON file</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--check-student-submission-similarity</span></code> (<code class="docutils literal notranslate"><span class="pre">-css</span></code>): Check similarities between submissions of the same student for different assignments. Optionally provide a Canvas student ID or a comma-separated list of IDs. If not provided, will prompt for selection interactively.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--export-canvas-grading-scheme</span></code> (<code class="docutils literal notranslate"><span class="pre">-egs</span></code>): List and export Canvas grading schemes (grading standards) to JSON</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--export-canvas-rubrics</span></code> (<code class="docutils literal notranslate"><span class="pre">-er</span></code>): Export Canvas rubrics to TXT/CSV file</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--final-evals-announce</span></code> (<code class="docutils literal notranslate"><span class="pre">-fea</span></code>): Also create a course announcement after sending final evaluations.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--final-evals-course-id</span></code> (<code class="docutils literal notranslate"><span class="pre">-fec</span></code>): Canvas course ID to use when sending final evaluations (overrides default CANVAS_LMS_COURSE_ID).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--import-canvas-rubrics</span></code> (<code class="docutils literal notranslate"><span class="pre">-imr</span></code>): Import rubrics from TXT/CSV file to Canvas course</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--list-canvas-rubrics</span></code> (<code class="docutils literal notranslate"><span class="pre">-lr</span></code>): List all unique rubrics used in Canvas course</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--rubric-assignment-id</span></code> (<code class="docutils literal notranslate"><span class="pre">-rid</span></code>): Assignment ID to filter rubrics</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--send-final-evaluations</span></code> (<code class="docutils literal notranslate"><span class="pre">-sfe</span></code>): Send final evaluation results to students via Canvas. Optionally provide directory with evaluation files (default: final_evaluations).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--update-canvas-rubric-id</span></code> (<code class="docutils literal notranslate"><span class="pre">-uri</span></code>): Rubric ID to associate with assignments (leave blank to select interactively)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--update-canvas-rubrics</span></code> (<code class="docutils literal notranslate"><span class="pre">-ur</span></code>): Update rubric for one or more Canvas assignments (provide assignment IDs, or leave blank to select interactively)</p></li>
+</ul>
+</section>
+<section id="classroom50">
+<h2>Classroom50<a class="headerlink" href="#classroom50" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">--classroom50-assignment</span></code>: Classroom50 assignment slug (human download)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--classroom50-classroom</span></code>: Classroom50 classroom short-name</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--classroom50-download-dest</span></code>: Destination directory for Classroom50 downloads</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--classroom50-org</span></code>: Classroom50 GitHub organization</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--classroom50-preflight</span></code>: Run Classroom50 auth preflight (whoami)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--classroom50-report</span></code>: Write Classroom50 JSON report to PATH</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--download-classroom50</span></code>: Download student submissions (human CLI only)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--export-classroom50-roster</span></code>: Export local roster to Classroom50 CSV (default: classroom50_roster.csv)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--list-classroom50-assignments</span></code>: List Classroom50 assignments</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--list-classroom50-classrooms</span></code>: List Classroom50 classrooms</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--list-classroom50-roster</span></code>: List Classroom50 roster</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--sync-classroom50</span></code> (<code class="docutils literal notranslate"><span class="pre">-sc50</span></code>): Sync Classroom50 roster into local student database</p></li>
+</ul>
+</section>
+<section id="configuration">
+<h2>Configuration<a class="headerlink" href="#configuration" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">--backup-config</span></code>: Back up config.json to a timestamped file (optional: backup dir)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--clear-config</span></code> (<code class="docutils literal notranslate"><span class="pre">-ccfg</span></code>): Delete stored config.json from the default location</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--clear-credentials</span></code> (<code class="docutils literal notranslate"><span class="pre">-ccred</span></code>): Delete stored credentials.json and token.pickle from the default location</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--config</span></code> (<code class="docutils literal notranslate"><span class="pre">-cfg</span></code>): Load config from JSON file and save to default location</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--config-backup-keep</span></code>: Number of config backups to retain (default from config)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--course-code</span></code> (<code class="docutils literal notranslate"><span class="pre">-ccode</span></code>): Course code for config folder (e.g., MAT3500)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--detect-local-ai</span></code>: Detect locally installed AI models (Ollama-compatible)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--list-ai-models</span></code> (<code class="docutils literal notranslate"><span class="pre">-lam</span></code>): List available AI models for a provider (‘gemini’, ‘huggingface’, ‘local’, or ‘all’)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--local-llm-args</span></code>: Extra args for local LLM command</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--local-llm-command</span></code>: Command to run the local LLM (default: ollama)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--local-llm-gguf-dir</span></code>: Directory to scan for .gguf models (llama.cpp)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--local-llm-model</span></code>: Local LLM model name (default from config/settings)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--restore-config</span></code>: Restore config.json from a backup (default: latest)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--student-sort-method</span></code>: Student sort method for detail outputs (first_last, last_first, id)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--test-ai</span></code> (<code class="docutils literal notranslate"><span class="pre">-tai</span></code>): Test AI services (‘gemini’, ‘huggingface’, ‘local’, or ‘all’)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--test-ai-gemini-model</span></code>: Override Gemini model name for –test-ai all</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--test-ai-huggingface-model</span></code>: Override HuggingFace model name for –test-ai all</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--test-ai-model</span></code> (<code class="docutils literal notranslate"><span class="pre">-tam</span></code>): Override model name for –test-ai (provider-specific)</p></li>
+</ul>
+</section>
+<section id="course-calendar">
+<h2>Course Calendar<a class="headerlink" href="#course-calendar" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">--build-course-calendar</span></code>: Build course calendar and export to TXT/MD/ICS</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--calendar-course-code</span></code>: Course code for calendar title</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--calendar-course-name</span></code>: Course name for calendar summaries</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--calendar-extra-holidays</span></code>: Comma-separated extra holiday dates (YYYY-MM-DD,YYYY-MM-DD)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--calendar-extra-week</span></code>: Allow one make-up week when holidays skip sessions</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--calendar-input</span></code>: TXT file with first-week schedule and optional holidays</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--calendar-output-base</span></code>: Output base name for calendar files (default: course_calendar)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--calendar-output-dir</span></code>: Output directory for calendar exports (default: cwd)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--calendar-weeks</span></code>: Number of official weeks (default: 15)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--force</span></code>: Force Canvas calendar import (do not skip duplicates)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--import-canvas-calendar-ics</span></code>: Import an iCal (.ics) file and create Canvas calendar events</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--skip-duplicates</span></code>: Skip Canvas calendar events that match existing entries</p></li>
+</ul>
+</section>
+<section id="exams-multichoice">
+<h2>Exams (Multichoice)<a class="headerlink" href="#exams-multichoice" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">--evaluate-multichoice-answers</span></code>: Evaluate student answers for multiple-choice exam (provide exam type: midterm/final, default: global EXAM_TYPE)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--extract-multichoice-answers</span></code> (<code class="docutils literal notranslate"><span class="pre">-ema</span></code>): Extract student answers from scanned multi-choice exam sheet PDF</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--extract-multichoice-solutions</span></code> (<code class="docutils literal notranslate"><span class="pre">-ems</span></code>): Extract multiple-choice exam solutions from PDF (each page is one sheet code)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--sync-multichoice-evaluations</span></code> (<code class="docutils literal notranslate"><span class="pre">-sme</span></code>): Sync multichoice exam evaluations to Canvas assignment (provide exam type: midterm/final, default: global EXAM_TYPE)</p></li>
+</ul>
+</section>
+<section id="general">
+<h2>General<a class="headerlink" href="#general" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">--dry-run</span></code>: Preview actions without writing files or databases</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--log-backups</span></code>: Number of rotated log files to keep</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--log-dir</span></code>: Directory for log files (default: config folder)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--log-level</span></code>: Logging level (default: INFO)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--log-max-bytes</span></code>: Max size in bytes for rotating logs</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--refine</span></code>: Refine generated messages/announcements with AI</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--verbose</span></code> (<code class="docutils literal notranslate"><span class="pre">-v</span></code>): Enable verbose output</p></li>
+</ul>
+</section>
+<section id="google-classroom">
+<h2>Google Classroom<a class="headerlink" href="#google-classroom" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">--download-google-classroom-submissions</span></code> (<code class="docutils literal notranslate"><span class="pre">-dgcs</span></code>): Download latest Google Classroom submissions and run checks</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--gc-apply-all</span></code>: Apply grading to all listed submissions without selection</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--gc-coursework-id</span></code>: Google Classroom coursework ID(s) to grade (optional)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--gc-download-coursework-id</span></code>: Google Classroom coursework ID(s) to download (optional)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--gc-download-dest-dir</span></code>: Download folder for Google Classroom submissions (optional)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--gc-grade-score</span></code>: Score to assign to selected submissions (optional)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--gc-include-graded</span></code>: Include already graded submissions</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--gc-meaningful-threshold</span></code>: Meaningfulness threshold for Google Classroom checks</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--gc-ocr-lang</span></code>: OCR language for Google Classroom checks</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--gc-ocr-service</span></code>: OCR service for Google Classroom checks (ocrspace/tesseract/paddleocr)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--gc-similarity-threshold</span></code>: Similarity threshold for Google Classroom checks</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--gc-unenroll-all</span></code>: Unenroll all matched Google Classroom students without selection</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--gc-unenroll-domain</span></code>: Email domain(s) to match for Google Classroom unenroll (comma-separated)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--gc-unenroll-email</span></code>: Email(s) to match for Google Classroom unenroll (comma-separated)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--gc-unenroll-missing-student-id</span></code>: Unenroll Google Classroom students missing Student ID in local database</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--gc-unenroll-select</span></code>: Select Google Classroom students to unenroll from a list</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--google-course-id</span></code> (<code class="docutils literal notranslate"><span class="pre">-gci</span></code>): Google Classroom course ID (prompts if None)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--google-credentials-path</span></code> (<code class="docutils literal notranslate"><span class="pre">-gcp</span></code>): Path to Google Classroom credentials JSON file</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--google-token-path</span></code> (<code class="docutils literal notranslate"><span class="pre">-gtp</span></code>): Path to Google Classroom token pickle file</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--grade-google-classroom</span></code> (<code class="docutils literal notranslate"><span class="pre">-ggc</span></code>): Grade Google Classroom assignment submissions</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--list-google-courses</span></code> (<code class="docutils literal notranslate"><span class="pre">-lgc</span></code>): List Google Classroom courses for the current account</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--list-google-students</span></code>: List Google Classroom students for a course (uses –google-course-id or prompts)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--sync-google-classroom</span></code> (<code class="docutils literal notranslate"><span class="pre">-sgc</span></code>): Sync students in the local database with active students from Google Classroom course</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--unenroll-google-classroom</span></code> (<code class="docutils literal notranslate"><span class="pre">-ugc</span></code>): Unenroll Google Classroom students by email domain</p></li>
+</ul>
+</section>
+<section id="ocr-and-pdfs">
+<h2>OCR and PDFs<a class="headerlink" href="#ocr-and-pdfs" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">--add-blackboard-counts</span></code> (<code class="docutils literal notranslate"><span class="pre">-b</span></code>): Extract and add blackboard counts from PDF to database</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--export-blackboard-counts</span></code> (<code class="docutils literal notranslate"><span class="pre">-B</span></code>): Export blackboard counts by date for all students to TXT/Markdown file (use .txt or .md extension, default: TXT)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--extract-text</span></code> (<code class="docutils literal notranslate"><span class="pre">-t</span></code>): Extract handwriting text from PDF and save to TXT file</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--ocr-lang</span></code> (<code class="docutils literal notranslate"><span class="pre">-L</span></code>): OCR language for PDF extraction (default: auto)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--ocr-service</span></code> (<code class="docutils literal notranslate"><span class="pre">-O</span></code>): OCR service to use for PDF extraction (default: ‘ocrspace’). The ‘ocrspace’ service uses the OCR.space API and works better for handwriting text. The other two services work better for printed text and require additional local installation.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--print-blackboard-counts</span></code> (<code class="docutils literal notranslate"><span class="pre">-p</span></code>): Print blackboard counts by date for all students</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--simple-text</span></code> (<code class="docutils literal notranslate"><span class="pre">-T</span></code>): Extract simple text (no layout) from PDF OCR</p></li>
+</ul>
+</section>
+<section id="student-database">
+<h2>Student Database<a class="headerlink" href="#student-database" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">--add-file</span></code> (<code class="docutils literal notranslate"><span class="pre">-a</span></code>): Import students from Excel, CSV, or PDF file into the database</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--add-google-sheet</span></code> (<code class="docutils literal notranslate"><span class="pre">-gsh</span></code>): Import students from Google Sheet URL (optional: URL, default from config)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--all-details</span></code> (<code class="docutils literal notranslate"><span class="pre">-A</span></code>): Show details of all students</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--backup-db</span></code>: Back up students.db to a timestamped file (optional: backup dir)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--db</span></code> (<code class="docutils literal notranslate"><span class="pre">-db</span></code>): Database file name (default: students.db, saved in script folder)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--db-backup-keep</span></code>: Number of database backups to retain (default from config)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--details</span></code> (<code class="docutils literal notranslate"><span class="pre">-d</span></code>): Show details of a student by name, student id, or email</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--dry-run-rows</span></code>: Number of preview rows to show with –dry-run + –add-file (default: 5)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--duplicate-name-field</span></code>: Field to detect duplicates (name/google/canvas or custom field name)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--duplicate-name-format</span></code>: Output format for duplicate-name report (default: txt)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--duplicate-name-output</span></code>: Output path for duplicate-name report (optional; extension inferred from format if missing)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--export-all-details</span></code> (<code class="docutils literal notranslate"><span class="pre">-E</span></code>): Export all student or company details (including submission attachments) to TXT file</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--export-anonymized</span></code> (<code class="docutils literal notranslate"><span class="pre">-ean</span></code>): Export anonymized roster to CSV (optional: output path)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--export-companies</span></code>: Export company list to Excel file</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--export-emails</span></code> (<code class="docutils literal notranslate"><span class="pre">-e</span></code>): Export all student emails to TXT file (avoids duplicates)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--export-emails-and-names</span></code> (<code class="docutils literal notranslate"><span class="pre">-en</span></code>): Export all student emails and names to TXT file (default: emails_and_names.txt)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--export-excel</span></code> (<code class="docutils literal notranslate"><span class="pre">-x</span></code>): Export student list to Excel file</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--export-final-grade-distribution</span></code>: Export final grade distribution to a TXT file. Optionally provide output path (default: ./final_grade_distribution.txt).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--export-grade-diff</span></code>: Export grade updates to CSV when updating MAT files (optional: output path)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--export-roster</span></code> (<code class="docutils literal notranslate"><span class="pre">-ero</span></code>): Export classroom roster to CSV file (default: classroom_roster.csv)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--export-type</span></code> (<code class="docutils literal notranslate"><span class="pre">-et</span></code>): Entity type to export with –export-all-details (student/company, default: student)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--export-vcf</span></code> (<code class="docutils literal notranslate"><span class="pre">-vcf</span></code>): Export student contact info to VCF (iOS compatible). Default: students_contacts.vcf</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--filter-file</span></code> (<code class="docutils literal notranslate"><span class="pre">-ff</span></code>): Filter export by identifiers in this file (TXT/CSV/XLSX)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--generate-final-evaluations</span></code> (<code class="docutils literal notranslate"><span class="pre">-gfe</span></code>): Generate per-student final evaluation TXT reports (optional: output dir, default: ./final_evaluations).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--import-companies</span></code>: Import company data from Excel/CSV to companies.db</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--import-internships</span></code>: Import student internship data from Google Sheet URL or local CSV/Excel file (optional: URL/Path, default from config)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--import-mini-projects</span></code>: Import mini-project data from Google Sheets (lecturer topics + student registrations)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--import-progress-reports</span></code>: Import student progress reports from their linked Google Sheets</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--import-registrations</span></code>: Import student registration data from Google Sheet URL or local CSV/Excel file (optional: URL/Path, default from config)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--list-duplicate-names</span></code>: List students who share the same full name</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--list-email-domain</span></code> (<code class="docutils literal notranslate"><span class="pre">-led</span></code>): List students whose email matches domain(s) (comma-separated, e.g., gmail.com,outlook.com)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--list-missing-ids</span></code>: List students missing Google/Canvas/Student IDs (optional: google,canvas,student,all or comma-separated)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--list-submission-status</span></code>: List students by submission status (shows attachment details; prefix with google: or canvas:, optional &#64;assignment title)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--load</span></code> (<code class="docutils literal notranslate"><span class="pre">-l</span></code>): Load students from database file</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--load-override-grades</span></code> (<code class="docutils literal notranslate"><span class="pre">-log</span></code>): Load override_grades.xlsx and persist overrides to the database (default: override_grades.xlsx).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--mini-project-lecturer-sheet</span></code>: Google Sheet URL for lecturer mini-project topics (optional; default from config)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--mini-project-registration-sheet</span></code>: Google Sheet URL for student mini-project registrations (optional; default from config)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--missing-ids-format</span></code>: Output format for missing-ids report (default: txt)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--missing-ids-output</span></code>: Output path for missing-ids report (optional; extension inferred from format if missing)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--modify</span></code> (<code class="docutils literal notranslate"><span class="pre">-m</span></code>): Interactively modify the student database</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--restore-db</span></code>: Restore students.db from a backup (default: latest)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--save</span></code> (<code class="docutils literal notranslate"><span class="pre">-s</span></code>): Save current students to database file</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--search</span></code> (<code class="docutils literal notranslate"><span class="pre">-S</span></code>): Search for students by keyword (name, student id, email, etc.)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--sheet-name</span></code> (<code class="docutils literal notranslate"><span class="pre">-sn</span></code>): Specific sheet name to import from Excel file</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--sheet-selection</span></code> (<code class="docutils literal notranslate"><span class="pre">-ss</span></code>): Sheet selection mode: first (default), select (interactive), all, merge</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--sync-mat-canvas</span></code>: Sync CC/GK/CK scores from MAT*.xlsx to Canvas assignments (uses configured assignment IDs)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--sync-mat-types</span></code>: Comma-separated list of score types to sync (CC,GK,CK). Default: all available.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--update-mat-excel</span></code> (<code class="docutils literal notranslate"><span class="pre">-ume</span></code>): Update MAT*.xlsx file(s) with grades from database (provide one or more file paths)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--validate-data</span></code>: Validate student data and write a report (optional: output path)</p></li>
+</ul>
+</section>
+</section>
+
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">Course Management Toolkit</a></h1>
+
+
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="usage.html">Usage</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">CLI Reference</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#automation">Automation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#canvas-admin-tools">Canvas: Admin Tools</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#canvas-people-and-communication">Canvas: People and Communication</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#canvas-rubrics-and-grading">Canvas: Rubrics and Grading</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#classroom50">Classroom50</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#configuration">Configuration</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#course-calendar">Course Calendar</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#exams-multichoice">Exams (Multichoice)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#general">General</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#google-classroom">Google Classroom</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#ocr-and-pdfs">OCR and PDFs</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#student-database">Student Database</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="api.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="changelog.html">Changelog</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="usage.html" title="previous chapter">Usage</a></li>
+      <li>Next: <a href="api.html" title="next chapter">API Reference</a></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &#169;2026, Duc A. Hoang.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 8.1.3</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+      |
+      <a href="_sources/cli_reference.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>

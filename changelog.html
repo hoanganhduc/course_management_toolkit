@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Changelog &#8212; Course Management Toolkit 0.1.4 documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="_static/basic.css?v=686e5160" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=27fed22d" />
+    <script src="_static/documentation_options.js?v=fd825880"></script>
+    <script src="_static/doctools.js?v=9bcbadda"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="prev" title="API Reference" href="api.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <section id="changelog">
+<h1>Changelog<a class="headerlink" href="#changelog" title="Link to this heading">¶</a></h1>
+<section id="unreleased-2026-07-12">
+<h2>Unreleased (2026-07-12)<a class="headerlink" href="#unreleased-2026-07-12" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Added Classroom50 (foundation50) integration: wrap <code class="docutils literal notranslate"><span class="pre">gh</span> <span class="pre">teacher</span></code> for preflight,
+list classrooms/roster/assignments, roster sync into local DB, C50 CSV export,
+and human-only submission download (<code class="docutils literal notranslate"><span class="pre">--download-classroom50</span></code>).</p></li>
+<li><p>Added agent-safe entrypoints: <code class="docutils literal notranslate"><span class="pre">python</span> <span class="pre">-m</span> <span class="pre">course_hoanganhduc.c50_agent</span></code>,
+<code class="docutils literal notranslate"><span class="pre">canvas_agent</span></code>, <code class="docutils literal notranslate"><span class="pre">gclass_agent</span></code>, <code class="docutils literal notranslate"><span class="pre">db_agent</span></code> (force agent mode; refuse
+destructive LMS/DB ops; org/course allowlists fail closed).</p></li>
+<li><p>Shared helpers in <code class="docutils literal notranslate"><span class="pre">course_agent_common</span></code>; GitHub numeric id kept separate from
+Username in student identity maps (<code class="docutils literal notranslate"><span class="pre">data.py</span></code>).</p></li>
+<li><p>CLI flags under the <strong>Classroom50</strong> group (see <a class="reference internal" href="cli_reference.html"><span class="doc">CLI Reference</span></a>).</p></li>
+</ul>
+</section>
+<section id="version-0-1-4-2026-01-25">
+<h2>Version 0.1.4 (2026-01-25)<a class="headerlink" href="#version-0-1-4-2026-01-25" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Enhanced <code class="docutils literal notranslate"><span class="pre">--list-submission-status</span></code> to show attachment details (file count, size, type, upload time).</p></li>
+<li><p>Updated Canvas and Google Classroom sync to fetch detailed attachment info (supports Drive files, Links, Forms, YouTube videos).</p></li>
+<li><p>Updated <code class="docutils literal notranslate"><span class="pre">--export-all-details</span></code> to include full attachment breakdown.</p></li>
+<li><p>Refined default sort order for roster exports: Section &gt; First Name &gt; Last Name &gt; Student ID.</p></li>
+<li><p>Implemented Vietnamese-specific collation for correct alphabetical sorting (e.g., handles ‘Â’, ‘Đ’ correctly).</p></li>
+</ul>
+</section>
+<section id="version-0-1-3-2026-01-25">
+<h2>Version 0.1.3 (2026-01-25)<a class="headerlink" href="#version-0-1-3-2026-01-25" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Improved <code class="docutils literal notranslate"><span class="pre">export_companies_to_vcf</span></code> with <code class="docutils literal notranslate"><span class="pre">raw_data</span></code> fallback logic to extract contact person and phone numbers.</p></li>
+<li><p>VCF exports (students and companies) now skip entries with no phone number information.</p></li>
+<li><p>Enhanced company VCF export filename detection to use <code class="docutils literal notranslate"><span class="pre">companies_contacts.vcf</span></code> by default.</p></li>
+<li><p>Improved company data import column mapping (better Vietnamese keyword support and email priority).</p></li>
+<li><p>Fixed <code class="docutils literal notranslate"><span class="pre">UnboundLocalError</span></code> in <code class="docutils literal notranslate"><span class="pre">course</span> <span class="pre">--import-internships</span></code> by adding missing local import.</p></li>
+<li><p>Fixed <code class="docutils literal notranslate"><span class="pre">UnpicklingError</span></code> in <code class="docutils literal notranslate"><span class="pre">course</span> <span class="pre">--export-vcf</span></code> (and other commands) when loading SQLite databases with <code class="docutils literal notranslate"><span class="pre">companies</span></code> table.</p></li>
+<li><p>Added company field mappings for VCF export and student loading.</p></li>
+<li><p>VCF export now strictly uses <code class="docutils literal notranslate"><span class="pre">UNIVERSITY_NAME</span></code> from config (defaults to empty if not set) instead of hardcoded default.</p></li>
+</ul>
+</section>
+<section id="version-0-1-2-2026-01-24">
+<h2>Version 0.1.2 (2026-01-24)<a class="headerlink" href="#version-0-1-2-2026-01-24" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Added <code class="docutils literal notranslate"><span class="pre">--import-registrations</span></code> command to support student internship registration data (skills, wishlist, notes).</p></li>
+<li><p>Added <code class="docutils literal notranslate"><span class="pre">INTERNSHIP_REGISTRATION_SHEET_URL</span></code> configuration key.</p></li>
+<li><p>Added company contact management with <code class="docutils literal notranslate"><span class="pre">--import-companies</span></code> and <code class="docutils literal notranslate"><span class="pre">--export-companies</span></code>, stored in <code class="docutils literal notranslate"><span class="pre">companies.db</span></code>.</p></li>
+<li><p>Improved export formatting for student details (JSON unwrapping for progress reports, translated labels, hidden empty fields).</p></li>
+<li><p>Added support for English headers in internship data and registration imports.</p></li>
+<li><p>Updated documentation and sample data to English.</p></li>
+</ul>
+</section>
+<section id="version-0-1-1-2025-12-27">
+<h2>Version 0.1.1 (2025-12-27)<a class="headerlink" href="#version-0-1-1-2025-12-27" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Added multi-file glob support for import/update CLI commands.</p></li>
+<li><p>Added student detail sort methods and clearer export/report formatting.</p></li>
+<li><p>Normalized Canvas/Google Classroom sync scores to a 10-point scale when possible.</p></li>
+<li><p>MAT*.xlsx roster imports now ignore score columns (CC, GK, CK, totals).</p></li>
+<li><p>MAT Excel updates can infer missing student IDs from VNU University of Science, Hanoi emails.</p></li>
+<li><p>Added resubmission grading workflow with optional keep-old-grade default.</p></li>
+<li><p>Canvas sync stores submission comments and rubric evaluations.</p></li>
+<li><p>Canvas grade parsing now falls back to Unposted Final Score when Final Score is empty/zero (CC/GK/CK).</p></li>
+<li><p>Final evaluation reports omit assignment-group scores when all component scores are 0.</p></li>
+<li><p>Final evaluation weights are configurable (<code class="docutils literal notranslate"><span class="pre">WEIGHT_CC</span></code>, <code class="docutils literal notranslate"><span class="pre">WEIGHT_GK</span></code>, <code class="docutils literal notranslate"><span class="pre">WEIGHT_CK</span></code>) and the TXT output includes the formula.</p></li>
+<li><p>Added course calendar builder (TXT/Markdown/ICS) with holiday exclusions, unofficial holidays, and make-up week logic.</p></li>
+<li><p>Course calendar titles include course code/name and canceled sessions are tagged.</p></li>
+<li><p>Added Canvas calendar import from iCal (.ics) files with dry-run and duplicate skipping.</p></li>
+<li><p>Improved Canvas announcement flow with short input, AI refinement, and confirmation before posting.</p></li>
+<li><p>Added auto-generated short aliases for long-only CLI flags.</p></li>
+<li><p>Added <code class="docutils literal notranslate"><span class="pre">--list-cli-aliases</span></code> to display auto-generated short aliases.</p></li>
+<li><p>Added duplicate-name reporting (Name/Google Classroom/Canvas display names) with TXT/CSV/JSON exports.</p></li>
+<li><p>Documentation and samples updated for new sync, calendar, and local AI tooling.</p></li>
+</ul>
+</section>
+<section id="version-0-1-0-2025-12-27">
+<h2>Version 0.1.0 (2025-12-27)<a class="headerlink" href="#version-0-1-0-2025-12-27" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Packaged the original script as a Python CLI with install helpers and standardized flags.</p></li>
+<li><p>Added course-scoped config/credential storage with cached course codes.</p></li>
+<li><p>Rebuilt the no-args menu with sections, arrow-key navigation, and numeric quick-jump.</p></li>
+<li><p>Added <code class="docutils literal notranslate"><span class="pre">--clear-config</span></code> and <code class="docutils literal notranslate"><span class="pre">--clear-credentials</span></code> helpers plus Windows/Linux compatibility fixes.</p></li>
+<li><p>Canvas/Google Classroom sync now resolves duplicates; Canvas grade sync stores final scores only.</p></li>
+<li><p>Added override grades (flexible headers/aliases) with clearer reporting in MAT exports.</p></li>
+<li><p>Added AI model testing/listing, rate-limit fallback, and model details in reports.</p></li>
+<li><p>Expanded submission quality checks with configurable thresholds and richer diagnostics.</p></li>
+<li><p>Added backup/restore commands, dry-run mode, validation reports, grade audit history, and grade diff exports.</p></li>
+<li><p>Added import previews, anonymized exports, and per-run summaries in <code class="docutils literal notranslate"><span class="pre">run_report.txt</span></code>.</p></li>
+<li><p>Added weekly automation workflow generation and non-interactive Canvas checks/reminders.</p></li>
+<li><p>Added local weekly automation with archived reports and flagged-submission evidence.</p></li>
+<li><p>Weekly workflow now clones the toolkit, archives reports with DB backups, and tags evidence by assignment.</p></li>
+<li><p>Weekly automation can auto-detect closed assignments not yet in weekly reports.</p></li>
+<li><p>Added local LLM support (Ollama-compatible) for AI refinement and message generation, with CLI overrides.</p></li>
+<li><p>Added local model detection via <code class="docutils literal notranslate"><span class="pre">--detect-local-ai</span></code> (Ollama or llama.cpp) and optional <code class="docutils literal notranslate"><span class="pre">.gguf</span></code> scan.</p></li>
+<li><p>Updated docs and samples; added GPL-3.0-only license.</p></li>
+</ul>
+</section>
+</section>
+
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">Course Management Toolkit</a></h1>
+
+
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="usage.html">Usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="cli_reference.html">CLI Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api.html">API Reference</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Changelog</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#unreleased-2026-07-12">Unreleased (2026-07-12)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#version-0-1-4-2026-01-25">Version 0.1.4 (2026-01-25)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#version-0-1-3-2026-01-25">Version 0.1.3 (2026-01-25)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#version-0-1-2-2026-01-24">Version 0.1.2 (2026-01-24)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#version-0-1-1-2025-12-27">Version 0.1.1 (2025-12-27)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#version-0-1-0-2025-12-27">Version 0.1.0 (2025-12-27)</a></li>
+</ul>
+</li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="api.html" title="previous chapter">API Reference</a></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &#169;2026, Duc A. Hoang.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 8.1.3</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+      |
+      <a href="_sources/changelog.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>
