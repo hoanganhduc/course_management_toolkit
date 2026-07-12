@@ -1,7 +1,13 @@
 CLI Reference
 =============
 
-This reference is generated from `course_hoanganhduc/core.py` and lists CLI flags grouped by section.
+This reference is generated from the ``course`` argument parser
+(``course_hoanganhduc/core.py`` plus Classroom50 flags from
+``course_hoanganhduc/c50_flags.py``) and lists CLI flags grouped by section.
+
+Agent-restricted entrypoints (``python -m course_hoanganhduc.c50_agent``,
+``canvas_agent``, ``gclass_agent``, ``db_agent``) are documented under
+:doc:`usage` and are **not** the full interactive ``course`` surface.
 
 Automation
 ----------
@@ -73,7 +79,7 @@ Canvas: People and Communication
 - ``--invite-canvas-file`` (``-if``): Invite multiple users to Canvas course from a TXT file or string of pairs/emails
 - ``--invite-canvas-name``: Name for Canvas invite (for single user)
 - ``--invite-canvas-role`` (``-ir``): Role for Canvas invite (student/teacher/ta, default: student)
-- ``--invite-role`` (``--invite-rote``): Role for --invite (student/teacher/ta, default: student)
+- ``--invite-role``: Role for --invite (student/teacher/ta, default: student)
 - ``--invite-section``: Default Canvas section name for --invite (optional)
 - ``--list-canvas-assignments``: List all assignments on Canvas LMS
 - ``--list-canvas-members`` (``-cm``): List all members (teachers, TAs, students) of a Canvas course
@@ -83,7 +89,6 @@ Canvas: People and Communication
 - ``--search-canvas-user`` (``-cu``): Search for a user in Canvas by name or email
 - ``--sync-canvas`` (``-sc``): Sync Canvas course members to local database
 - ``--unenroll-canvas``: Unenroll Canvas students by domain/email/select/missing-id
-  Successful unenroll removes matching students from the local database (by Email or Canvas ID).
 
 Canvas: Rubrics and Grading
 ---------------------------
@@ -101,13 +106,29 @@ Canvas: Rubrics and Grading
 - ``--update-canvas-rubric-id`` (``-uri``): Rubric ID to associate with assignments (leave blank to select interactively)
 - ``--update-canvas-rubrics`` (``-ur``): Update rubric for one or more Canvas assignments (provide assignment IDs, or leave blank to select interactively)
 
+Classroom50
+-----------
+
+- ``--classroom50-assignment``: Classroom50 assignment slug (human download)
+- ``--classroom50-classroom``: Classroom50 classroom short-name
+- ``--classroom50-download-dest``: Destination directory for Classroom50 downloads
+- ``--classroom50-org``: Classroom50 GitHub organization
+- ``--classroom50-preflight``: Run Classroom50 auth preflight (whoami)
+- ``--classroom50-report``: Write Classroom50 JSON report to PATH
+- ``--download-classroom50``: Download student submissions (human CLI only)
+- ``--export-classroom50-roster``: Export local roster to Classroom50 CSV (default: classroom50_roster.csv)
+- ``--list-classroom50-assignments``: List Classroom50 assignments
+- ``--list-classroom50-classrooms``: List Classroom50 classrooms
+- ``--list-classroom50-roster``: List Classroom50 roster
+- ``--sync-classroom50`` (``-sc50``): Sync Classroom50 roster into local student database
+
 Configuration
 -------------
 
 - ``--backup-config``: Back up config.json to a timestamped file (optional: backup dir)
 - ``--clear-config`` (``-ccfg``): Delete stored config.json from the default location
 - ``--clear-credentials`` (``-ccred``): Delete stored credentials.json and token.pickle from the default location
-- ``--config`` (``-cfg``, ``-c``): Load config from JSON file and save to default location
+- ``--config`` (``-cfg``): Load config from JSON file and save to default location
 - ``--config-backup-keep``: Number of config backups to retain (default from config)
 - ``--course-code`` (``-ccode``): Course code for config folder (e.g., MAT3500)
 - ``--detect-local-ai``: Detect locally installed AI models (Ollama-compatible)
@@ -151,14 +172,12 @@ General
 -------
 
 - ``--dry-run``: Preview actions without writing files or databases
-- ``--list-cli-aliases``: List auto-generated short aliases for long-only CLI flags
 - ``--log-backups``: Number of rotated log files to keep
 - ``--log-dir``: Directory for log files (default: config folder)
 - ``--log-level``: Logging level (default: INFO)
 - ``--log-max-bytes``: Max size in bytes for rotating logs
 - ``--refine``: Refine generated messages/announcements with AI
 - ``--verbose`` (``-v``): Enable verbose output
-- ``--version``: Show package name and version and exit.
 
 Google Classroom
 ----------------
@@ -184,10 +203,9 @@ Google Classroom
 - ``--google-token-path`` (``-gtp``): Path to Google Classroom token pickle file
 - ``--grade-google-classroom`` (``-ggc``): Grade Google Classroom assignment submissions
 - ``--list-google-courses`` (``-lgc``): List Google Classroom courses for the current account
-- ``--list-google-students``: List Google Classroom students for a course (uses ``--google-course-id`` or prompts)
+- ``--list-google-students``: List Google Classroom students for a course (uses --google-course-id or prompts)
 - ``--sync-google-classroom`` (``-sgc``): Sync students in the local database with active students from Google Classroom course
 - ``--unenroll-google-classroom`` (``-ugc``): Unenroll Google Classroom students by email domain
-  Successful unenroll removes matching students from the local database (by Email or Google_ID).
 
 OCR and PDFs
 ------------
@@ -205,43 +223,50 @@ Student Database
 
 - ``--add-file`` (``-a``): Import students from Excel, CSV, or PDF file into the database
 - ``--add-google-sheet`` (``-gsh``): Import students from Google Sheet URL (optional: URL, default from config)
-- ``--import-companies`` (nargs='?'): Import company data from Excel/CSV to companies.db
-- ``--export-companies``: Export company list to Excel file
-- ``--import-mini-projects``: Import mini-project data from Google Sheets (lecturer topics + student registrations)
-- ``--mini-project-lecturer-sheet``: Google Sheet URL for lecturer mini-project topics (optional; default from config)
-- ``--mini-project-registration-sheet``: Google Sheet URL for student mini-project registrations (optional; default from config)
 - ``--all-details`` (``-A``): Show details of all students
 - ``--backup-db``: Back up students.db to a timestamped file (optional: backup dir)
-- ``--db`` (``-db``, ``-D``): Database file name (default: students.db, saved in script folder)
+- ``--db`` (``-db``): Database file name (default: students.db, saved in script folder)
 - ``--db-backup-keep``: Number of database backups to retain (default from config)
 - ``--details`` (``-d``): Show details of a student by name, student id, or email
 - ``--dry-run-rows``: Number of preview rows to show with --dry-run + --add-file (default: 5)
 - ``--duplicate-name-field``: Field to detect duplicates (name/google/canvas or custom field name)
 - ``--duplicate-name-format``: Output format for duplicate-name report (default: txt)
 - ``--duplicate-name-output``: Output path for duplicate-name report (optional; extension inferred from format if missing)
-- ``--export-all-details`` (``-E``): Export all student details to TXT file
+- ``--export-all-details`` (``-E``): Export all student or company details (including submission attachments) to TXT file
 - ``--export-anonymized`` (``-ean``): Export anonymized roster to CSV (optional: output path)
+- ``--export-companies``: Export company list to Excel file
 - ``--export-emails`` (``-e``): Export all student emails to TXT file (avoids duplicates)
 - ``--export-emails-and-names`` (``-en``): Export all student emails and names to TXT file (default: emails_and_names.txt)
 - ``--export-excel`` (``-x``): Export student list to Excel file
 - ``--export-final-grade-distribution``: Export final grade distribution to a TXT file. Optionally provide output path (default: ./final_grade_distribution.txt).
 - ``--export-grade-diff``: Export grade updates to CSV when updating MAT files (optional: output path)
 - ``--export-roster`` (``-ero``): Export classroom roster to CSV file (default: classroom_roster.csv)
+- ``--export-type`` (``-et``): Entity type to export with --export-all-details (student/company, default: student)
+- ``--export-vcf`` (``-vcf``): Export student contact info to VCF (iOS compatible). Default: students_contacts.vcf
+- ``--filter-file`` (``-ff``): Filter export by identifiers in this file (TXT/CSV/XLSX)
 - ``--generate-final-evaluations`` (``-gfe``): Generate per-student final evaluation TXT reports (optional: output dir, default: ./final_evaluations).
+- ``--import-companies``: Import company data from Excel/CSV to companies.db
+- ``--import-internships``: Import student internship data from Google Sheet URL or local CSV/Excel file (optional: URL/Path, default from config)
+- ``--import-mini-projects``: Import mini-project data from Google Sheets (lecturer topics + student registrations)
+- ``--import-progress-reports``: Import student progress reports from their linked Google Sheets
+- ``--import-registrations``: Import student registration data from Google Sheet URL or local CSV/Excel file (optional: URL/Path, default from config)
 - ``--list-duplicate-names``: List students who share the same full name
 - ``--list-email-domain`` (``-led``): List students whose email matches domain(s) (comma-separated, e.g., gmail.com,outlook.com)
 - ``--list-missing-ids``: List students missing Google/Canvas/Student IDs (optional: google,canvas,student,all or comma-separated)
-- ``--list-submission-status``: List students by submission status (prefix with ``google:`` or ``canvas:``, optional ``@assignment``). Values: Google Classroom = ``NEW``, ``CREATED``, ``TURNED_IN``, ``RETURNED``, ``RECLAIMED_BY_STUDENT``; Canvas = ``UNSUBMITTED``, ``SUBMITTED``, ``GRADED``, ``PENDING_REVIEW``, ``COMPLETE``.
+- ``--list-submission-status``: List students by submission status (shows attachment details; prefix with google: or canvas:, optional @assignment title)
 - ``--load`` (``-l``): Load students from database file
 - ``--load-override-grades`` (``-log``): Load override_grades.xlsx and persist overrides to the database (default: override_grades.xlsx).
+- ``--mini-project-lecturer-sheet``: Google Sheet URL for lecturer mini-project topics (optional; default from config)
+- ``--mini-project-registration-sheet``: Google Sheet URL for student mini-project registrations (optional; default from config)
 - ``--missing-ids-format``: Output format for missing-ids report (default: txt)
 - ``--missing-ids-output``: Output path for missing-ids report (optional; extension inferred from format if missing)
 - ``--modify`` (``-m``): Interactively modify the student database
 - ``--restore-db``: Restore students.db from a backup (default: latest)
 - ``--save`` (``-s``): Save current students to database file
 - ``--search`` (``-S``): Search for students by keyword (name, student id, email, etc.)
+- ``--sheet-name`` (``-sn``): Specific sheet name to import from Excel file
+- ``--sheet-selection`` (``-ss``): Sheet selection mode: first (default), select (interactive), all, merge
 - ``--sync-mat-canvas``: Sync CC/GK/CK scores from MAT*.xlsx to Canvas assignments (uses configured assignment IDs)
 - ``--sync-mat-types``: Comma-separated list of score types to sync (CC,GK,CK). Default: all available.
 - ``--update-mat-excel`` (``-ume``): Update MAT*.xlsx file(s) with grades from database (provide one or more file paths)
 - ``--validate-data``: Validate student data and write a report (optional: output path)
-

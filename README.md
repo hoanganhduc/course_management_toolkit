@@ -11,7 +11,7 @@
 
 ![Version](https://img.shields.io/github/v/release/hoanganhduc/course_management_toolkit?label=version) ![Pre-release](https://img.shields.io/github/v/tag/hoanganhduc/course_management_toolkit?label=pre-release&sort=semver) ![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python) ![GitHub](https://img.shields.io/badge/GitHub-Repo-black?logo=github) ![Docker](https://img.shields.io/badge/Docker-ready-blue?logo=docker) ![GitHub](https://img.shields.io/badge/GitHub-Repo-black?logo=github) ![Status](https://img.shields.io/badge/status-work--in--progress-yellow) ![License](https://img.shields.io/github/license/hoanganhduc/course_management_toolkit)
 
-Utilities for managing course rosters, grading, OCR extraction, and Canvas/Google Classroom workflows. **Work in progress**, mainly designed for **personal use** but open-sourced for others to adapt. Code with the help of [GitHub Copilot](https://github.com/features/copilot/) and [ChatGPT Codex](https://openai.com/).
+Utilities for managing course rosters, grading, OCR extraction, Canvas/Google Classroom workflows, and **Classroom50** (foundation50) roster sync. Includes **agent-safe entrypoints** for AI coding agents (restricted surfaces; destructive LMS ops stay on the interactive `course` CLI). **Work in progress**, mainly designed for **personal use** but open-sourced for others to adapt. Code with the help of [GitHub Copilot](https://github.com/features/copilot/) and [ChatGPT Codex](https://openai.com/).
 
 ## Table of contents
 
@@ -21,6 +21,8 @@ Utilities for managing course rosters, grading, OCR extraction, and Canvas/Googl
   - [Install into per-user venv](#install-into-per-user-venv)
   - [Run](#run)
 - [Common workflows](#common-workflows)
+- [Classroom50 (foundation50)](#classroom50-foundation50)
+- [Agent-safe entrypoints](#agent-safe-entrypoints)
 - [Configuration](#configuration)
 - [Weekly automation guide](#weekly-automation-guide)
 - [Course calendar builder](#course-calendar-builder)
@@ -78,6 +80,8 @@ Menu ↔ CLI examples:
 | Import students from Google Sheet | `course --add-google-sheet <URL>` |
 | Download Google Classroom submissions | `course --download-google-classroom-submissions --gc-download-coursework-id <ID>` |
 | Run weekly automation | `course --run-weekly-automation --weekly-assignment-id <ID>` |
+| Classroom50 preflight | `course --classroom50-preflight` |
+| Sync Classroom50 roster | `course --sync-classroom50 --classroom50-org ORG --classroom50-classroom SHORT` |
 
 ## Common workflows
 
@@ -97,6 +101,78 @@ course -sc
 
 Notes:
 - Canvas sync now stores submission comments and rubric evaluations per assignment in the database.
+
+## Classroom50 (foundation50)
+
+This toolkit wraps [Classroom50](https://github.com/foundation50/classroom50) instructor workflows (`gh teacher`) for roster list/sync/export. It does **not** reimplement Classroom50; the adapter calls the teacher extension.
+
+Prerequisites:
+
+- GitHub CLI (`gh`) installed and authenticated
+- Classroom50 **teacher** extension available (`gh teacher …`)
+- Local `students.db` (or path you pass) for sync/export
+
+Human CLI examples:
+
+```bash
+# Auth / whoami
+course --classroom50-preflight
+
+# List classrooms in an org
+course --list-classroom50-classrooms --classroom50-org my-org
+
+# List roster / assignments for a classroom short-name
+course --list-classroom50-roster --classroom50-org my-org --classroom50-classroom short-name
+course --list-classroom50-assignments --classroom50-org my-org --classroom50-classroom short-name
+
+# Pull roster into local DB (fill-only identity join; GitHub numeric id ≠ Username)
+course --sync-classroom50 -sc50 --classroom50-org my-org --classroom50-classroom short-name
+course --sync-classroom50 --classroom50-org my-org --classroom50-classroom short-name --classroom50-report report.json
+
+# Export local roster as Classroom50 CSV dialect
+course --export-classroom50-roster classroom50_roster.csv
+
+# Download submissions (human CLI only; not available on the agent entrypoint)
+course --download-classroom50 --classroom50-org my-org --classroom50-classroom short-name \
+  --classroom50-assignment assignment-slug --classroom50-download-dest ./c50_submissions
+```
+
+Flags are listed under **Classroom50** in `docs/cli_reference.rst`.
+
+## Agent-safe entrypoints
+
+For AI agents (and for restricted automation), prefer dedicated modules that force **agent mode** (`COURSE_AGENT_MODE=1`). These surfaces refuse destructive or high-blast-radius ops (unenroll, grade-apply, invite, announcement, submission download, interactive DB modify, etc.). Use the interactive `course` CLI as a human when those are required.
+
+| Module | Role | Allowed (typical) | Refused (examples) |
+| --- | --- | --- | --- |
+| `python -m course_hoanganhduc.c50_agent` | Classroom50 | preflight, list-*, sync, export | download |
+| `python -m course_hoanganhduc.canvas_agent` | Canvas | preflight, list-assignments/members, search-user, sync | unenroll, grade, invite, announce, download, messages, pages |
+| `python -m course_hoanganhduc.gclass_agent` | Google Classroom | preflight, list-courses/students, sync | unenroll, grade, download |
+| `python -m course_hoanganhduc.db_agent` | Local students.db | search, details, list-*, export-*, count | modify, restore-db, import-apply, delete |
+
+Examples:
+
+```bash
+python -m course_hoanganhduc.c50_agent preflight
+python -m course_hoanganhduc.c50_agent list-classrooms --org my-org
+python -m course_hoanganhduc.c50_agent sync --org my-org --classroom short-name --db students.db
+python -m course_hoanganhduc.canvas_agent list-members --course-id 12345
+python -m course_hoanganhduc.gclass_agent list-courses
+python -m course_hoanganhduc.db_agent search "Nguyen"
+python -m course_hoanganhduc.db_agent export-roster --db students.db
+```
+
+**Allowlists (agent mode, fail-closed):** when a course/org id is required, set:
+
+| Environment variable | Used by |
+| --- | --- |
+| `CLASSROOM50_ORG_ALLOWLIST` | `c50_agent` / Classroom50 ops |
+| `CANVAS_COURSE_ALLOWLIST` | `canvas_agent` |
+| `GCLASS_COURSE_ALLOWLIST` | `gclass_agent` |
+
+Comma-separated ids. Empty allowlist with a required id fails closed.
+
+**ai-agents-skills:** install the `course-management` profile to get skills `classroom50`, `course-canvas`, `course-google-classroom`, and `course-db` that route through these modules. See [ai-agents-skills course management docs](https://github.com/hoanganhduc/ai-agents-skills/blob/main/docs/course-management.md).
 
 Student database utilities:
 - Find duplicate names or display names (Name/Google Classroom/Canvas).
@@ -614,6 +690,9 @@ For `--ocr-service ocrspace`, set `OCRSPACE_API_KEY` in your config file.
 - If `course` cannot find `students.db`, confirm you are running the command in the intended working directory.
 - If OCR commands are missing, recheck your PATH or reinstall Tesseract/Poppler.
 - If Canvas/Google Classroom calls fail, verify API keys and course IDs in `config.json`.
+- If Classroom50 preflight fails, confirm `gh` auth and that the Classroom50 teacher extension is installed (`gh teacher …`).
+- If an agent entrypoint exits with `allowlist_required` / `not_allowlisted`, set the matching `*_ALLOWLIST` env var (see [Agent-safe entrypoints](#agent-safe-entrypoints)).
+- Agent entrypoints refusing an operation is intentional; use the full `course` CLI as a human for downloads, unenroll, grading, and DB mutations.
 
 ## Troubleshooting OCR
 

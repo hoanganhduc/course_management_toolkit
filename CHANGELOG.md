@@ -1,5 +1,13 @@
 ﻿# Changelog
 
+## [Unreleased] - 2026-07-12
+
+- Added Classroom50 (foundation50) integration: wrap `gh teacher` for preflight, list classrooms/roster/assignments, roster sync into local DB, C50 CSV export, and human-only submission download (`--download-classroom50`).
+- Added agent-safe entrypoints: `python -m course_hoanganhduc.c50_agent`, `canvas_agent`, `gclass_agent`, `db_agent` (force agent mode; refuse destructive LMS/DB ops; org/course allowlists fail closed).
+- Shared helpers in `course_agent_common`; GitHub numeric id kept separate from Username in student identity maps (`data.py`).
+- CLI flags under the Classroom50 group (see `docs/cli_reference.rst`).
+- Documented agent entrypoints and Classroom50 workflows in README and `docs/usage.rst`.
+
 ## [0.1.4] - 2026-01-25
 - Enhanced `--list-submission-status` to show attachment details (file count, size, type, upload time).
 - Updated Canvas and Google Classroom sync to fetch detailed attachment info (supports Drive files, Links, Forms, YouTube videos).

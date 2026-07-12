@@ -59,6 +59,84 @@ Menu ↔ CLI examples
      - ``course --download-google-classroom-submissions --gc-download-coursework-id <ID>``
    * - Run weekly automation
      - ``course --run-weekly-automation --weekly-assignment-id <ID>``
+   * - Classroom50 preflight
+     - ``course --classroom50-preflight``
+   * - Sync Classroom50 roster
+     - ``course --sync-classroom50 --classroom50-org ORG --classroom50-classroom SHORT``
+
+Classroom50 (foundation50)
+--------------------------
+
+Wraps Classroom50 instructor tooling (``gh teacher``) for roster list/sync/export.
+Does not reimplement Classroom50. Requires GitHub CLI and the Classroom50 teacher
+extension.
+
+.. code-block:: bash
+
+   course --classroom50-preflight
+   course --list-classroom50-classrooms --classroom50-org my-org
+   course --list-classroom50-roster --classroom50-org my-org --classroom50-classroom short-name
+   course --list-classroom50-assignments --classroom50-org my-org --classroom50-classroom short-name
+   course --sync-classroom50 -sc50 --classroom50-org my-org --classroom50-classroom short-name
+   course --export-classroom50-roster classroom50_roster.csv
+
+Download of student submissions is available only on the full human ``course`` CLI:
+
+.. code-block:: bash
+
+   course --download-classroom50 --classroom50-org my-org --classroom50-classroom short-name \
+     --classroom50-assignment assignment-slug --classroom50-download-dest ./c50_submissions
+
+See the **Classroom50** section in :doc:`cli_reference` for all flags.
+
+Agent-safe entrypoints
+----------------------
+
+Dedicated modules force agent mode (``COURSE_AGENT_MODE=1``) and expose a
+restricted surface for AI agents. Destructive or high-blast-radius operations
+are refused; use the interactive ``course`` CLI as a human when those are needed.
+
+.. list-table::
+   :header-rows: 1
+
+   * - Module
+     - Allowed (typical)
+     - Refused (examples)
+   * - ``python -m course_hoanganhduc.c50_agent``
+     - preflight, list-*, sync, export
+     - download
+   * - ``python -m course_hoanganhduc.canvas_agent``
+     - preflight, list-assignments/members, search-user, sync
+     - unenroll, grade, invite, announce, download, messages, pages
+   * - ``python -m course_hoanganhduc.gclass_agent``
+     - preflight, list-courses/students, sync
+     - unenroll, grade, download
+   * - ``python -m course_hoanganhduc.db_agent``
+     - search, details, list-*, export-*, count
+     - modify, restore-db, import-apply, delete
+
+Examples:
+
+.. code-block:: bash
+
+   python -m course_hoanganhduc.c50_agent preflight
+   python -m course_hoanganhduc.c50_agent list-classrooms --org my-org
+   python -m course_hoanganhduc.c50_agent sync --org my-org --classroom short-name --db students.db
+   python -m course_hoanganhduc.canvas_agent list-members --course-id 12345
+   python -m course_hoanganhduc.gclass_agent list-courses
+   python -m course_hoanganhduc.db_agent search "Nguyen"
+
+Allowlists (agent mode, fail-closed when a course/org id is required):
+
+- ``CLASSROOM50_ORG_ALLOWLIST`` — Classroom50 org short-names
+- ``CANVAS_COURSE_ALLOWLIST`` — Canvas course IDs
+- ``GCLASS_COURSE_ALLOWLIST`` — Google Classroom course IDs
+
+Comma-separated values. Empty allowlist with a required id fails closed.
+
+Skills in `ai-agents-skills` (profile ``course-management``) route through these
+modules: ``classroom50``, ``course-canvas``, ``course-google-classroom``,
+``course-db``.
 
 Clear stored settings
 ---------------------
@@ -670,3 +748,9 @@ Troubleshooting
 - If OCR commands are missing, recheck your PATH or reinstall Tesseract/Poppler.
 - If Canvas/Google Classroom calls fail, verify API keys and course IDs in
   ``config.json``.
+- If Classroom50 preflight fails, confirm ``gh`` auth and that the Classroom50
+  teacher extension is installed.
+- If an agent entrypoint exits with ``allowlist_required`` / ``not_allowlisted``,
+  set the matching ``*_ALLOWLIST`` environment variable.
+- Agent entrypoints refusing an operation is intentional; use the full
+  ``course`` CLI as a human for downloads, unenroll, grading, and DB mutations.
