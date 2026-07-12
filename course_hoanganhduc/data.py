@@ -138,12 +138,15 @@ def normalize_columns(df, verbose=False):
         # GitHub username mappings (specific)
         "Github username": "GitHub Username",
         "Github account": "GitHub Username",
-        "Github id": "GitHub Username",
         "Github handle": "GitHub Username",
         "GitHub username": "GitHub Username",
         "GitHub account": "GitHub Username",
-        "GitHub id": "GitHub Username",
         "GitHub handle": "GitHub Username",
+        # Numeric GitHub user id (Classroom50 github_id) — never collapse into Username
+        "Github id": "GitHub ID",
+        "GitHub id": "GitHub ID",
+        "Github numeric id": "GitHub ID",
+        "GitHub numeric id": "GitHub ID",
         "Github": "GitHub Username",
         "GitHub": "GitHub Username",
         
@@ -239,8 +242,15 @@ def normalize_columns(df, verbose=False):
             continue
         
         # Try GitHub patterns specifically (ensure they don't get mapped to Name)
+        if re.search(r"github\s*id|github\s*numeric", col.lower()) and not re.search(r"username|handle|account|name", col.lower()):
+            col_map[col] = "GitHub ID"
+            mapped = True
+            continue
         if re.search(r"github|git\s+username", col.lower()) and not re.search(r"name.*github", col.lower()):
-            col_map[col] = "GitHub Username"
+            if re.search(r"\bid\b", col.lower()) and not re.search(r"username|handle|account", col.lower()):
+                col_map[col] = "GitHub ID"
+            else:
+                col_map[col] = "GitHub Username"
             mapped = True
             continue
             
@@ -3799,7 +3809,7 @@ def read_students_from_excel_csv(file_path, db_path=None, verbose=False, preview
         return None
     
     def get_github_username(student):
-        for field_name in ["GitHub Username", "GitHub Account", "GitHub ID", "GitHub Handle", "GitHub"]:
+        for field_name in ["GitHub Username", "GitHub Account", "GitHub Handle", "GitHub"]:
             username = getattr(student, field_name, None)
             if username:
                 return str(username).strip()

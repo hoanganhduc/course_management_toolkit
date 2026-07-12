@@ -1068,6 +1068,9 @@ def main():
                               help="Unenroll Google Classroom students missing Student ID in local database",
                               dest="gc_unenroll_missing_student_id")
 
+    from .c50_flags import register_classroom50_flags
+    register_classroom50_flags(parser)
+
     automation_group = parser.add_argument_group("Automation")
     automation_group.add_argument('--run-weekly-automation', action='store_true',
                                   help="Run weekly automation for a closed assignment",
@@ -1508,6 +1511,11 @@ def main():
         students = load_database(db_path, verbose=args.verbose)
     if args.load:
         print(f"Loaded {len(students)} students from database.")
+
+    from .c50_flags import dispatch_classroom50
+    _c50_exit = dispatch_classroom50(args, students, db_path, config or {})
+    if _c50_exit is not None:
+        return _c50_exit
 
     if args.import_internships:
         url = args.import_internships
