@@ -9,6 +9,8 @@ from __future__ import annotations
 import argparse
 import json
 import os
+from pathlib import Path
+import stat
 import sys
 from typing import Any, List, Optional
 
@@ -20,8 +22,93 @@ from .course_agent_common import (
 )
 
 
+CANVAS_CONFIG_KEYS = (
+    "CANVAS_LMS_API_URL",
+    "CANVAS_LMS_API_KEY",
+    "CANVAS_LMS_COURSE_ID",
+)
+MAX_CANVAS_CONFIG_BYTES = 1024 * 1024
+
+
+def _configure_canvas() -> None:
+    """Load the explicit private Canvas config before operation modules import."""
+
+    from . import settings
+
+    selected: dict[str, str] = {}
+    configured_path = os.environ.get("CANVAS_CONFIG_PATH")
+    if configured_path:
+        path = Path(configured_path).expanduser()
+        if not path.is_absolute():
+            raise CourseAgentError("CANVAS_CONFIG_PATH must be absolute")
+        flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+        try:
+            descriptor = os.open(path, flags)
+        except OSError as exc:
+            raise CourseAgentError("Canvas config is unavailable or unsafe") from exc
+        try:
+            before = os.fstat(descriptor)
+            if (
+                not stat.S_ISREG(before.st_mode)
+                or before.st_uid != os.getuid()
+                or before.st_nlink != 1
+                or stat.S_IMODE(before.st_mode) & 0o077
+                or not 0 < before.st_size <= MAX_CANVAS_CONFIG_BYTES
+            ):
+                raise CourseAgentError("Canvas config metadata is unsafe")
+            remaining = before.st_size
+            chunks: list[bytes] = []
+            while remaining:
+                chunk = os.read(descriptor, min(remaining, 65536))
+                if not chunk:
+                    raise CourseAgentError("Canvas config was truncated")
+                chunks.append(chunk)
+                remaining -= len(chunk)
+            if os.read(descriptor, 1):
+                raise CourseAgentError("Canvas config grew while being read")
+            after = os.fstat(descriptor)
+            identity = lambda info: (
+                info.st_dev,
+                info.st_ino,
+                info.st_mode,
+                info.st_uid,
+                info.st_nlink,
+                info.st_size,
+                info.st_mtime_ns,
+                info.st_ctime_ns,
+            )
+            if identity(before) != identity(after):
+                raise CourseAgentError("Canvas config changed while being read")
+        finally:
+            os.close(descriptor)
+        try:
+            value = json.loads(b"".join(chunks).decode("utf-8"))
+        except (UnicodeError, json.JSONDecodeError) as exc:
+            raise CourseAgentError("Canvas config is not valid JSON") from exc
+        if not isinstance(value, dict):
+            raise CourseAgentError("Canvas config root must be an object")
+        for key in CANVAS_CONFIG_KEYS:
+            candidate = value.get(key)
+            if isinstance(candidate, str) and candidate.strip():
+                selected[key] = candidate.strip()
+
+    for key in CANVAS_CONFIG_KEYS:
+        candidate = os.environ.get(key)
+        if candidate:
+            selected[key] = candidate.strip()
+        if key in selected:
+            setattr(settings, key, selected[key])
+
+
 def _course_id(args_course: Optional[str]) -> Optional[str]:
-    return args_course or os.environ.get("CANVAS_LMS_COURSE_ID") or None
+    from . import settings
+
+    return (
+        args_course
+        or os.environ.get("CANVAS_LMS_COURSE_ID")
+        or getattr(settings, "CANVAS_LMS_COURSE_ID", "")
+        or None
+    )
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -59,6 +146,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     args = parser.parse_args(argv)
 
     try:
+        _configure_canvas()
         if args.cmd in {
             "unenroll",
             "grade",

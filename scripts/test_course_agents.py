@@ -10,6 +10,8 @@ import sys
 import tempfile
 import types
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if REPO_ROOT not in sys.path:
@@ -113,6 +115,64 @@ class TestCanvasGclassAgent(unittest.TestCase):
             require_env_allowlist("CANVAS_COURSE_ALLOWLIST", "1", label="c")
         os.environ.pop("COURSE_AGENT_MODE", None)
         os.environ.pop("CANVAS_COURSE_ALLOWLIST", None)
+
+    def test_canvas_preflight_loads_explicit_private_config(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            config = os.path.join(temporary, "canvas.json")
+            with open(config, "w", encoding="utf-8") as stream:
+                json.dump(
+                    {
+                        "CANVAS_LMS_API_URL": "https://canvas.example.invalid",
+                        "CANVAS_LMS_API_KEY": "fixture-secret",
+                        "CANVAS_LMS_COURSE_ID": "42",
+                    },
+                    stream,
+                )
+            os.chmod(config, 0o600)
+            previous = os.environ.get("CANVAS_CONFIG_PATH")
+            os.environ["CANVAS_CONFIG_PATH"] = config
+            output = StringIO()
+            try:
+                with redirect_stdout(output):
+                    result = canvas_main(["preflight"])
+            finally:
+                if previous is None:
+                    os.environ.pop("CANVAS_CONFIG_PATH", None)
+                else:
+                    os.environ["CANVAS_CONFIG_PATH"] = previous
+            self.assertEqual(result, 0)
+            status = json.loads(output.getvalue())
+            self.assertEqual(
+                status,
+                {
+                    "ok": True,
+                    "api_url_set": True,
+                    "api_key_set": True,
+                    "course_id_set": True,
+                },
+            )
+            self.assertNotIn("fixture-secret", output.getvalue())
+
+    def test_canvas_config_rejects_public_mode_and_symlink(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            config = os.path.join(temporary, "canvas.json")
+            with open(config, "w", encoding="utf-8") as stream:
+                stream.write('{"CANVAS_LMS_API_KEY":"fixture"}\n')
+            previous = os.environ.get("CANVAS_CONFIG_PATH")
+            try:
+                os.chmod(config, 0o644)
+                os.environ["CANVAS_CONFIG_PATH"] = config
+                self.assertEqual(canvas_main(["preflight"]), 1)
+                link = os.path.join(temporary, "canvas-link.json")
+                os.symlink(config, link)
+                os.chmod(config, 0o600)
+                os.environ["CANVAS_CONFIG_PATH"] = link
+                self.assertEqual(canvas_main(["preflight"]), 1)
+            finally:
+                if previous is None:
+                    os.environ.pop("CANVAS_CONFIG_PATH", None)
+                else:
+                    os.environ["CANVAS_CONFIG_PATH"] = previous
 
 
 if __name__ == "__main__":
