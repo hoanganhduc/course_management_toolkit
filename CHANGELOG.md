@@ -1,7 +1,24 @@
 ﻿# Changelog
 
-## [Unreleased] - 2026-07-12
+## [0.2.0] - 2026-08-28
 
+- Simplified Google Classroom assignment creation: removed redundant typed
+  `AUTH`/`CREATE`/`SHARE` phrases, added one readable `y/N` summary, and added
+  `--yes` automation for drafts without Drive-sharing effects.
+- Added a narrowly allowlisted agent smoke-test path for one minimal Classroom draft,
+  with an account/course/client/token-bound approval envelope, atomic existing-token
+  enforcement, serialized all-state duplicate detection, zero-retry creation, and
+  strict read-back. The normal agent entrypoint and general mutation API still refuse
+  creation.
+- Hardened Classroom mutation transport so connection retries, redirects, and
+  response-triggered OAuth replays cannot repeat a create request. Agent-safe live
+  calls use narrow response fields and require an explicit active course state.
+- Fixed isolated Google Classroom coursework authorization when Google reports the
+  additional `openid`/`email` identity scopes alongside `userinfo.email`, while
+  continuing to reject unrelated or missing grants.
+- Added `course-gclass-admin complete-loopback` for hidden-input remote OAuth
+  callbacks and suppressed dependency logging that could expose callback codes or
+  bearer tokens during authorization.
 - Added Classroom50 (foundation50) integration: wrap `gh teacher` for preflight, list classrooms/roster/assignments, roster sync into local DB, C50 CSV export, and human-only submission download (`--download-classroom50`).
 - Added agent-safe entrypoints: `python -m course_hoanganhduc.c50_agent`, `canvas_agent`, `gclass_agent`, `db_agent` (force agent mode; refuse destructive LMS/DB ops; org/course allowlists fail closed).
 - Shared helpers in `course_agent_common`; GitHub numeric id kept separate from Username in student identity maps (`data.py`).

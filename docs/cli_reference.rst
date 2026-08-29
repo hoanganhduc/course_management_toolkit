@@ -182,6 +182,137 @@ General
 Google Classroom
 ----------------
 
+Assignment administration (separate command)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Installing the package creates two different console commands:
+
+- ``course`` runs the general toolkit CLI
+  (``course_hoanganhduc.cli:main``). It is not an alias for assignment
+  administration.
+- ``course-gclass-admin`` runs the dedicated assignment administration CLI
+  (``course_hoanganhduc.gclass_admin_cli:main``). The equivalent source-tree or
+  module invocation is
+  ``python -m course_hoanganhduc.gclass_admin_cli``.
+
+This is a capability boundary, not a wholesale Google Classroom CLI replacement.
+``course-gclass-admin`` owns assignment preview, isolated coursework OAuth, and
+assignment creation only. The legacy ``course`` flags listed later in this section
+continue to own their read, roster-sync, grading, submission-download, and unenroll
+workflows. The restricted
+``python -m course_hoanganhduc.gclass_agent`` entrypoint continues to expose
+``preflight``, ``list-courses``, ``list-students``, and allowlisted ``sync``; it
+explicitly refuses create, grade, download, and unenroll operations. Any future
+migration is outside the current implementation; use the command ownership above as
+the supported routing.
+
+Use either form consistently in the commands below. The dedicated CLI exposes five
+subcommands:
+
+- ``auth-status --account EMAIL`` inspects the isolated coursework credentials
+  offline. It does not refresh a token, contact Google, or write files. Add
+  ``--show-paths`` to disclose resolved paths; otherwise output contains only safe
+  names and fingerprints. ``--credentials`` and ``--token`` override path
+  resolution. Without those flags, resolution checks
+  ``COURSE_GCLASS_CREDENTIALS`` and ``COURSE_GCLASS_COURSEWORK_TOKEN`` before the
+  platform-specific default config directory.
+- ``authorize --account EMAIL`` runs installed-app loopback OAuth in an interactive
+  terminal. There is no local ``AUTH ...`` phrase to type: Google browser consent
+  and account verification are the authorization. ``--no-open-browser`` prints the
+  consent URL instead of opening it. ``--replace-token`` is required before an
+  existing isolated token can be replaced; ``--credentials`` and ``--token`` select
+  explicit files.
+- ``complete-loopback --port PORT`` supports authorization on a headless remote
+  host. It reads the browser redirect URL from a hidden prompt, validates the exact
+  loopback boundary, and delivers it without placing its code or state in shell
+  history or process arguments.
+- ``prepare-agent-safe-draft --account EMAIL --course-id CANONICAL_ID --spec FILE``
+  validates a narrowly constrained draft in explicit agent mode. It requires an
+  existing token, exact account and course allowlists, and a canonical course ID;
+  it never opens a browser or starts fresh OAuth. It may refresh and persist an
+  expired token or verification metadata, so ``credentialStateMayChange`` can be
+  true, but ``classroomMutation`` is false. Its JSON approval envelope binds the
+  account, OAuth client, token location, course, and operation. Preparation is
+  neither Classroom mutation nor approval to mutate.
+- ``create-assignment --course-id ID_OR_ALIAS --spec FILE`` validates and creates
+  one assignment. ``--dry-run`` needs neither ``--account`` nor credentials. A live
+  human run requires ``--account`` and normally displays one readable summary
+  followed by ``Create assignment? [y/N]:``; no ``CREATE`` or ``SHARE`` digest phrase
+  is required. ``--no-open-browser`` controls fresh interactive OAuth when no token
+  exists.
+
+``-y`` / ``--yes`` skips the normal confirmation only when all of the following are
+true: the assignment is a ``DRAFT``, it has no Drive-sharing effects, and an isolated
+coursework token already exists. This mode disables browser authorization. Published,
+scheduled, and Drive-sharing plans still require the normal interactive confirmation.
+General mutation remains forbidden in agent mode.
+
+The separate ``--agent-safe-draft`` path permits only a minimal all-students draft
+with a title and optional description; attachments, due or scheduled times, points,
+topics, grading periods, individual targeting, and rubrics are rejected. It requires
+``COURSE_AGENT_MODE=1``, exact ``GCLASS_ACCOUNT_ALLOWLIST`` and
+``GCLASS_COURSE_ALLOWLIST`` values, a canonical course ID, an existing token,
+``--yes``, and the full ``--expect-approval-digest`` emitted by a separately reviewed
+preparation. It does not open a browser. An identical developer-associated draft can
+be reused after strict read-back; conflicting same-title work is rejected.
+
+Every Classroom mutation request uses the one-shot transport: response-triggered
+OAuth replay, HTTP retries, and redirects are disabled. An ambiguous mutation returns
+``error: outcome_unknown`` with exit status 3; inspect Classroom before deciding
+whether to run anything again. A known partial result returns ``error: partial_create``
+with exit status 4 and available receipt fields. A failed mutation is not replayed or
+deleted automatically. No automatic rerun is attempted after an ambiguous initial
+create; inspect Classroom manually before deciding what to do next.
+
+Examples (all identities and IDs are placeholders):
+
+.. code-block:: bash
+
+   course-gclass-admin auth-status \
+     --account ACCOUNT_EMAIL
+
+   python -m course_hoanganhduc.gclass_admin_cli authorize \
+     --account ACCOUNT_EMAIL \
+     --no-open-browser
+
+   course-gclass-admin create-assignment \
+     --course-id COURSE_ID_OR_ALIAS \
+     --spec sample/google_classroom/assignment-minimal.sample.json \
+     --dry-run
+
+   course-gclass-admin create-assignment \
+     --account ACCOUNT_EMAIL \
+     --course-id COURSE_ID_OR_ALIAS \
+     --spec sample/google_classroom/assignment-minimal.sample.json \
+     --yes
+
+For the agent-safe path, first run preparation and separately review its JSON
+envelope. Then pass its full ``approvalDigest`` to the live command:
+
+.. code-block:: bash
+
+   COURSE_AGENT_MODE=1 \
+   GCLASS_ACCOUNT_ALLOWLIST=ACCOUNT_EMAIL \
+   GCLASS_COURSE_ALLOWLIST=CANONICAL_COURSE_ID \
+   course-gclass-admin prepare-agent-safe-draft \
+     --account ACCOUNT_EMAIL \
+     --course-id CANONICAL_COURSE_ID \
+     --spec sample/google_classroom/assignment-test-draft.sample.json
+
+   COURSE_AGENT_MODE=1 \
+   GCLASS_ACCOUNT_ALLOWLIST=ACCOUNT_EMAIL \
+   GCLASS_COURSE_ALLOWLIST=CANONICAL_COURSE_ID \
+   course-gclass-admin create-assignment \
+     --account ACCOUNT_EMAIL \
+     --course-id CANONICAL_COURSE_ID \
+     --spec sample/google_classroom/assignment-test-draft.sample.json \
+     --agent-safe-draft \
+     --yes \
+     --expect-approval-digest APPROVAL_DIGEST
+
+The existing flags below still use the legacy Google credential/token flow. They do
+not create assignments.
+
 - ``--download-google-classroom-submissions`` (``-dgcs``): Download latest Google Classroom submissions and run checks
 - ``--gc-apply-all``: Apply grading to all listed submissions without selection
 - ``--gc-coursework-id``: Google Classroom coursework ID(s) to grade (optional)

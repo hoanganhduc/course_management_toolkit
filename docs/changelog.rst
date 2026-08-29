@@ -1,9 +1,48 @@
 Changelog
 =========
 
-Unreleased (2026-07-12)
------------------------
+Version 0.2.0 (2026-08-28)
+--------------------------
 
+- Assignment creation uses one readable yes/no summary instead of exact typed
+  ``AUTH``/``CREATE``/``SHARE`` phrases. ``--yes`` supports noninteractive drafts
+  without Drive-sharing effects while publication, scheduling, Drive sharing, and
+  general agent-mode creation continue to fail closed.
+- Added a separate cooperative agent smoke-test path for one minimal draft. It binds
+  an approval envelope to the account, canonical course, OAuth client, token source,
+  and frozen operation; atomically requires an existing token; serializes all-state
+  duplicate detection through strict read-back; and leaves general agent mutation
+  refused.
+- Hardened the mutation transport against connection retries, redirects, and
+  response-triggered OAuth request replay. The agent-safe path also uses narrow
+  response projections and requires an explicit ``ACTIVE`` course state.
+- Verified the minimal no-attachment smoke workflow end to end against the exact
+  allowlisted pilot course: one ``DRAFT`` was created, fetched by ID, and matched
+  against the approved shape. Offline coursework, auth/transport, admin, restricted
+  agent, and Classroom50 suites pass alongside all CLI parse cases.
+- Added the administrator ``course-gclass-admin`` command for offline assignment
+  previews, isolated OAuth authorization/status, and confirmed assignment creation.
+- Added complete stable REST v1 assignment request builders for scheduling, due
+  dates, grading, assignees, topics, grading periods, Drive/link/YouTube materials,
+  and optional inline scored or unscored rubrics.
+- Added zero-retry mutation orchestration. Rubric workflows create a draft first,
+  attach the rubric, and only then publish or schedule; ambiguous and partial
+  outcomes expose recovery identifiers without silently retrying or deleting.
+- Course aliases are resolved before mutation, and staged releases revalidate
+  scheduling and deadline constraints immediately before publication/scheduling.
+- Added account-scoped JSON coursework tokens with a fixed, verified grant set,
+  canonical OAuth endpoints, strict POSIX file checks, atomic writes, and per-token
+  locks. The legacy pickle token is not read by this surface.
+- OAuth replacement now explicitly requests offline consent and preserves existing
+  storage unless Google returns a durable refresh token.
+- OAuth token parsing accepts Google's additional ``openid``/``email`` identity
+  scopes without enabling global relaxed-scope handling; unrelated or missing
+  permissions still fail closed.
+- Added a hidden-input, direct-loopback callback helper for headless remote OAuth;
+  OAuth dependency logging is suppressed during the exchange so callback codes and
+  bearer tokens are not emitted by verbose library loggers.
+- The Google Classroom agent entrypoint now explicitly refuses
+  ``create-assignment``.
 - Added Classroom50 (foundation50) integration: wrap ``gh teacher`` for preflight,
   list classrooms/roster/assignments, roster sync into local DB, C50 CSV export,
   and human-only submission download (``--download-classroom50``).

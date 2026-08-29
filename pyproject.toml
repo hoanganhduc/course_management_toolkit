@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "course-hoanganhduc"
-version = "0.1.4"
+version = "0.2.0"
 description = "Course management utilities for roster, grading, and LMS workflows."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -15,8 +15,8 @@ classifiers = [
 dependencies = [
   "canvasapi",
   "google-api-python-client",
-  "google-auth",
-  "google-auth-oauthlib",
+  "google-auth>=2.15.0",
+  "google-auth-oauthlib>=1.0.0",
   "numpy",
   "opencv-python",
   "openpyxl",
@@ -33,6 +33,7 @@ dependencies = [
 
 [project.scripts]
 course = "course_hoanganhduc.cli:main"
+course-gclass-admin = "course_hoanganhduc.gclass_admin_cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

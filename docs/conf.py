@@ -6,7 +6,7 @@ sys.path.insert(0, os.path.abspath('..'))
 
 project = 'Course Management Toolkit'
 author = 'Duc A. Hoang'
-version = '0.1.4'
+version = '0.2.0'
 release = version
 
 extensions = [

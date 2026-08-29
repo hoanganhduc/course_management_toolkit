@@ -1,0 +1,55 @@
+{
+  "title": "Project submission",
+  "description": "Complete the template and submit your own copy.",
+  "state": "DRAFT",
+  "scheduled_at": "2099-09-01T08:00:00+07:00",
+  "due_at": "2099-09-08T23:59:00+07:00",
+  "max_points": 10,
+  "materials": [
+    {
+      "type": "drive_file",
+      "file_id": "REPLACE_WITH_DRIVE_FILE_ID",
+      "share_mode": "STUDENT_COPY"
+    },
+    {
+      "type": "link",
+      "url": "https://example.edu/project-guide"
+    },
+    {
+      "type": "youtube",
+      "video_id": "REPLACE_WITH_YOUTUBE_VIDEO_ID"
+    }
+  ],
+  "assignee": {
+    "mode": "ALL_STUDENTS",
+    "student_ids": []
+  },
+  "submission_modification_mode": "MODIFIABLE_UNTIL_TURNED_IN",
+  "topic_id": "REPLACE_WITH_TOPIC_ID",
+  "grading_period": {
+    "mode": "AUTO"
+  },
+  "rubric": {
+    "scoring_mode": "SCORED",
+    "criteria": [
+      {
+        "title": "Correctness",
+        "description": "The result and reasoning are correct.",
+        "levels": [
+          {
+            "title": "Not demonstrated",
+            "points": 0
+          },
+          {
+            "title": "Partially demonstrated",
+            "points": 5
+          },
+          {
+            "title": "Fully demonstrated",
+            "points": 10
+          }
+        ]
+      }
+    ]
+  }
+}

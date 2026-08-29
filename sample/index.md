@@ -19,6 +19,14 @@ Gradebook and Company samples (`sample/mat/`, `sample/overrides/`, `sample/`):
 
 Config samples (`sample/config/`):
 - `config.sample.json`: Full configuration template for local setup.
-- `credentials.sample.json`: Google service account credential template.
+- `credentials.sample.json`: Google service account credential template for legacy
+  workflows; service accounts are not accepted by the human assignment creator.
+
+Google Classroom assignment samples (`sample/google_classroom/`):
+- `assignment-minimal.sample.json`: Draft assignment with no attachment or rubric.
+- `assignment-test-draft.sample.json`: Safe no-attachment draft used for a live
+  integration check.
+- `assignment-full.sample.json`: Every stable supported option. Replace all IDs and
+  the example timestamps before previewing or creating it.
 
 All placeholder student names/IDs are consistent across the files above.

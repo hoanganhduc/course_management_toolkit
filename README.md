@@ -1,4 +1,4 @@
-﻿# Course Management Toolkit
+# Course Management Toolkit
 
 <div align="center">
   <a href="https://www.buymeacoffee.com/hoanganhduc" target="_blank" rel="noopener noreferrer">
@@ -9,7 +9,7 @@
   </a>
 </div>
 
-![Version](https://img.shields.io/github/v/release/hoanganhduc/course_management_toolkit?label=version) ![Pre-release](https://img.shields.io/github/v/tag/hoanganhduc/course_management_toolkit?label=pre-release&sort=semver) ![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python) ![GitHub](https://img.shields.io/badge/GitHub-Repo-black?logo=github) ![Docker](https://img.shields.io/badge/Docker-ready-blue?logo=docker) ![GitHub](https://img.shields.io/badge/GitHub-Repo-black?logo=github) ![Status](https://img.shields.io/badge/status-work--in--progress-yellow) ![License](https://img.shields.io/github/license/hoanganhduc/course_management_toolkit)
+![Version](https://img.shields.io/github/v/release/hoanganhduc/course_management_toolkit?label=version) ![Pre-release](https://img.shields.io/github/v/tag/hoanganhduc/course_management_toolkit?label=pre-release&sort=semver) ![Python](https://img.shields.io/badge/Python-3.9%2B-blue?logo=python) ![GitHub](https://img.shields.io/badge/GitHub-Repo-black?logo=github) ![Docker](https://img.shields.io/badge/Docker-ready-blue?logo=docker) ![GitHub](https://img.shields.io/badge/GitHub-Repo-black?logo=github) ![Status](https://img.shields.io/badge/status-work--in--progress-yellow) ![License](https://img.shields.io/github/license/hoanganhduc/course_management_toolkit)
 
 Utilities for managing course rosters, grading, OCR extraction, Canvas/Google Classroom workflows, and **Classroom50** (foundation50) roster sync. Includes **agent-safe entrypoints** for AI coding agents (restricted surfaces; destructive LMS ops stay on the interactive `course` CLI). **Work in progress**, mainly designed for **personal use** but open-sourced for others to adapt. Code with the help of [GitHub Copilot](https://github.com/features/copilot/) and [ChatGPT Codex](https://openai.com/).
 
@@ -147,7 +147,7 @@ For AI agents (and for restricted automation), prefer dedicated modules that for
 | --- | --- | --- | --- |
 | `python -m course_hoanganhduc.c50_agent` | Classroom50 | preflight, list-*, sync, export | download |
 | `python -m course_hoanganhduc.canvas_agent` | Canvas | preflight, list-assignments/members, search-user, sync | unenroll, grade, invite, announce, download, messages, pages |
-| `python -m course_hoanganhduc.gclass_agent` | Google Classroom | preflight, list-courses/students, sync | unenroll, grade, download |
+| `python -m course_hoanganhduc.gclass_agent` | Google Classroom | preflight, list-courses/students, sync | create-assignment, unenroll, grade, download |
 | `python -m course_hoanganhduc.db_agent` | Local students.db | search, details, list-*, export-*, count | modify, restore-db, import-apply, delete |
 
 Examples:
@@ -168,7 +168,8 @@ python -m course_hoanganhduc.db_agent export-roster --db students.db
 | --- | --- |
 | `CLASSROOM50_ORG_ALLOWLIST` | `c50_agent` / Classroom50 ops |
 | `CANVAS_COURSE_ALLOWLIST` | `canvas_agent` |
-| `GCLASS_COURSE_ALLOWLIST` | `gclass_agent` |
+| `GCLASS_COURSE_ALLOWLIST` | `gclass_agent` / narrow admin smoke test |
+| `GCLASS_ACCOUNT_ALLOWLIST` | narrow Google Classroom admin smoke test |
 
 Comma-separated ids. Empty allowlist with a required id fails closed.
 
@@ -186,6 +187,209 @@ course -lca
 ```
 
 Google Classroom workflows:
+
+### Create a Google Classroom assignment
+
+Assignment creation has a separate administrator command. The restricted agent
+entrypoint refuses it, and it never uses the legacy pickle-token flow. This is an
+application guard, not a security boundary against a process running as the same OS
+user; use a separate OS identity or user-presence credential broker when hostile
+same-user automation is in scope.
+
+`course` remains the toolkit's general installed CLI. Installing the package also
+adds `course-gclass-admin`, the dedicated assignment-administration entrypoint;
+`python -m course_hoanganhduc.gclass_admin_cli` invokes the same CLI and accepts the
+same subcommands and options.
+
+The administrator CLI currently owns **assignment creation only**; it is not a
+replacement for every Google Classroom workflow. Course/student listing and roster
+sync remain on the existing `course` and restricted `gclass_agent` surfaces, while
+grading, unenroll, and submission/Drive download remain human-only `course`
+operations. Its isolated account-scoped JSON token, fixed scopes, verified principal,
+filesystem checks, and one-shot transport are materially safer for assignment
+creation than the legacy pickle-token path, but other capabilities need their own
+scopes and behavior. The current split is intentional and supported: keep using
+`course-gclass-admin` for assignment creation and the existing commands for their
+documented workflows. Their credential stores are deliberately separate and are not
+interchangeable.
+
+Preview a minimal assignment without credentials, OAuth, or network access:
+
+```bash
+course-gclass-admin create-assignment \
+  --course-id d:my-course \
+  --spec sample/google_classroom/assignment-minimal.sample.json \
+  --dry-run
+```
+
+Authorize the exact teacher account once, then create with one readable `y/N`
+confirmation. Authorization opens Google's browser OAuth consent: it grants the
+external Classroom permissions, rather than confirming a package-local operation.
+The human flow no longer asks you to type an `AUTH ...`, `CREATE ...`, `SHARE ...`,
+or digest phrase. A revoked token, changed grant, or explicit `--replace-token`
+operation can require Google consent again; otherwise later commands reuse the
+stored refresh token and refresh an expired access token automatically.
+
+```bash
+course-gclass-admin authorize --account teacher@example.edu
+
+course-gclass-admin create-assignment \
+  --account teacher@example.edu \
+  --course-id d:my-course \
+  --spec sample/google_classroom/assignment-minimal.sample.json
+```
+
+Trusted local automation with a pre-existing token can skip the prompt for a draft
+with no Drive-sharing effects. It still verifies the account, resolves and validates
+the active course, and is refused by the restricted agent entrypoint:
+
+```bash
+course-gclass-admin create-assignment \
+  --account teacher@example.edu \
+  --course-id 123456789012 \
+  --spec sample/google_classroom/assignment-minimal.sample.json \
+  --yes
+```
+
+The execution modes have deliberately different boundaries:
+
+| Mode | Credentials and network | Confirmation and allowed result |
+| --- | --- | --- |
+| `--dry-run` | Neither required; no Google call is made | No prompt; emits only a canonical operation plan and digest |
+| Interactive create | Verifies the account and active course; can use the stored token | One readable `y/N` prompt; supports draft, publish, schedule, Drive sharing, and rubrics |
+| `--yes` | Requires an existing token, disables browser launch, and still verifies the account and course | No prompt; limited to a draft with no Drive-sharing effects and refused in general agent mode |
+| Agent-safe automation | Requires explicit agent mode, exact allowlists, an existing token, a canonical course ID, and a separately prepared bound digest | No terminal prompt; limited to the minimal draft smoke-test shape described below |
+
+Published, scheduled, or Drive-sharing assignments therefore always use the single
+interactive confirmation.
+
+For a cooperative, user-authorized agent smoke test, the administrator CLI has a
+separate minimal-draft path. It is not a general agent mutation API: the normal
+`gclass_agent` command still refuses creation. The path requires explicit agent
+mode, exact account/course allowlists, an existing token, a canonical course ID, no
+materials/rubric/deadline/points/topic/targeting, and an approval digest from a
+separate preparation command. Preparation can refresh credential files but performs
+no Classroom mutation:
+
+```bash
+COURSE_AGENT_MODE=1 \
+GCLASS_ACCOUNT_ALLOWLIST=teacher@example.edu \
+GCLASS_COURSE_ALLOWLIST=123456789012 \
+course-gclass-admin prepare-agent-safe-draft \
+  --account teacher@example.edu \
+  --course-id 123456789012 \
+  --spec sample/google_classroom/assignment-test-draft.sample.json
+```
+
+After the user or trusted harness approves that exact envelope, run
+`create-assignment` with the same environment and arguments plus
+`--agent-safe-draft --yes --expect-approval-digest DIGEST`. The live
+path holds a per-token lock, scans every coursework state with pagination, reuses one
+identical developer-associated draft, blocks collisions, creates through the
+one-shot transport, and reads the selected draft back. The digest is supplied as an
+argument by the approved automation; the CLI does not ask a person to retype it.
+Environment allowlists and digests prevent accidental drift but do not protect
+against hostile code running as the same OS user.
+
+The dedicated Classroom transport disables response-triggered authentication
+replay, HTTP adapter retries, redirects, and `google-api-python-client` retries for
+each API call. Token refresh may occur before a Classroom request, but the request
+itself is sent at most once. A connection failure after a create POST can still make
+the result unknowable; `outcome_unknown` (exit 3) and `partial_create` (exit 4,
+including a failed read-back) are terminal receipts. Inspect Classroom before any
+manual rerun—never retry either outcome automatically.
+
+On a headless remote host, keep authorization running in the first terminal:
+
+```bash
+course-gclass-admin authorize \
+  --account teacher@example.edu \
+  --no-open-browser
+```
+
+After consenting in a browser, its redirect to `127.0.0.1` may not reach the
+remote host. Note the new redirect URL's port, open a second terminal on the remote
+host, and run:
+
+```bash
+course-gclass-admin complete-loopback --port PORT
+```
+
+Paste the complete browser redirect URL only at the hidden prompt. The helper
+accepts only the matching `http://127.0.0.1:PORT/` callback, connects directly
+without a proxy or redirect, and does not put the authorization code in shell
+history or process arguments. Do not use the callback from an earlier attempt.
+
+Course aliases (`d:` or `p:`) are resolved with `courses.get` before the first
+write. This applies to the public assignment state machine as well as the CLI, so
+follow-up rubric and release calls are bound to Google's canonical course ID.
+
+The spec supports draft, published, or scheduled assignments; UTC-normalized due
+dates; points; all-student or individual assignment; submission modification mode;
+topic and grading-period selection; Drive, HTTPS link, and YouTube materials; and an
+optional inline scored or unscored rubric. Omit `materials`, use `null`, or use `[]`
+for an assignment without attachments. See `docs/usage.rst` for the complete schema
+and credential rules.
+
+The new credentials are deliberately isolated from legacy Google operations:
+
+- The fixed requested scope set is Classroom coursework-students, courses-readonly,
+  and the Google OAuth `userinfo.email` scope (primary account email only). Google
+  can additionally report the OpenID Connect `openid`/`email` identity scopes
+  in the grant response; only those documented additions are accepted. Every
+  requested permission must still be present, and any unrelated extra permission
+  fails closed. The token file records and validates both requested and actually
+  reported grants.
+- Linux defaults to
+  `$XDG_CONFIG_HOME/course/google-classroom/` (or
+  `~/.config/course/google-classroom/`); macOS uses
+  `~/Library/Application Support/course/google-classroom/`.
+- Tokens are account-scoped JSON files, not `token.pickle`. Custom credential paths
+  must be absolute, outside Git worktrees, and a custom OAuth client path must be
+  paired with a token path.
+- OAuth client/token files must be owned by the current user and mode `0600`; their
+  directories must not be writable by another user. Use `chmod 600 FILE` and
+  `chmod 700 DIRECTORY` on POSIX systems.
+- Native Windows mutation currently fails closed because equivalent ACL and reparse
+  point protections have not yet been verified.
+- Interactive authorization requests offline consent and stores a new token only
+  when Google returns a durable refresh token. A failed replacement leaves the
+  existing token unchanged.
+- OAuth dependency logging that could contain callback codes or bearer tokens is
+  suppressed during the interactive exchange.
+
+Inspect credential presence, safety, scope/client matching, expiry, and refreshability
+without refreshing a token, launching OAuth, writing, or calling Google. By default,
+the result contains safe names and fingerprints rather than full paths:
+
+```bash
+course-gclass-admin auth-status --account teacher@example.edu
+```
+
+Add `--show-paths` only when you need to discover the fully resolved credential and
+token locations for local troubleshooting; its output can reveal local filesystem
+layout:
+
+```bash
+course-gclass-admin auth-status \
+  --account teacher@example.edu \
+  --show-paths
+```
+
+Environment overrides are `COURSE_GCLASS_CREDENTIALS` and
+`COURSE_GCLASS_COURSEWORK_TOKEN`. The legacy `GOOGLE_CLASSROOM_*` variables and
+`token.pickle` are never used by assignment creation.
+
+Verification recorded on 2026-08-29:
+
+- 116 offline regression tests passed across coursework construction/state handling,
+  isolated authorization, the administrator CLI, restricted agent surfaces, and
+  Classroom50 integration; all 215 general CLI flags also passed parser dry-runs.
+- A user-authorized, allowlisted live smoke test created one minimal `DRAFT` with no
+  attachment, deadline, points, or rubric, and strict read-back verification passed.
+- Live publishing/scheduling, Drive sharing, rubrics, and native Windows credential
+  mutation remain outside that smoke-test coverage; native Windows continues to fail
+  closed.
 
 Sync Google Classroom roster into the local database:
 

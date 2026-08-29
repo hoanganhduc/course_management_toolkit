@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Agent-safe Google Classroom entrypoint (course-google-classroom skill).
 
-Does not expose unenroll, grade, or submission download.
+Does not expose assignment creation, unenroll, grade, or submission download.
 """
 
 from __future__ import annotations
@@ -41,13 +41,27 @@ def main(argv: Optional[List[str]] = None) -> int:
     p_sync.add_argument("--db", default="students.db")
     p_sync.add_argument("--credentials", default=None)
     p_sync.add_argument("--token", default=None)
-    for bad in ("unenroll", "grade", "download"):
+    for bad in (
+        "create",
+        "create-assignment",
+        "create-coursework",
+        "unenroll",
+        "grade",
+        "download",
+    ):
         sub.add_parser(bad, help="(refused) not agent-safe")
 
     args = parser.parse_args(argv)
 
     try:
-        if args.cmd in {"unenroll", "grade", "download"}:
+        if args.cmd in {
+            "create",
+            "create-assignment",
+            "create-coursework",
+            "unenroll",
+            "grade",
+            "download",
+        }:
             refuse(args.cmd)
 
         cred = (

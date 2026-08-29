@@ -13,6 +13,18 @@ API Reference
 .. automodule:: course_hoanganhduc.google_classroom
    :members:
 
+Google Classroom assignment creation
+------------------------------------
+
+.. automodule:: course_hoanganhduc.gclass_coursework
+   :members:
+
+.. automodule:: course_hoanganhduc.gclass_coursework_auth
+   :members:
+
+.. automodule:: course_hoanganhduc.gclass_admin_cli
+   :members:
+
 Agent and Classroom50 modules
 -----------------------------
 

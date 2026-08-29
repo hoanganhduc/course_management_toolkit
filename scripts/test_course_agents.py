@@ -107,6 +107,9 @@ class TestCanvasGclassAgent(unittest.TestCase):
         self.assertEqual(gclass_main(["unenroll"]), 1)
         self.assertEqual(gclass_main(["download"]), 1)
         self.assertEqual(gclass_main(["grade"]), 1)
+        self.assertEqual(gclass_main(["create-assignment"]), 1)
+        self.assertEqual(gclass_main(["create-coursework"]), 1)
+        self.assertEqual(gclass_main(["create"]), 1)
 
     def test_allowlist_required(self):
         os.environ["COURSE_AGENT_MODE"] = "1"

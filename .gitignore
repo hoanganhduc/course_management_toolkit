@@ -18,6 +18,10 @@ dist/
 config.json
 credentials.json
 token.pickle
+coursework-token*.json
+coursework-token*.meta.json
+**/google-classroom/tokens/*.json
+**/google-classroom/tokens/*.meta.json
 students.db
 final_evaluations/
 final_grade_distribution.txt

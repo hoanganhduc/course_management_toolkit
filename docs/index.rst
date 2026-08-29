@@ -9,7 +9,7 @@ Last updated: |today|
 Package information
 -------------------
 
-- Version: 0.1.4 (+ unreleased Classroom50 / agent entrypoints)
+- Version: 0.2.0
 - GitHub: https://github.com/hoanganhduc/course_management_toolkit
 - Donations:
   - Buy Me a Coffee: https://www.buymeacoffee.com/hoanganhduc
@@ -18,6 +18,9 @@ Package information
 Recent updates
 --------------
 
+- Google Classroom assignment administration: isolated OAuth credentials, complete
+  stable assignment options, safe automation, duplicate detection, and strict
+  read-back verification through ``course-gclass-admin``.
 - Classroom50 (foundation50): list/sync/export roster via ``gh teacher`` wrapper; human-only download.
 - Agent-safe modules: ``c50_agent``, ``canvas_agent``, ``gclass_agent``, ``db_agent`` with allowlists.
 - Canvas/Google Classroom sync now normalizes scores to a 10-point scale when possible.
