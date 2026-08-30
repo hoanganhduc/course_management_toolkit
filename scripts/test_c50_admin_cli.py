@@ -8,6 +8,7 @@ import io
 import json
 import os
 import sys
+import tempfile
 import unittest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -633,6 +634,208 @@ class TestAdminCLIInviteAndDownload(_CLICase):
             runner=run,
         )
         self.assertEqual(code, 0)
+
+
+class _TestsFileCase(unittest.TestCase):
+    """Weekly registration needs a real `--tests` file, so give each case one."""
+
+    def setUp(self):
+        self.cli = HumanCLI(runner=_runner({}))
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.tests_path = os.path.join(self.tmp.name, "classroom50-tests.json")
+        with open(self.tests_path, "w", encoding="utf-8") as handle:
+            json.dump([{"type": "run", "cmd": "python3 hello.py"}], handle)
+
+    def write(self, name, text):
+        path = os.path.join(self.tmp.name, name)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(text)
+        return path
+
+
+class TestWeeklyAssignmentFlags(_TestsFileCase):
+    def test_argv_matches_the_runbook_weekly_command(self):
+        argv = self.cli.assignment_add_argv(
+            "VNU-HUS",
+            "classroom50-pilot-2026",
+            "w00-individual-onboarding",
+            name="Week 0A",
+            template="VNU-HUS/introai-w00-individual-template@main",
+            tests=self.tests_path,
+            available_from="2026-09-04T13:00:00+07:00",
+            due="2026-09-11T23:59:00+07:00",
+            feedback_pr=True,
+            pass_threshold=100,
+            mode="individual",
+        )
+        self.assertEqual(
+            argv,
+            [
+                "gh", "teacher", "assignment", "add",
+                "VNU-HUS", "classroom50-pilot-2026", "w00-individual-onboarding",
+                "--name", "Week 0A",
+                "--template", "VNU-HUS/introai-w00-individual-template@main",
+                "--tests", self.tests_path,
+                "--mode", "individual",
+                "--available-from", "2026-09-04T13:00:00+07:00",
+                "--due", "2026-09-11T23:59:00+07:00",
+                "--feedback-pr",
+                "--pass-threshold", "100",
+            ],
+        )
+
+    def test_feedback_pr_disabled_uses_the_equals_form(self):
+        argv = self.cli.assignment_add_argv("O", "C", "w0", name="x", feedback_pr=False)
+        self.assertIn("--feedback-pr=false", argv)
+        self.assertNotIn("--feedback-pr", argv)
+
+    def test_feedback_pr_omitted_when_unset(self):
+        argv = self.cli.assignment_add_argv("O", "C", "w0", name="x")
+        self.assertFalse([a for a in argv if a.startswith("--feedback-pr")])
+
+    def test_missing_tests_file_is_refused(self):
+        with self.assertRaises(Classroom50Error) as ctx:
+            self.cli.assignment_add_argv(
+                "O", "C", "w0", name="x", tests=os.path.join(self.tmp.name, "nope.json")
+            )
+        self.assertEqual(ctx.exception.code, "invalid_tests_file")
+
+    def test_unparsable_tests_file_is_refused(self):
+        path = self.write("bad.json", "{not json")
+        with self.assertRaises(Classroom50Error) as ctx:
+            self.cli.assignment_add_argv("O", "C", "w0", name="x", tests=path)
+        self.assertEqual(ctx.exception.code, "invalid_tests_file")
+
+    def test_tests_file_must_hold_an_array(self):
+        path = self.write("obj.json", '{"tests": []}')
+        with self.assertRaises(Classroom50Error) as ctx:
+            self.cli.assignment_add_argv("O", "C", "w0", name="x", tests=path)
+        self.assertEqual(ctx.exception.code, "invalid_tests_file")
+
+    def test_empty_repo_conflicts_with_every_autograded_flag(self):
+        cases = {
+            "tests": self.tests_path,
+            "feedback_pr": True,
+            "pass_threshold": 100,
+            "allowed_files": ["*"],
+            "template": "o/t",
+        }
+        for keyword, value in cases.items():
+            with self.subTest(keyword=keyword):
+                with self.assertRaises(Classroom50Error) as ctx:
+                    self.cli.assignment_add_argv(
+                        "O", "C", "w0", name="x", empty_repo=True, **{keyword: value}
+                    )
+                self.assertEqual(ctx.exception.code, "mutually_exclusive")
+
+    def test_pass_threshold_outside_percentage_range_is_refused(self):
+        for value in (-1, 101):
+            with self.subTest(value=value):
+                with self.assertRaises(Classroom50Error) as ctx:
+                    self.cli.assignment_add_argv(
+                        "O", "C", "w0", name="x", pass_threshold=value
+                    )
+                self.assertEqual(ctx.exception.code, "invalid_pass_threshold")
+
+    def test_pass_threshold_zero_is_emitted(self):
+        argv = self.cli.assignment_add_argv("O", "C", "w0", name="x", pass_threshold=0)
+        self.assertEqual(argv[-2:], ["--pass-threshold", "0"])
+
+    def test_allowed_files_preserve_their_order(self):
+        argv = self.cli.assignment_add_argv(
+            "O", "C", "w0", name="x", allowed_files=["*", "!hello.py"]
+        )
+        self.assertEqual(
+            argv[-4:],
+            ["--allowed-files", "*", "--allowed-files", "!hello.py"],
+        )
+
+    def test_allowed_files_reject_a_flaglike_pattern(self):
+        with self.assertRaises(Classroom50Error) as ctx:
+            self.cli.assignment_add_argv(
+                "O", "C", "w0", name="x", allowed_files=["--force"]
+            )
+        self.assertEqual(ctx.exception.code, "flaglike_operand")
+
+    def test_student_permission_is_validated(self):
+        with self.assertRaises(Classroom50Error) as ctx:
+            self.cli.assignment_add_argv(
+                "O", "C", "w0", name="x", student_permission="owner"
+            )
+        self.assertEqual(ctx.exception.code, "invalid_permission")
+        argv = self.cli.assignment_add_argv(
+            "O", "C", "w0", name="x", student_permission="admin"
+        )
+        self.assertEqual(argv[-2:], ["--student-permission", "admin"])
+
+
+class TestAdminCLIWeeklyRegistration(_CLICase):
+    def setUp(self):
+        super().setUp()
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.tests_path = os.path.join(self.tmp.name, "classroom50-tests.json")
+        with open(self.tests_path, "w", encoding="utf-8") as handle:
+            json.dump([], handle)
+
+    def test_dry_run_reproduces_the_weekly_command(self):
+        calls = []
+        code, _ = self.run_cli(
+            [
+                "assignment-add", "--org", "VNU-HUS",
+                "--classroom", "classroom50-pilot-2026",
+                "--slug", "w00-group-collaboration", "--name", "Week 0B",
+                "--template", "VNU-HUS/introai-w00-group-template@main",
+                "--tests", self.tests_path,
+                "--available-from", "2026-09-04T13:00:00+07:00",
+                "--due", "2026-09-11T23:59:00+07:00",
+                "--feedback-pr", "--pass-threshold", "100",
+                "--mode", "group", "--max-group-size", "5",
+                "--dry-run",
+            ],
+            runner=_runner({}, calls),
+        )
+        self.assertEqual(code, 0)
+        payload = json.loads(self.out.getvalue())
+        self.assertEqual(calls, [])
+        self.assertEqual(
+            payload["argv"],
+            [
+                "gh", "teacher", "assignment", "add",
+                "VNU-HUS", "classroom50-pilot-2026", "w00-group-collaboration",
+                "--name", "Week 0B",
+                "--template", "VNU-HUS/introai-w00-group-template@main",
+                "--tests", self.tests_path,
+                "--mode", "group",
+                "--max-group-size", "5",
+                "--available-from", "2026-09-04T13:00:00+07:00",
+                "--due", "2026-09-11T23:59:00+07:00",
+                "--feedback-pr",
+                "--pass-threshold", "100",
+            ],
+        )
+
+    def test_no_feedback_pr_flag_reaches_the_adapter(self):
+        code, _ = self.run_cli(
+            [
+                "assignment-add", "--org", "O", "--classroom", "C",
+                "--slug", "w0", "--name", "W0", "--no-feedback-pr", "--dry-run",
+            ]
+        )
+        self.assertEqual(code, 0)
+        self.assertIn("--feedback-pr=false", json.loads(self.out.getvalue())["argv"])
+
+    def test_missing_tests_file_exits_two(self):
+        code, _ = self.run_cli(
+            [
+                "assignment-add", "--org", "O", "--classroom", "C",
+                "--slug", "w0", "--name", "W0",
+                "--tests", os.path.join(self.tmp.name, "absent.json"), "--dry-run",
+            ]
+        )
+        self.assertEqual(code, 2)
+        self.assertEqual(json.loads(self.err.getvalue())["code"], "invalid_tests_file")
 
 
 if __name__ == "__main__":

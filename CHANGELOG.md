@@ -1,5 +1,23 @@
 ﻿# Changelog
 
+## [0.3.1] - 2026-08-30
+
+- `course-c50-admin assignment-add` now covers autograded weekly registration:
+  `--tests`, `--feedback-pr` / `--no-feedback-pr`, `--pass-threshold`, `--allowed-files`
+  (repeatable, order preserved), and `--student-permission`. Without them the adapter
+  could express only the empty-repository final project, so weekly registration had no
+  guarded path.
+- `--tests` is checked before the call: the path must be a readable JSON file holding a
+  bare array of test specs. The pinned CLI's `-` stdin form is not offered because no
+  operand may begin with `-`.
+- `--empty-repo` is now refused together with any of `--template`, `--tests`,
+  `--feedback-pr`, `--allowed-files`, and `--pass-threshold`, matching the pinned CLI,
+  where the empty-repository setting is immutable after creation.
+- Fixed `docs/cli_reference.rst`, which listed `--tests`, `--feedback-pr`,
+  `--allowed-files`, `--pass-threshold`, `--student-permission`, and `--locked` before
+  any of them were implemented. `--locked` is not a flag of `gh teacher assignment add`
+  at all; `--autograder` and `--runtime` stay with the reviewed raw command.
+
 ## [0.3.0] - 2026-08-29
 
 - Added `course-c50-admin`, a human-only Classroom50 operator CLI with

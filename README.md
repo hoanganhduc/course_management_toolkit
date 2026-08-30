@@ -153,9 +153,11 @@ course-c50-admin assignment-add --org my-org --classroom short-name \
   --slug final-project --name "Final Examination Mini-Project" \
   --mode group --max-group-size 5 --empty-repo --dry-run
 
-# Register an assignment (interactive confirmation)
+# Register an autograded weekly assignment (interactive confirmation)
 course-c50-admin assignment-add --org my-org --classroom short-name \
-  --slug week-1 --name "Week 1" --template my-org/week-1-template
+  --slug week-1 --name "Week 1" --template my-org/week-1-template@main \
+  --tests ./week-1/classroom50-tests.json --feedback-pr --pass-threshold 100 \
+  --mode individual
 
 # Remove an assignment entry (does not delete student repositories)
 course-c50-admin assignment-remove --org my-org --classroom short-name --slug week-1
@@ -176,6 +178,10 @@ Guards worth knowing before you run it:
   the default every-push mode and discards a tagged-commit setting made in the web form.
   Overwriting requires both `--allow-overwrite` and an interactive confirmation; there is
   no `--yes`.
+- **`--tests` is validated before the call.** It must name a readable JSON file holding
+  a bare array of test specs. `--empty-repo` is refused together with `--template`,
+  `--tests`, `--feedback-pr`, `--allowed-files`, or `--pass-threshold`, matching the
+  pinned CLI, whose empty-repository setting is immutable after creation.
 - **`assignment-remove` refuses an absent slug** instead of exiting 0, and its confirmation
   states that student repositories survive and that re-adding the same slug is not a clean
   reset.

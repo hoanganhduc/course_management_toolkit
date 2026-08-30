@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from typing import Any, List, Optional
 
@@ -27,6 +28,29 @@ def _operand(value: Any, label: str, *, code: str = "missing_params") -> str:
             f"{label} must not begin with '-'", code="flaglike_operand"
         )
     return text
+
+
+def _tests_file(path: str) -> str:
+    """Validate the `--tests` payload the pinned CLI expects: a readable JSON file
+    holding a bare array of test specs. The CLI also accepts `-` for stdin, which this
+    adapter cannot offer because every operand is rejected when it begins with '-'."""
+    if not os.path.isfile(path):
+        raise Classroom50Error(
+            f"tests file not found: {path}", code="invalid_tests_file"
+        )
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            parsed = json.load(handle)
+    except (OSError, ValueError) as exc:
+        raise Classroom50Error(
+            f"tests file is not readable JSON: {exc}", code="invalid_tests_file"
+        )
+    if not isinstance(parsed, list):
+        raise Classroom50Error(
+            "tests file must hold a bare JSON array of test specs",
+            code="invalid_tests_file",
+        )
+    return path
 
 
 def validate_target(target: str) -> str:
@@ -67,6 +91,11 @@ class HumanCLI:
         available_from: Optional[str] = None,
         due: Optional[str] = None,
         empty_repo: bool = False,
+        tests: Optional[str] = None,
+        feedback_pr: Optional[bool] = None,
+        pass_threshold: Optional[int] = None,
+        allowed_files: Optional[List[str]] = None,
+        student_permission: Optional[str] = None,
     ) -> List[str]:
         org = _operand(org, "org")
         classroom = _operand(classroom, "classroom")
@@ -77,11 +106,6 @@ class HumanCLI:
                 code="invalid_slug",
             )
         name = _operand(name, "name", code="missing_name")
-        if empty_repo and template:
-            raise Classroom50Error(
-                "--empty-repo and --template are mutually exclusive",
-                code="mutually_exclusive",
-            )
         if mode is not None and mode not in _MODES:
             raise Classroom50Error(
                 f"mode must be one of {', '.join(_MODES)}", code="invalid_mode"
@@ -101,6 +125,48 @@ class HumanCLI:
                 code="max_group_size_without_group",
             )
 
+        # v1.25.1 rejects these five alongside --empty-repo, and the setting is
+        # immutable after creation, so catch the combination before the network call.
+        conflicting = [
+            flag
+            for flag, given in (
+                ("--template", bool(template)),
+                ("--tests", tests is not None),
+                ("--feedback-pr", feedback_pr is not None),
+                ("--allowed-files", bool(allowed_files)),
+                ("--pass-threshold", pass_threshold is not None),
+            )
+            if given
+        ]
+        if empty_repo and conflicting:
+            raise Classroom50Error(
+                "--empty-repo is mutually exclusive with " + ", ".join(conflicting),
+                code="mutually_exclusive",
+            )
+        if tests is not None:
+            tests = _tests_file(_operand(tests, "tests"))
+        if pass_threshold is not None:
+            try:
+                pass_threshold = int(pass_threshold)
+            except (TypeError, ValueError):
+                raise Classroom50Error(
+                    "--pass-threshold must be an integer percentage",
+                    code="invalid_pass_threshold",
+                )
+            if not 0 <= pass_threshold <= 100:
+                raise Classroom50Error(
+                    "--pass-threshold must be between 0 and 100",
+                    code="invalid_pass_threshold",
+                )
+        if student_permission is not None and student_permission not in _PERMISSIONS:
+            raise Classroom50Error(
+                f"--student-permission must be one of {', '.join(_PERMISSIONS)}",
+                code="invalid_permission",
+            )
+        patterns = [
+            _operand(pattern, "allowed-files") for pattern in (allowed_files or [])
+        ]
+
         argv = [
             self._gh,
             "teacher",
@@ -116,6 +182,8 @@ class HumanCLI:
             argv += ["--description", _operand(description, "description")]
         if template:
             argv += ["--template", _operand(template, "template")]
+        if tests is not None:
+            argv += ["--tests", tests]
         if mode:
             argv += ["--mode", mode]
         if max_group_size is not None:
@@ -124,6 +192,15 @@ class HumanCLI:
             argv += ["--available-from", _operand(available_from, "available-from")]
         if due:
             argv += ["--due", _operand(due, "due")]
+        if feedback_pr is not None:
+            # Default is true in v1.25.1; disabling needs the `=false` form.
+            argv.append("--feedback-pr" if feedback_pr else "--feedback-pr=false")
+        if pass_threshold is not None:
+            argv += ["--pass-threshold", str(pass_threshold)]
+        for pattern in patterns:
+            argv += ["--allowed-files", pattern]
+        if student_permission:
+            argv += ["--student-permission", student_permission]
         if empty_repo:
             argv.append("--empty-repo")
         return argv

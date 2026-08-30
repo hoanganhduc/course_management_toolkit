@@ -128,10 +128,17 @@ Every subcommand refuses in agent mode, requires an interactive terminal unless
 free-form argument passthrough. The four subcommands are:
 
 - ``assignment-add --org ORG --classroom SHORT-NAME --slug SLUG --name NAME``
-  registers an assignment. Optional ``--template``, ``--tests``, ``--empty-repo``,
+  registers an assignment. Optional ``--description``, ``--template``,
   ``--mode {individual,group}``, ``--max-group-size N`` (required with ``--mode
-  group``), ``--available-from``, ``--due``, ``--feedback-pr``, ``--allowed-files``,
-  ``--pass-threshold``, ``--student-permission``, ``--description``, ``--locked``.
+  group``), ``--available-from``, ``--due``, ``--empty-repo``, ``--tests``,
+  ``--feedback-pr`` / ``--no-feedback-pr``, ``--pass-threshold``, ``--allowed-files``
+  (repeatable, order preserved), and ``--student-permission``. ``--tests`` must name a
+  readable JSON file holding a bare array of test specs; the pinned CLI's ``-`` stdin
+  form is not offered, because no operand may begin with ``-``. ``--empty-repo`` is
+  refused together with ``--template``, ``--tests``, ``--feedback-pr``,
+  ``--allowed-files``, or ``--pass-threshold``, matching the pinned CLI.
+  ``--autograder``, ``--runtime``, and the schema's ``locked`` field have no flag here
+  and stay with the reviewed raw command.
   ``gh teacher assignment add`` replaces an existing entry in place and the pinned CLI
   cannot set submission mode, so re-running it restores the default every-push mode and
   discards a tagged-commit setting made in the web form. An existing slug is therefore

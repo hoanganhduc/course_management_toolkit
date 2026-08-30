@@ -8,10 +8,13 @@
 - [x] Add the three agent refusal stubs.
 - [x] Update documentation, changelog, and version metadata.
 - [x] Run the offline verification matrix.
+- [x] Add the weekly (autograded) registration flags the first pass omitted, and correct the
+  reference documentation that named them before they existed.
+- [x] Install the package so the `course-c50-admin` console script resolves.
 
 ## Verification evidence
 
-- `scripts/test_c50_admin_cli.py` 52 tests OK, `scripts/test_classroom50.py` 23 tests OK,
+- `scripts/test_c50_admin_cli.py` 67 tests OK, `scripts/test_classroom50.py` 23 tests OK,
   `scripts/test_course_agents.py` 6 tests OK, `scripts/test_cli_flags.py` 215 flags parsed.
 - `compileall`, Python 3.9 grammar parsing of the package and scripts, `pyproject.toml` TOML
   parsing, and `git diff --check` all pass.
@@ -20,6 +23,10 @@
 - All four verbs on `python -m course_hoanganhduc.c50_agent` return the structured
   `<verb> is not available in agent mode` refusal with exit 1, and the admin CLI under
   `COURSE_C50_AGENT_MODE=1` returns `{"code": "agent_forbidden"}` with exit 2.
+- The installed console script at `/home/ubuntu/.course_venv/bin/course-c50-admin`
+  reproduces the runbook's weekly registration command argument for argument under
+  `--dry-run`, and refuses a missing, unparsable, or non-array `--tests` file, a
+  `--pass-threshold` outside 0-100, and `--empty-repo` combined with any autograded flag.
 
 ## Unchecked
 
@@ -30,3 +37,6 @@
   version invalidates the fixed argv builders.
 - `member list` needs the `admin:org` scope to report pending invitations; the installed
   token's scopes were not inspected, so the organization invite preflight may under-report.
+- `--autograder`, `--runtime`, and the assignment schema's `locked` field have no flag on
+  `assignment-add`. `locked` is not a `gh teacher assignment add` flag at all; setting it
+  needs the web form or a reviewed raw command.

@@ -98,6 +98,11 @@ def _add_kwargs(args: argparse.Namespace) -> Dict[str, Any]:
         "available_from": args.available_from,
         "due": args.due,
         "empty_repo": args.empty_repo,
+        "tests": args.tests,
+        "feedback_pr": args.feedback_pr,
+        "pass_threshold": args.pass_threshold,
+        "allowed_files": args.allowed_files,
+        "student_permission": args.student_permission,
     }
 
 
@@ -126,6 +131,44 @@ def _build_parser() -> argparse.ArgumentParser:
     add.add_argument("--available-from", default=None)
     add.add_argument("--due", default=None)
     add.add_argument("--empty-repo", action="store_true")
+    add.add_argument(
+        "--tests",
+        default=None,
+        help="Path to a JSON file holding a bare array of declarative test specs",
+    )
+    feedback = add.add_mutually_exclusive_group()
+    feedback.add_argument(
+        "--feedback-pr",
+        dest="feedback_pr",
+        action="store_true",
+        default=None,
+        help="Open the long-lived Feedback pull request (the pinned CLI default)",
+    )
+    feedback.add_argument(
+        "--no-feedback-pr", dest="feedback_pr", action="store_false"
+    )
+    add.add_argument(
+        "--pass-threshold",
+        type=int,
+        default=None,
+        help="Advisory passing bar as a percentage (0-100)",
+    )
+    add.add_argument(
+        "--allowed-files",
+        action="append",
+        default=None,
+        metavar="PATTERN",
+        help=(
+            "Ordered .gitignore-style pattern; repeatable, order preserved, "
+            "'!' re-includes"
+        ),
+    )
+    add.add_argument(
+        "--student-permission",
+        default=None,
+        choices=["pull", "triage", "push", "maintain", "admin"],
+        help="Collaborator role each student gets on their own repository",
+    )
     add.add_argument(
         "--allow-overwrite",
         action="store_true",
