@@ -1,0 +1,896 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>API Reference &#8212; Course Management Toolkit 0.2.0 documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="_static/basic.css?v=686e5160" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=27fed22d" />
+    <script src="_static/documentation_options.js?v=938c9ccc"></script>
+    <script src="_static/doctools.js?v=9bcbadda"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Changelog" href="changelog.html" />
+    <link rel="prev" title="CLI Reference" href="cli_reference.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <section id="module-course_hoanganhduc.core">
+<span id="api-reference"></span><h1>API Reference<a class="headerlink" href="#module-course_hoanganhduc.core" title="Link to this heading">¶</a></h1>
+<p id="module-course_hoanganhduc.config">Configuration helpers.</p>
+<dl class="py function">
+<dt class="sig sig-object py" id="course_hoanganhduc.config.cache_course_code">
+<span class="sig-prename descclassname"><span class="pre">course_hoanganhduc.config.</span></span><span class="sig-name descname"><span class="pre">cache_course_code</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">course_code</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/course_hoanganhduc/config.html#cache_course_code"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#course_hoanganhduc.config.cache_course_code" title="Link to this definition">¶</a></dt>
+<dd><p>Persist a normalized course code in the local .course_code cache.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="course_hoanganhduc.config.clear_config">
+<span class="sig-prename descclassname"><span class="pre">course_hoanganhduc.config.</span></span><span class="sig-name descname"><span class="pre">clear_config</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">config_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">course_code</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">verbose</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/course_hoanganhduc/config.html#clear_config"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#course_hoanganhduc.config.clear_config" title="Link to this definition">¶</a></dt>
+<dd><p>Remove the stored config file.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="course_hoanganhduc.config.clear_credentials">
+<span class="sig-prename descclassname"><span class="pre">course_hoanganhduc.config.</span></span><span class="sig-name descname"><span class="pre">clear_credentials</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">credentials_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">token_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">course_code</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">verbose</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/course_hoanganhduc/config.html#clear_credentials"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#course_hoanganhduc.config.clear_credentials" title="Link to this definition">¶</a></dt>
+<dd><p>Remove stored credentials and token files.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="course_hoanganhduc.config.get_cached_course_code">
+<span class="sig-prename descclassname"><span class="pre">course_hoanganhduc.config.</span></span><span class="sig-name descname"><span class="pre">get_cached_course_code</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/course_hoanganhduc/config.html#get_cached_course_code"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#course_hoanganhduc.config.get_cached_course_code" title="Link to this definition">¶</a></dt>
+<dd><p>Return the cached course code from .course_code if available.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="course_hoanganhduc.config.get_default_config_path">
+<span class="sig-prename descclassname"><span class="pre">course_hoanganhduc.config.</span></span><span class="sig-name descname"><span class="pre">get_default_config_path</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">course_code</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">verbose</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/course_hoanganhduc/config.html#get_default_config_path"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#course_hoanganhduc.config.get_default_config_path" title="Link to this definition">¶</a></dt>
+<dd><p>Get the default config file path for the current operating system.
+The course_code controls the subfolder name under the base config directory.
+- Windows: %APPDATA%course&lt;course_code&gt;config.json
+- macOS: ~/Library/Application Support/course/&lt;course_code&gt;/config.json
+- Linux: ~/.config/course/&lt;course_code&gt;/config.json
+If verbose is True, print details about the chosen path.
+Otherwise, print only an important notice if the config file does not exist.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="course_hoanganhduc.config.get_default_credentials_path">
+<span class="sig-prename descclassname"><span class="pre">course_hoanganhduc.config.</span></span><span class="sig-name descname"><span class="pre">get_default_credentials_path</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">course_code</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">verbose</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/course_hoanganhduc/config.html#get_default_credentials_path"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#course_hoanganhduc.config.get_default_credentials_path" title="Link to this definition">¶</a></dt>
+<dd><p>Get the default credentials file path alongside the config file.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="course_hoanganhduc.config.get_default_download_folder">
+<span class="sig-prename descclassname"><span class="pre">course_hoanganhduc.config.</span></span><span class="sig-name descname"><span class="pre">get_default_download_folder</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">verbose</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/course_hoanganhduc/config.html#get_default_download_folder"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#course_hoanganhduc.config.get_default_download_folder" title="Link to this definition">¶</a></dt>
+<dd><p>Get the default download folder for the current operating system.
+Returns the Downloads folder path appropriate for Windows, Mac, or Linux.
+If verbose is True, print details about the chosen path.
+Otherwise, print only an important notice if the folder does not exist.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="course_hoanganhduc.config.get_default_token_path">
+<span class="sig-prename descclassname"><span class="pre">course_hoanganhduc.config.</span></span><span class="sig-name descname"><span class="pre">get_default_token_path</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">course_code</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">verbose</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/course_hoanganhduc/config.html#get_default_token_path"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#course_hoanganhduc.config.get_default_token_path" title="Link to this definition">¶</a></dt>
+<dd><p>Get the default token file path alongside the config file.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="course_hoanganhduc.config.load_config">
+<span class="sig-prename descclassname"><span class="pre">course_hoanganhduc.config.</span></span><span class="sig-name descname"><span class="pre">load_config</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">config_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">verbose</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/course_hoanganhduc/config.html#load_config"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#course_hoanganhduc.config.load_config" title="Link to this definition">¶</a></dt>
+<dd><p>Load configuration from a JSON or base64-encoded JSON file at the default location and return config values as a dict.
+If config_path is not provided, loads from the OS-specific default location.
+config_path can be a file path (JSON or base64-encoded JSON) or a base64 string.
+Returns a dict of the loaded config values (does NOT set global variables).
+If verbose is True, print more details; otherwise, print only important notice.</p>
+<dl class="simple">
+<dt>NOTE: If you want to update global variables, you must set:</dt><dd><p>DEFAULT_AI_METHOD
+ALL_AI_METHODS
+GEMINI_API_KEY
+HUGGINGFACE_API_KEY
+GEMINI_DEFAULT_MODEL
+DEFAULT_OCR_METHOD
+ALL_OCR_METHODS
+OCRSPACE_API_KEY
+OCRSPACE_API_URL
+LOCAL_LLM_COMMAND
+LOCAL_LLM_MODEL
+LOCAL_LLM_ARGS
+LOCAL_LLM_TIMEOUT
+CANVAS_LMS_API_URL
+CANVAS_LMS_API_KEY
+CANVAS_LMS_COURSE_ID
+GOOGLE_CLASSROOM_GRADE_CATEGORY_METHOD
+GOOGLE_CLASSROOM_CC_TOPICS
+GOOGLE_CLASSROOM_GK_TOPICS
+GOOGLE_CLASSROOM_CK_TOPICS
+GOOGLE_SHEET_URL
+COURSE_CODE
+COURSE_NAME
+DEFAULT_RESTRICTED
+WEIGHT_CC
+WEIGHT_GK
+WEIGHT_CK
+QUALITY_MIN_CHARS
+QUALITY_UNIQUE_CHAR_RATIO_MIN
+QUALITY_REPEAT_CHAR_RATIO_MAX
+QUALITY_VN_CHAR_RATIO_MIN
+QUALITY_ALNUM_RATIO_MIN
+QUALITY_SYMBOL_RATIO_MAX
+QUALITY_EMPTY_LINE_RATIO_MAX
+QUALITY_MATH_DENSITY_THRESHOLD
+QUALITY_LENGTH_RATIO_LOW
+QUALITY_LENGTH_RATIO_MEDIUM
+QUALITY_LENGTH_RATIO_HIGH
+MIDTERM_DATE
+EXAM_TYPE
+CANVAS_MIDTERM_ASSIGNMENT_ID
+CANVAS_FINAL_ASSIGNMENT_ID
+CANVAS_CC_ASSIGNMENT_ID</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="course_hoanganhduc.config.validate_config">
+<span class="sig-prename descclassname"><span class="pre">course_hoanganhduc.config.</span></span><span class="sig-name descname"><span class="pre">validate_config</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">config</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">verbose</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/course_hoanganhduc/config.html#validate_config"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#course_hoanganhduc.config.validate_config" title="Link to this definition">¶</a></dt>
+<dd><p>Lightweight validation for config values. Returns a list of warning strings.</p>
+</dd></dl>
+
+<p id="module-course_hoanganhduc.canvas">Canvas LMS helpers.</p>
+<dl class="py function">
+<dt class="sig sig-object py" id="course_hoanganhduc.canvas.interactive_modify_database">
+<span class="sig-prename descclassname"><span class="pre">course_hoanganhduc.canvas.</span></span><span class="sig-name descname"><span class="pre">interactive_modify_database</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">students</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">db_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">verbose</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/course_hoanganhduc/canvas.html#interactive_modify_database"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#course_hoanganhduc.canvas.interactive_modify_database" title="Link to this definition">¶</a></dt>
+<dd><p>Interactively modify student records in the database.
+Allows searching, editing, adding, and deleting students.
+When editing a field, pre-fill the old value for easy modification.
+After editing a field, ask if the user wants to continue editing other fields of the same student,
+edit another student, or quit. Always allow quitting at any step.
+If no response after 60 seconds from user then quit.
+If verbose is True, print more details; otherwise, print only important notice.</p>
+</dd></dl>
+
+<dl class="py exception" id="module-course_hoanganhduc.google_classroom">
+<dt class="sig sig-object py" id="course_hoanganhduc.google_classroom.CredentialSecurityError">
+<em class="property"><span class="pre">exception</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">course_hoanganhduc.google_classroom.</span></span><span class="sig-name descname"><span class="pre">CredentialSecurityError</span></span><a class="reference internal" href="_modules/course_hoanganhduc/gclass_coursework_auth.html#CredentialSecurityError"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#course_hoanganhduc.google_classroom.CredentialSecurityError" title="Link to this definition">¶</a></dt>
+<dd><p>Credential location, metadata, or content is unsafe.</p>
+</dd></dl>
+
+<dl class="py exception">
+<dt class="sig sig-object py" id="course_hoanganhduc.google_classroom.GoogleClassroomAPIError">
+<em class="property"><span class="pre">exception</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">course_hoanganhduc.google_classroom.</span></span><span class="sig-name descname"><span class="pre">GoogleClassroomAPIError</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">operation</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">status</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/course_hoanganhduc/gclass_coursework.html#GoogleClassroomAPIError"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#course_hoanganhduc.google_classroom.GoogleClassroomAPIError" title="Link to this definition">¶</a></dt>
+<dd><p>A definite, sanitized Google API failure.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>operation</strong> (<em>str</em>)</p></li>
+<li><p><strong>status</strong> (<em>Optional</em><em>[</em><em>int</em><em>]</em>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py exception">
+<dt class="sig sig-object py" id="course_hoanganhduc.google_classroom.GoogleClassroomError">
+<em class="property"><span class="pre">exception</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">course_hoanganhduc.google_classroom.</span></span><span class="sig-name descname"><span class="pre">GoogleClassroomError</span></span><a class="reference internal" href="_modules/course_hoanganhduc/gclass_coursework.html#GoogleClassroomError"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#course_hoanganhduc.google_classroom.GoogleClassroomError" title="Link to this definition">¶</a></dt>
+<dd><p>Base error for the isolated coursework creation surface.</p>
+</dd></dl>
+
+<dl class="py exception">
+<dt class="sig sig-object py" id="course_hoanganhduc.google_classroom.GoogleClassroomOutcomeUnknownError">
+<em class="property"><span class="pre">exception</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">course_hoanganhduc.google_classroom.</span></span><span class="sig-name descname"><span class="pre">GoogleClassroomOutcomeUnknownError</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">operation</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">course_id</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">status</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/course_hoanganhduc/gclass_coursework.html#GoogleClassroomOutcomeUnknownError"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#course_hoanganhduc.google_classroom.GoogleClassroomOutcomeUnknownError" title="Link to this definition">¶</a></dt>
+<dd><p>A create request may have succeeded, but no resource ID is known.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>operation</strong> (<em>str</em>)</p></li>
+<li><p><strong>course_id</strong> (<em>str</em>)</p></li>
+<li><p><strong>status</strong> (<em>Optional</em><em>[</em><em>int</em><em>]</em>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py exception">
+<dt class="sig sig-object py" id="course_hoanganhduc.google_classroom.GoogleClassroomPartialCreateError">
+<em class="property"><span class="pre">exception</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">course_hoanganhduc.google_classroom.</span></span><span class="sig-name descname"><span class="pre">GoogleClassroomPartialCreateError</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">stage</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">course_id</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">course_work_id</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">alternate_link</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rubric_created</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">intended_release</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'DRAFT'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">observed_course_work</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">status</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/course_hoanganhduc/gclass_coursework.html#GoogleClassroomPartialCreateError"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#course_hoanganhduc.google_classroom.GoogleClassroomPartialCreateError" title="Link to this definition">¶</a></dt>
+<dd><p>Coursework exists but a rubric or release stage did not complete.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>stage</strong> (<em>str</em>)</p></li>
+<li><p><strong>course_id</strong> (<em>str</em>)</p></li>
+<li><p><strong>course_work_id</strong> (<em>str</em>)</p></li>
+<li><p><strong>alternate_link</strong> (<em>Optional</em><em>[</em><em>str</em><em>]</em>)</p></li>
+<li><p><strong>rubric_created</strong> (<em>Optional</em><em>[</em><em>bool</em><em>]</em>)</p></li>
+<li><p><strong>intended_release</strong> (<em>str</em>)</p></li>
+<li><p><strong>observed_course_work</strong> (<em>Optional</em><em>[</em><em>Mapping</em><em>[</em><em>str</em><em>, </em><em>Any</em><em>]</em><em>]</em>)</p></li>
+<li><p><strong>status</strong> (<em>Optional</em><em>[</em><em>int</em><em>]</em>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="course_hoanganhduc.google_classroom.build_google_classroom_assignment_body">
+<span class="sig-prename descclassname"><span class="pre">course_hoanganhduc.google_classroom.</span></span><span class="sig-name descname"><span class="pre">build_google_classroom_assignment_body</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">title</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">description</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">state</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'DRAFT'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">scheduled_at</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">due_at</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_points</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">materials</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">assignee_mode</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'ALL_STUDENTS'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">individual_student_ids</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">submission_modification_mode</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'MODIFIABLE_UNTIL_TURNED_IN'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">topic_id</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">grading_period_mode</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'AUTO'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">grading_period_id</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">now</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/course_hoanganhduc/gclass_coursework.html#build_google_classroom_assignment_body"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#course_hoanganhduc.google_classroom.build_google_classroom_assignment_body" title="Link to this definition">¶</a></dt>
+<dd><p>Build and validate a stable REST v1 <code class="docutils literal notranslate"><span class="pre">ASSIGNMENT</span></code> request body.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>title</strong> (<em>str</em>)</p></li>
+<li><p><strong>description</strong> (<em>str</em><em> | </em><em>None</em>)</p></li>
+<li><p><strong>state</strong> (<em>str</em>)</p></li>
+<li><p><strong>scheduled_at</strong> (<em>str</em><em> | </em><em>datetime</em><em> | </em><em>None</em>)</p></li>
+<li><p><strong>due_at</strong> (<em>str</em><em> | </em><em>datetime</em><em> | </em><em>None</em>)</p></li>
+<li><p><strong>max_points</strong> (<em>int</em><em> | </em><em>None</em>)</p></li>
+<li><p><strong>materials</strong> (<em>Sequence</em><em>[</em><em>Mapping</em><em>[</em><em>str</em><em>, </em><em>Any</em><em>]</em><em>] </em><em>| </em><em>None</em>)</p></li>
+<li><p><strong>assignee_mode</strong> (<em>str</em>)</p></li>
+<li><p><strong>individual_student_ids</strong> (<em>Sequence</em><em>[</em><em>str</em><em>] </em><em>| </em><em>None</em>)</p></li>
+<li><p><strong>submission_modification_mode</strong> (<em>str</em>)</p></li>
+<li><p><strong>topic_id</strong> (<em>str</em><em> | </em><em>None</em>)</p></li>
+<li><p><strong>grading_period_mode</strong> (<em>str</em>)</p></li>
+<li><p><strong>grading_period_id</strong> (<em>str</em><em> | </em><em>None</em>)</p></li>
+<li><p><strong>now</strong> (<em>datetime</em><em> | </em><em>None</em>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><em>Dict</em>[str, <em>Any</em>]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="course_hoanganhduc.google_classroom.build_google_classroom_rubric_body">
+<span class="sig-prename descclassname"><span class="pre">course_hoanganhduc.google_classroom.</span></span><span class="sig-name descname"><span class="pre">build_google_classroom_rubric_body</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">criteria</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">scoring_mode</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/course_hoanganhduc/gclass_coursework.html#build_google_classroom_rubric_body"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#course_hoanganhduc.google_classroom.build_google_classroom_rubric_body" title="Link to this definition">¶</a></dt>
+<dd><p>Build an inline rubric body; spreadsheet-backed rubrics are not accepted.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>criteria</strong> (<em>Sequence</em><em>[</em><em>Mapping</em><em>[</em><em>str</em><em>, </em><em>Any</em><em>]</em><em>]</em>)</p></li>
+<li><p><strong>scoring_mode</strong> (<em>str</em>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><em>Dict</em>[str, <em>Any</em>]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="course_hoanganhduc.google_classroom.create_google_classroom_assignment">
+<span class="sig-prename descclassname"><span class="pre">course_hoanganhduc.google_classroom.</span></span><span class="sig-name descname"><span class="pre">create_google_classroom_assignment</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">service</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">course_id</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">body</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/course_hoanganhduc/gclass_coursework.html#create_google_classroom_assignment"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#course_hoanganhduc.google_classroom.create_google_classroom_assignment" title="Link to this definition">¶</a></dt>
+<dd><p>Create one assignment with no automatic retry.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>service</strong> (<em>Any</em>)</p></li>
+<li><p><strong>course_id</strong> (<em>str</em>)</p></li>
+<li><p><strong>body</strong> (<em>Mapping</em><em>[</em><em>str</em><em>, </em><em>Any</em><em>]</em>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><em>Dict</em>[str, <em>Any</em>]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="course_hoanganhduc.google_classroom.create_google_classroom_assignment_with_rubric">
+<span class="sig-prename descclassname"><span class="pre">course_hoanganhduc.google_classroom.</span></span><span class="sig-name descname"><span class="pre">create_google_classroom_assignment_with_rubric</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">service</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">course_id</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">assignment_body</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rubric_body</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">schedule_min_lead_seconds</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">60</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">now</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/course_hoanganhduc/gclass_coursework.html#create_google_classroom_assignment_with_rubric"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#course_hoanganhduc.google_classroom.create_google_classroom_assignment_with_rubric" title="Link to this definition">¶</a></dt>
+<dd><p>Create coursework, optionally attach a rubric, then publish or schedule it.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>service</strong> (<em>Any</em>)</p></li>
+<li><p><strong>course_id</strong> (<em>str</em>)</p></li>
+<li><p><strong>assignment_body</strong> (<em>Mapping</em><em>[</em><em>str</em><em>, </em><em>Any</em><em>]</em>)</p></li>
+<li><p><strong>rubric_body</strong> (<em>Mapping</em><em>[</em><em>str</em><em>, </em><em>Any</em><em>] </em><em>| </em><em>None</em>)</p></li>
+<li><p><strong>schedule_min_lead_seconds</strong> (<em>int</em>)</p></li>
+<li><p><strong>now</strong> (<em>datetime</em><em> | </em><em>Callable</em><em>[</em><em>[</em><em>]</em><em>, </em><em>datetime</em><em>] </em><em>| </em><em>None</em>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><em>Dict</em>[str, <em>Any</em>]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="course_hoanganhduc.google_classroom.download_google_classroom_assignment_submissions">
+<span class="sig-prename descclassname"><span class="pre">course_hoanganhduc.google_classroom.</span></span><span class="sig-name descname"><span class="pre">download_google_classroom_assignment_submissions</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">course_id</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">credentials_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'gclassroom_credentials.json'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">token_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'token.pickle'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">coursework_ids</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dest_dir</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ocr_service</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'ocrspace'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lang</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'auto'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">meaningfulness_threshold</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.4</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">similarity_threshold</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.85</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">verbose</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/course_hoanganhduc/gclass_submissions.html#download_google_classroom_assignment_submissions"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#course_hoanganhduc.google_classroom.download_google_classroom_assignment_submissions" title="Link to this definition">¶</a></dt>
+<dd><p>Download latest Google Classroom submissions for selected coursework,
+then run meaningfulness + similarity checks on PDFs.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="course_hoanganhduc.google_classroom.download_google_sheet_to_csv">
+<span class="sig-prename descclassname"><span class="pre">course_hoanganhduc.google_classroom.</span></span><span class="sig-name descname"><span class="pre">download_google_sheet_to_csv</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">sheet_url</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">output_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">credentials_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'gclassroom_credentials.json'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">token_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'token.pickle'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">verbose</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sheet_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sheet_selection</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'first'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/course_hoanganhduc/gclass_sheets.html#download_google_sheet_to_csv"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#course_hoanganhduc.google_classroom.download_google_sheet_to_csv" title="Link to this definition">¶</a></dt>
+<dd><p>Download a Google Sheet as CSV using the first sheet, gid in URL, or specified sheet.
+Returns the output CSV path.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>sheet_name</strong> – Specific sheet name to download</p></li>
+<li><p><strong>sheet_selection</strong> – Mode for sheet selection - ‘first’ (default), ‘select’ (interactive), ‘all’, or ‘merge’</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="course_hoanganhduc.google_classroom.get_google_classroom_auth_status">
+<span class="sig-prename descclassname"><span class="pre">course_hoanganhduc.google_classroom.</span></span><span class="sig-name descname"><span class="pre">get_google_classroom_auth_status</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">paths</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">show_paths</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/course_hoanganhduc/gclass_coursework_auth.html#get_google_classroom_auth_status"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#course_hoanganhduc.google_classroom.get_google_classroom_auth_status" title="Link to this definition">¶</a></dt>
+<dd><p>Inspect credential metadata without refresh, OAuth, network, or writes.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>paths</strong> (<a class="reference internal" href="#course_hoanganhduc.gclass_coursework_auth.CourseworkAuthPaths" title="course_hoanganhduc.gclass_coursework_auth.CourseworkAuthPaths"><em>CourseworkAuthPaths</em></a>)</p></li>
+<li><p><strong>show_paths</strong> (<em>bool</em>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><em>Dict</em>[str, <em>Any</em>]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="course_hoanganhduc.google_classroom.get_google_classroom_coursework_service">
+<span class="sig-prename descclassname"><span class="pre">course_hoanganhduc.google_classroom.</span></span><span class="sig-name descname"><span class="pre">get_google_classroom_coursework_service</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">paths</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">expected_account</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">open_browser</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">force_authorize</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">replace_token</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">require_existing_token</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">timeout_seconds</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">300</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">profile_timeout_seconds</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">30</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">service_builder</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">profile_fetcher</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/course_hoanganhduc/gclass_coursework_auth.html#get_google_classroom_coursework_service"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#course_hoanganhduc.google_classroom.get_google_classroom_coursework_service" title="Link to this definition">¶</a></dt>
+<dd><p>Load/authorize a token, verify its principal, and build one Classroom service.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>paths</strong> (<a class="reference internal" href="#course_hoanganhduc.gclass_coursework_auth.CourseworkAuthPaths" title="course_hoanganhduc.gclass_coursework_auth.CourseworkAuthPaths"><em>CourseworkAuthPaths</em></a>)</p></li>
+<li><p><strong>expected_account</strong> (<em>str</em>)</p></li>
+<li><p><strong>open_browser</strong> (<em>bool</em>)</p></li>
+<li><p><strong>force_authorize</strong> (<em>bool</em>)</p></li>
+<li><p><strong>replace_token</strong> (<em>bool</em>)</p></li>
+<li><p><strong>require_existing_token</strong> (<em>bool</em>)</p></li>
+<li><p><strong>timeout_seconds</strong> (<em>int</em>)</p></li>
+<li><p><strong>profile_timeout_seconds</strong> (<em>int</em>)</p></li>
+<li><p><strong>service_builder</strong> (<em>Any</em><em> | </em><em>None</em>)</p></li>
+<li><p><strong>profile_fetcher</strong> (<em>Any</em><em> | </em><em>None</em>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference internal" href="#course_hoanganhduc.gclass_coursework_auth.CourseworkAuthSession" title="course_hoanganhduc.gclass_coursework_auth.CourseworkAuthSession"><em>CourseworkAuthSession</em></a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="course_hoanganhduc.google_classroom.grade_google_classroom_assignment_submissions">
+<span class="sig-prename descclassname"><span class="pre">course_hoanganhduc.google_classroom.</span></span><span class="sig-name descname"><span class="pre">grade_google_classroom_assignment_submissions</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">course_id</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">credentials_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'gclassroom_credentials.json'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">token_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'token.pickle'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">coursework_ids</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">score</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ungraded_only</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">apply_all</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">verbose</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/course_hoanganhduc/gclass_grading.html#grade_google_classroom_assignment_submissions"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#course_hoanganhduc.google_classroom.grade_google_classroom_assignment_submissions" title="Link to this definition">¶</a></dt>
+<dd><p>Grade Google Classroom assignment submissions interactively or with provided IDs.
+- If coursework_ids is None, prompt for selection.
+- If score is None, prompt for a score and apply to selected submissions.
+- If ungraded_only is True, only list ungraded submissions.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="course_hoanganhduc.google_classroom.resolve_coursework_auth_paths">
+<span class="sig-prename descclassname"><span class="pre">course_hoanganhduc.google_classroom.</span></span><span class="sig-name descname"><span class="pre">resolve_coursework_auth_paths</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">account</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">credentials_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">token_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">env</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">platform_system</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">home</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/course_hoanganhduc/gclass_coursework_auth.html#resolve_coursework_auth_paths"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#course_hoanganhduc.google_classroom.resolve_coursework_auth_paths" title="Link to this definition">¶</a></dt>
+<dd><p>Resolve one deterministic CLI, environment, or default credential pair.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>account</strong> (<em>str</em>)</p></li>
+<li><p><strong>credentials_path</strong> (<em>str</em><em> | </em><em>None</em>)</p></li>
+<li><p><strong>token_path</strong> (<em>str</em><em> | </em><em>None</em>)</p></li>
+<li><p><strong>env</strong> (<em>Mapping</em><em>[</em><em>str</em><em>, </em><em>str</em><em>] </em><em>| </em><em>None</em>)</p></li>
+<li><p><strong>platform_system</strong> (<em>str</em><em> | </em><em>None</em>)</p></li>
+<li><p><strong>home</strong> (<em>Path</em><em> | </em><em>None</em>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference internal" href="#course_hoanganhduc.gclass_coursework_auth.CourseworkAuthPaths" title="course_hoanganhduc.gclass_coursework_auth.CourseworkAuthPaths"><em>CourseworkAuthPaths</em></a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="course_hoanganhduc.google_classroom.sync_students_with_google_classroom">
+<span class="sig-prename descclassname"><span class="pre">course_hoanganhduc.google_classroom.</span></span><span class="sig-name descname"><span class="pre">sync_students_with_google_classroom</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">students</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">db_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">course_id</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">credentials_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'gclassroom_credentials.json'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">token_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'token.pickle'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fetch_grades</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">verbose</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/course_hoanganhduc/gclass_sync.html#sync_students_with_google_classroom"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#course_hoanganhduc.google_classroom.sync_students_with_google_classroom" title="Link to this definition">¶</a></dt>
+<dd><p>Sync students in the local database with active students from Google Classroom.
+For each student fetched from Google Classroom:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p>match by the local field ‘Google Classroom Display Name’ (case-insensitive)</p></li>
+<li><p>if matched: fill missing local fields from Google data (Google_ID, Email, Google_Classroom_Display_Name)</p></li>
+<li><p>if not matched: create a new student entry with Name, Email, Google_ID and Google_Classroom_Display_Name</p></li>
+</ul>
+</div></blockquote>
+<p>Optionally fetch grades/submission state when fetch_grades=True.</p>
+<p>Returns (added_count, updated_count).</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="course_hoanganhduc.google_classroom.unenroll_google_classroom_students">
+<span class="sig-prename descclassname"><span class="pre">course_hoanganhduc.google_classroom.</span></span><span class="sig-name descname"><span class="pre">unenroll_google_classroom_students</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">course_id</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">domains</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">emails</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">select_all</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">select_mode</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">credentials_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'gclassroom_credentials.json'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">token_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'token.pickle'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">apply_all</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">missing_student_id</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">db_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">update_local_db</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dry_run</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">verbose</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/course_hoanganhduc/gclass_unenroll.html#unenroll_google_classroom_students"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#course_hoanganhduc.google_classroom.unenroll_google_classroom_students" title="Link to this definition">¶</a></dt>
+<dd><p>Unenroll students from a Google Classroom course by email domain.</p>
+</dd></dl>
+
+<section id="module-course_hoanganhduc.gclass_coursework">
+<span id="google-classroom-assignment-creation"></span><h2>Google Classroom assignment creation<a class="headerlink" href="#module-course_hoanganhduc.gclass_coursework" title="Link to this heading">¶</a></h2>
+<p>Google Classroom assignment builders and mutation orchestration.</p>
+<p>The builders are dependency-free. API functions accept a discovery-style service
+object so tests can run without Google packages or credentials.</p>
+<dl class="py exception">
+<dt class="sig sig-object py" id="course_hoanganhduc.gclass_coursework.GoogleClassroomAPIError">
+<em class="property"><span class="pre">exception</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">course_hoanganhduc.gclass_coursework.</span></span><span class="sig-name descname"><span class="pre">GoogleClassroomAPIError</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">operation</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">status</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/course_hoanganhduc/gclass_coursework.html#GoogleClassroomAPIError"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#course_hoanganhduc.gclass_coursework.GoogleClassroomAPIError" title="Link to this definition">¶</a></dt>
+<dd><p>A definite, sanitized Google API failure.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>operation</strong> (<em>str</em>)</p></li>
+<li><p><strong>status</strong> (<em>Optional</em><em>[</em><em>int</em><em>]</em>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py exception">
+<dt class="sig sig-object py" id="course_hoanganhduc.gclass_coursework.GoogleClassroomError">
+<em class="property"><span class="pre">exception</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">course_hoanganhduc.gclass_coursework.</span></span><span class="sig-name descname"><span class="pre">GoogleClassroomError</span></span><a class="reference internal" href="_modules/course_hoanganhduc/gclass_coursework.html#GoogleClassroomError"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#course_hoanganhduc.gclass_coursework.GoogleClassroomError" title="Link to this definition">¶</a></dt>
+<dd><p>Base error for the isolated coursework creation surface.</p>
+</dd></dl>
+
+<dl class="py exception">
+<dt class="sig sig-object py" id="course_hoanganhduc.gclass_coursework.GoogleClassroomOutcomeUnknownError">
+<em class="property"><span class="pre">exception</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">course_hoanganhduc.gclass_coursework.</span></span><span class="sig-name descname"><span class="pre">GoogleClassroomOutcomeUnknownError</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">operation</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">course_id</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">status</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/course_hoanganhduc/gclass_coursework.html#GoogleClassroomOutcomeUnknownError"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#course_hoanganhduc.gclass_coursework.GoogleClassroomOutcomeUnknownError" title="Link to this definition">¶</a></dt>
+<dd><p>A create request may have succeeded, but no resource ID is known.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>operation</strong> (<em>str</em>)</p></li>
+<li><p><strong>course_id</strong> (<em>str</em>)</p></li>
+<li><p><strong>status</strong> (<em>Optional</em><em>[</em><em>int</em><em>]</em>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py exception">
+<dt class="sig sig-object py" id="course_hoanganhduc.gclass_coursework.GoogleClassroomPartialCreateError">
+<em class="property"><span class="pre">exception</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">course_hoanganhduc.gclass_coursework.</span></span><span class="sig-name descname"><span class="pre">GoogleClassroomPartialCreateError</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">stage</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">course_id</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">course_work_id</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">alternate_link</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rubric_created</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">intended_release</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'DRAFT'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">observed_course_work</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">status</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/course_hoanganhduc/gclass_coursework.html#GoogleClassroomPartialCreateError"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#course_hoanganhduc.gclass_coursework.GoogleClassroomPartialCreateError" title="Link to this definition">¶</a></dt>
+<dd><p>Coursework exists but a rubric or release stage did not complete.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>stage</strong> (<em>str</em>)</p></li>
+<li><p><strong>course_id</strong> (<em>str</em>)</p></li>
+<li><p><strong>course_work_id</strong> (<em>str</em>)</p></li>
+<li><p><strong>alternate_link</strong> (<em>Optional</em><em>[</em><em>str</em><em>]</em>)</p></li>
+<li><p><strong>rubric_created</strong> (<em>Optional</em><em>[</em><em>bool</em><em>]</em>)</p></li>
+<li><p><strong>intended_release</strong> (<em>str</em>)</p></li>
+<li><p><strong>observed_course_work</strong> (<em>Optional</em><em>[</em><em>Mapping</em><em>[</em><em>str</em><em>, </em><em>Any</em><em>]</em><em>]</em>)</p></li>
+<li><p><strong>status</strong> (<em>Optional</em><em>[</em><em>int</em><em>]</em>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="course_hoanganhduc.gclass_coursework.build_google_classroom_assignment_body">
+<span class="sig-prename descclassname"><span class="pre">course_hoanganhduc.gclass_coursework.</span></span><span class="sig-name descname"><span class="pre">build_google_classroom_assignment_body</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">title</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">description</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">state</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'DRAFT'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">scheduled_at</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">due_at</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_points</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">materials</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">assignee_mode</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'ALL_STUDENTS'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">individual_student_ids</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">submission_modification_mode</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'MODIFIABLE_UNTIL_TURNED_IN'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">topic_id</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">grading_period_mode</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'AUTO'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">grading_period_id</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">now</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/course_hoanganhduc/gclass_coursework.html#build_google_classroom_assignment_body"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#course_hoanganhduc.gclass_coursework.build_google_classroom_assignment_body" title="Link to this definition">¶</a></dt>
+<dd><p>Build and validate a stable REST v1 <code class="docutils literal notranslate"><span class="pre">ASSIGNMENT</span></code> request body.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>title</strong> (<em>str</em>)</p></li>
+<li><p><strong>description</strong> (<em>str</em><em> | </em><em>None</em>)</p></li>
+<li><p><strong>state</strong> (<em>str</em>)</p></li>
+<li><p><strong>scheduled_at</strong> (<em>str</em><em> | </em><em>datetime</em><em> | </em><em>None</em>)</p></li>
+<li><p><strong>due_at</strong> (<em>str</em><em> | </em><em>datetime</em><em> | </em><em>None</em>)</p></li>
+<li><p><strong>max_points</strong> (<em>int</em><em> | </em><em>None</em>)</p></li>
+<li><p><strong>materials</strong> (<em>Sequence</em><em>[</em><em>Mapping</em><em>[</em><em>str</em><em>, </em><em>Any</em><em>]</em><em>] </em><em>| </em><em>None</em>)</p></li>
+<li><p><strong>assignee_mode</strong> (<em>str</em>)</p></li>
+<li><p><strong>individual_student_ids</strong> (<em>Sequence</em><em>[</em><em>str</em><em>] </em><em>| </em><em>None</em>)</p></li>
+<li><p><strong>submission_modification_mode</strong> (<em>str</em>)</p></li>
+<li><p><strong>topic_id</strong> (<em>str</em><em> | </em><em>None</em>)</p></li>
+<li><p><strong>grading_period_mode</strong> (<em>str</em>)</p></li>
+<li><p><strong>grading_period_id</strong> (<em>str</em><em> | </em><em>None</em>)</p></li>
+<li><p><strong>now</strong> (<em>datetime</em><em> | </em><em>None</em>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><em>Dict</em>[str, <em>Any</em>]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="course_hoanganhduc.gclass_coursework.build_google_classroom_rubric_body">
+<span class="sig-prename descclassname"><span class="pre">course_hoanganhduc.gclass_coursework.</span></span><span class="sig-name descname"><span class="pre">build_google_classroom_rubric_body</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">criteria</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">scoring_mode</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/course_hoanganhduc/gclass_coursework.html#build_google_classroom_rubric_body"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#course_hoanganhduc.gclass_coursework.build_google_classroom_rubric_body" title="Link to this definition">¶</a></dt>
+<dd><p>Build an inline rubric body; spreadsheet-backed rubrics are not accepted.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>criteria</strong> (<em>Sequence</em><em>[</em><em>Mapping</em><em>[</em><em>str</em><em>, </em><em>Any</em><em>]</em><em>]</em>)</p></li>
+<li><p><strong>scoring_mode</strong> (<em>str</em>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><em>Dict</em>[str, <em>Any</em>]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="course_hoanganhduc.gclass_coursework.create_google_classroom_assignment">
+<span class="sig-prename descclassname"><span class="pre">course_hoanganhduc.gclass_coursework.</span></span><span class="sig-name descname"><span class="pre">create_google_classroom_assignment</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">service</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">course_id</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">body</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/course_hoanganhduc/gclass_coursework.html#create_google_classroom_assignment"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#course_hoanganhduc.gclass_coursework.create_google_classroom_assignment" title="Link to this definition">¶</a></dt>
+<dd><p>Create one assignment with no automatic retry.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>service</strong> (<em>Any</em>)</p></li>
+<li><p><strong>course_id</strong> (<em>str</em>)</p></li>
+<li><p><strong>body</strong> (<em>Mapping</em><em>[</em><em>str</em><em>, </em><em>Any</em><em>]</em>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><em>Dict</em>[str, <em>Any</em>]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="course_hoanganhduc.gclass_coursework.create_google_classroom_assignment_with_rubric">
+<span class="sig-prename descclassname"><span class="pre">course_hoanganhduc.gclass_coursework.</span></span><span class="sig-name descname"><span class="pre">create_google_classroom_assignment_with_rubric</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">service</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">course_id</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">assignment_body</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rubric_body</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">schedule_min_lead_seconds</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">60</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">now</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/course_hoanganhduc/gclass_coursework.html#create_google_classroom_assignment_with_rubric"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#course_hoanganhduc.gclass_coursework.create_google_classroom_assignment_with_rubric" title="Link to this definition">¶</a></dt>
+<dd><p>Create coursework, optionally attach a rubric, then publish or schedule it.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>service</strong> (<em>Any</em>)</p></li>
+<li><p><strong>course_id</strong> (<em>str</em>)</p></li>
+<li><p><strong>assignment_body</strong> (<em>Mapping</em><em>[</em><em>str</em><em>, </em><em>Any</em><em>]</em>)</p></li>
+<li><p><strong>rubric_body</strong> (<em>Mapping</em><em>[</em><em>str</em><em>, </em><em>Any</em><em>] </em><em>| </em><em>None</em>)</p></li>
+<li><p><strong>schedule_min_lead_seconds</strong> (<em>int</em>)</p></li>
+<li><p><strong>now</strong> (<em>datetime</em><em> | </em><em>Callable</em><em>[</em><em>[</em><em>]</em><em>, </em><em>datetime</em><em>] </em><em>| </em><em>None</em>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><em>Dict</em>[str, <em>Any</em>]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p id="module-course_hoanganhduc.gclass_coursework_auth">Isolated credentials for human Google Classroom coursework mutations.</p>
+<p>This module intentionally does not reuse the legacy pickle token or course-scoped
+credential resolver. Google dependencies are imported only when online auth starts.</p>
+<dl class="py class">
+<dt class="sig sig-object py" id="course_hoanganhduc.gclass_coursework_auth.CourseworkAuthPaths">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">course_hoanganhduc.gclass_coursework_auth.</span></span><span class="sig-name descname"><span class="pre">CourseworkAuthPaths</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">account</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="s"><span class="pre">'str'</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">account_fingerprint</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="s"><span class="pre">'str'</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">credentials_path</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="s"><span class="pre">'Optional[Path]'</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">token_path</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="s"><span class="pre">'Path'</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">metadata_path</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="s"><span class="pre">'Path'</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">source</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="s"><span class="pre">'str'</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">token_only</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="s"><span class="pre">'bool'</span></span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/course_hoanganhduc/gclass_coursework_auth.html#CourseworkAuthPaths"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#course_hoanganhduc.gclass_coursework_auth.CourseworkAuthPaths" title="Link to this definition">¶</a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>account</strong> (<em>str</em>)</p></li>
+<li><p><strong>account_fingerprint</strong> (<em>str</em>)</p></li>
+<li><p><strong>credentials_path</strong> (<em>Path</em><em> | </em><em>None</em>)</p></li>
+<li><p><strong>token_path</strong> (<em>Path</em>)</p></li>
+<li><p><strong>metadata_path</strong> (<em>Path</em>)</p></li>
+<li><p><strong>source</strong> (<em>str</em>)</p></li>
+<li><p><strong>token_only</strong> (<em>bool</em>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="course_hoanganhduc.gclass_coursework_auth.CourseworkAuthSession">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">course_hoanganhduc.gclass_coursework_auth.</span></span><span class="sig-name descname"><span class="pre">CourseworkAuthSession</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">service</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="s"><span class="pre">'Any'</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">profile</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="s"><span class="pre">'Mapping[str,</span> <span class="pre">Any]'</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">paths</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="s"><span class="pre">'CourseworkAuthPaths'</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">client_id_fingerprint</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="s"><span class="pre">'str'</span></span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/course_hoanganhduc/gclass_coursework_auth.html#CourseworkAuthSession"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#course_hoanganhduc.gclass_coursework_auth.CourseworkAuthSession" title="Link to this definition">¶</a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>service</strong> (<em>Any</em>)</p></li>
+<li><p><strong>profile</strong> (<em>Mapping</em><em>[</em><em>str</em><em>, </em><em>Any</em><em>]</em>)</p></li>
+<li><p><strong>paths</strong> (<a class="reference internal" href="#course_hoanganhduc.gclass_coursework_auth.CourseworkAuthPaths" title="course_hoanganhduc.gclass_coursework_auth.CourseworkAuthPaths"><em>CourseworkAuthPaths</em></a>)</p></li>
+<li><p><strong>client_id_fingerprint</strong> (<em>str</em>)</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py exception">
+<dt class="sig sig-object py" id="course_hoanganhduc.gclass_coursework_auth.CredentialSecurityError">
+<em class="property"><span class="pre">exception</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">course_hoanganhduc.gclass_coursework_auth.</span></span><span class="sig-name descname"><span class="pre">CredentialSecurityError</span></span><a class="reference internal" href="_modules/course_hoanganhduc/gclass_coursework_auth.html#CredentialSecurityError"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#course_hoanganhduc.gclass_coursework_auth.CredentialSecurityError" title="Link to this definition">¶</a></dt>
+<dd><p>Credential location, metadata, or content is unsafe.</p>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="course_hoanganhduc.gclass_coursework_auth.TokenFileLock">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">course_hoanganhduc.gclass_coursework_auth.</span></span><span class="sig-name descname"><span class="pre">TokenFileLock</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">token_path</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/course_hoanganhduc/gclass_coursework_auth.html#TokenFileLock"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#course_hoanganhduc.gclass_coursework_auth.TokenFileLock" title="Link to this definition">¶</a></dt>
+<dd><p>Nonblocking POSIX lock preventing concurrent token refresh/write.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>token_path</strong> (<em>Path</em>)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py exception">
+<dt class="sig sig-object py" id="course_hoanganhduc.gclass_coursework_auth.UnsupportedPlatformCredentialSecurityError">
+<em class="property"><span class="pre">exception</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">course_hoanganhduc.gclass_coursework_auth.</span></span><span class="sig-name descname"><span class="pre">UnsupportedPlatformCredentialSecurityError</span></span><a class="reference internal" href="_modules/course_hoanganhduc/gclass_coursework_auth.html#UnsupportedPlatformCredentialSecurityError"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#course_hoanganhduc.gclass_coursework_auth.UnsupportedPlatformCredentialSecurityError" title="Link to this definition">¶</a></dt>
+<dd><p>Native credential guarantees are not implemented for this platform.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="course_hoanganhduc.gclass_coursework_auth.get_google_classroom_auth_status">
+<span class="sig-prename descclassname"><span class="pre">course_hoanganhduc.gclass_coursework_auth.</span></span><span class="sig-name descname"><span class="pre">get_google_classroom_auth_status</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">paths</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">show_paths</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/course_hoanganhduc/gclass_coursework_auth.html#get_google_classroom_auth_status"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#course_hoanganhduc.gclass_coursework_auth.get_google_classroom_auth_status" title="Link to this definition">¶</a></dt>
+<dd><p>Inspect credential metadata without refresh, OAuth, network, or writes.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>paths</strong> (<a class="reference internal" href="#course_hoanganhduc.gclass_coursework_auth.CourseworkAuthPaths" title="course_hoanganhduc.gclass_coursework_auth.CourseworkAuthPaths"><em>CourseworkAuthPaths</em></a>)</p></li>
+<li><p><strong>show_paths</strong> (<em>bool</em>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><em>Dict</em>[str, <em>Any</em>]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="course_hoanganhduc.gclass_coursework_auth.get_google_classroom_coursework_service">
+<span class="sig-prename descclassname"><span class="pre">course_hoanganhduc.gclass_coursework_auth.</span></span><span class="sig-name descname"><span class="pre">get_google_classroom_coursework_service</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">paths</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">expected_account</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">open_browser</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">force_authorize</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">replace_token</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">require_existing_token</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">timeout_seconds</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">300</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">profile_timeout_seconds</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">30</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">service_builder</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">profile_fetcher</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/course_hoanganhduc/gclass_coursework_auth.html#get_google_classroom_coursework_service"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#course_hoanganhduc.gclass_coursework_auth.get_google_classroom_coursework_service" title="Link to this definition">¶</a></dt>
+<dd><p>Load/authorize a token, verify its principal, and build one Classroom service.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>paths</strong> (<a class="reference internal" href="#course_hoanganhduc.gclass_coursework_auth.CourseworkAuthPaths" title="course_hoanganhduc.gclass_coursework_auth.CourseworkAuthPaths"><em>CourseworkAuthPaths</em></a>)</p></li>
+<li><p><strong>expected_account</strong> (<em>str</em>)</p></li>
+<li><p><strong>open_browser</strong> (<em>bool</em>)</p></li>
+<li><p><strong>force_authorize</strong> (<em>bool</em>)</p></li>
+<li><p><strong>replace_token</strong> (<em>bool</em>)</p></li>
+<li><p><strong>require_existing_token</strong> (<em>bool</em>)</p></li>
+<li><p><strong>timeout_seconds</strong> (<em>int</em>)</p></li>
+<li><p><strong>profile_timeout_seconds</strong> (<em>int</em>)</p></li>
+<li><p><strong>service_builder</strong> (<em>Any</em><em> | </em><em>None</em>)</p></li>
+<li><p><strong>profile_fetcher</strong> (<em>Any</em><em> | </em><em>None</em>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference internal" href="#course_hoanganhduc.gclass_coursework_auth.CourseworkAuthSession" title="course_hoanganhduc.gclass_coursework_auth.CourseworkAuthSession"><em>CourseworkAuthSession</em></a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="course_hoanganhduc.gclass_coursework_auth.resolve_coursework_auth_paths">
+<span class="sig-prename descclassname"><span class="pre">course_hoanganhduc.gclass_coursework_auth.</span></span><span class="sig-name descname"><span class="pre">resolve_coursework_auth_paths</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">account</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">credentials_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">token_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">env</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">platform_system</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">home</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/course_hoanganhduc/gclass_coursework_auth.html#resolve_coursework_auth_paths"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#course_hoanganhduc.gclass_coursework_auth.resolve_coursework_auth_paths" title="Link to this definition">¶</a></dt>
+<dd><p>Resolve one deterministic CLI, environment, or default credential pair.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>account</strong> (<em>str</em>)</p></li>
+<li><p><strong>credentials_path</strong> (<em>str</em><em> | </em><em>None</em>)</p></li>
+<li><p><strong>token_path</strong> (<em>str</em><em> | </em><em>None</em>)</p></li>
+<li><p><strong>env</strong> (<em>Mapping</em><em>[</em><em>str</em><em>, </em><em>str</em><em>] </em><em>| </em><em>None</em>)</p></li>
+<li><p><strong>platform_system</strong> (<em>str</em><em> | </em><em>None</em>)</p></li>
+<li><p><strong>home</strong> (<em>Path</em><em> | </em><em>None</em>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference internal" href="#course_hoanganhduc.gclass_coursework_auth.CourseworkAuthPaths" title="course_hoanganhduc.gclass_coursework_auth.CourseworkAuthPaths"><em>CourseworkAuthPaths</em></a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<p id="module-course_hoanganhduc.gclass_admin_cli">Google Classroom assignment administration CLI.</p>
+<p>The mutation surface is deliberately separate from the legacy <code class="docutils literal notranslate"><span class="pre">course</span></code> CLI and
+the restricted agent entrypoint. Assignment JSON is converted into a canonical
+request before any credential access or network call.</p>
+<dl class="py exception">
+<dt class="sig sig-object py" id="course_hoanganhduc.gclass_admin_cli.AssignmentSpecError">
+<em class="property"><span class="pre">exception</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">course_hoanganhduc.gclass_admin_cli.</span></span><span class="sig-name descname"><span class="pre">AssignmentSpecError</span></span><a class="reference internal" href="_modules/course_hoanganhduc/gclass_admin_cli.html#AssignmentSpecError"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#course_hoanganhduc.gclass_admin_cli.AssignmentSpecError" title="Link to this definition">¶</a></dt>
+<dd><p>The local assignment specification is malformed or unsupported.</p>
+</dd></dl>
+
+<dl class="py exception">
+<dt class="sig sig-object py" id="course_hoanganhduc.gclass_admin_cli.GoogleClassroomAdminError">
+<em class="property"><span class="pre">exception</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">course_hoanganhduc.gclass_admin_cli.</span></span><span class="sig-name descname"><span class="pre">GoogleClassroomAdminError</span></span><a class="reference internal" href="_modules/course_hoanganhduc/gclass_admin_cli.html#GoogleClassroomAdminError"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#course_hoanganhduc.gclass_admin_cli.GoogleClassroomAdminError" title="Link to this definition">¶</a></dt>
+<dd><p>An assignment-admin precondition or confirmation failed.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="course_hoanganhduc.gclass_admin_cli.build_assignment_operation_plan">
+<span class="sig-prename descclassname"><span class="pre">course_hoanganhduc.gclass_admin_cli.</span></span><span class="sig-name descname"><span class="pre">build_assignment_operation_plan</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">course_reference</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">assignment</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rubric</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dry_run</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/course_hoanganhduc/gclass_admin_cli.html#build_assignment_operation_plan"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#course_hoanganhduc.gclass_admin_cli.build_assignment_operation_plan" title="Link to this definition">¶</a></dt>
+<dd><p>Build the deterministic preview and confirmation digest for one mutation.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>course_reference</strong> (<em>str</em>)</p></li>
+<li><p><strong>assignment</strong> (<em>Mapping</em><em>[</em><em>str</em><em>, </em><em>Any</em><em>]</em>)</p></li>
+<li><p><strong>rubric</strong> (<em>Mapping</em><em>[</em><em>str</em><em>, </em><em>Any</em><em>] </em><em>| </em><em>None</em>)</p></li>
+<li><p><strong>dry_run</strong> (<em>bool</em>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><em>Dict</em>[str, <em>Any</em>]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="course_hoanganhduc.gclass_admin_cli.load_assignment_spec">
+<span class="sig-prename descclassname"><span class="pre">course_hoanganhduc.gclass_admin_cli.</span></span><span class="sig-name descname"><span class="pre">load_assignment_spec</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">path</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">now</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/course_hoanganhduc/gclass_admin_cli.html#load_assignment_spec"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#course_hoanganhduc.gclass_admin_cli.load_assignment_spec" title="Link to this definition">¶</a></dt>
+<dd><p>Load a strict JSON spec and return canonical assignment and rubric bodies.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>path</strong> (<em>Path</em>)</p></li>
+<li><p><strong>now</strong> (<em>datetime</em><em> | </em><em>None</em>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><em>Tuple</em>[<em>Dict</em>[str, <em>Any</em>], <em>Dict</em>[str, <em>Any</em>] | None]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="course_hoanganhduc.gclass_admin_cli.main">
+<span class="sig-prename descclassname"><span class="pre">course_hoanganhduc.gclass_admin_cli.</span></span><span class="sig-name descname"><span class="pre">main</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">argv=None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">input_fn=&lt;built-in</span> <span class="pre">function</span> <span class="pre">input&gt;</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">stdout=None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">stderr=None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tty_check=None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">auth_factory=None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">create_factory=None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">secret_input_fn=None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">loopback_connection_factory=None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">now=None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/course_hoanganhduc/gclass_admin_cli.html#main"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#course_hoanganhduc.gclass_admin_cli.main" title="Link to this definition">¶</a></dt>
+<dd><p>Run the dedicated admin CLI; dependency injection keeps tests offline.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>argv</strong> (<em>Sequence</em><em>[</em><em>str</em><em>] </em><em>| </em><em>None</em>)</p></li>
+<li><p><strong>input_fn</strong> (<em>Callable</em><em>[</em><em>[</em><em>str</em><em>]</em><em>, </em><em>str</em><em>]</em>)</p></li>
+<li><p><strong>stdout</strong> (<em>TextIO</em><em> | </em><em>None</em>)</p></li>
+<li><p><strong>stderr</strong> (<em>TextIO</em><em> | </em><em>None</em>)</p></li>
+<li><p><strong>tty_check</strong> (<em>Callable</em><em>[</em><em>[</em><em>]</em><em>, </em><em>bool</em><em>] </em><em>| </em><em>None</em>)</p></li>
+<li><p><strong>auth_factory</strong> (<em>Callable</em><em>[</em><em>[</em><em>...</em><em>]</em><em>, </em><em>Any</em><em>] </em><em>| </em><em>None</em>)</p></li>
+<li><p><strong>create_factory</strong> (<em>Callable</em><em>[</em><em>[</em><em>...</em><em>]</em><em>, </em><em>Dict</em><em>[</em><em>str</em><em>, </em><em>Any</em><em>]</em><em>] </em><em>| </em><em>None</em>)</p></li>
+<li><p><strong>secret_input_fn</strong> (<em>Callable</em><em>[</em><em>[</em><em>str</em><em>]</em><em>, </em><em>str</em><em>] </em><em>| </em><em>None</em>)</p></li>
+<li><p><strong>loopback_connection_factory</strong> (<em>Callable</em><em>[</em><em>[</em><em>...</em><em>]</em><em>, </em><em>Any</em><em>] </em><em>| </em><em>None</em>)</p></li>
+<li><p><strong>now</strong> (<em>datetime</em><em> | </em><em>None</em>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+<section id="agent-and-classroom50-modules">
+<h2>Agent and Classroom50 modules<a class="headerlink" href="#agent-and-classroom50-modules" title="Link to this heading">¶</a></h2>
+<p>These modules support the restricted agent surfaces and Classroom50 adapter.
+Prefer the CLI entrypoints documented in <a class="reference internal" href="usage.html"><span class="doc">Usage</span></a> over calling them as a
+public Python API unless you are extending the toolkit.</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">course_hoanganhduc.classroom50</span></code> — agent-safe Classroom50 facade</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">course_hoanganhduc.c50_agent</span></code> / <code class="docutils literal notranslate"><span class="pre">c50_flags</span></code> / <code class="docutils literal notranslate"><span class="pre">c50_ops</span></code> / <code class="docutils literal notranslate"><span class="pre">c50_cli</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">course_hoanganhduc.canvas_agent</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">course_hoanganhduc.gclass_agent</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">course_hoanganhduc.db_agent</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">course_hoanganhduc.course_agent_common</span></code> — agent mode + allowlist helpers</p></li>
+</ul>
+</section>
+</section>
+
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">Course Management Toolkit</a></h1>
+
+
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="usage.html">Usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="cli_reference.html">CLI Reference</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">API Reference</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#course_hoanganhduc.config.cache_course_code"><code class="docutils literal notranslate"><span class="pre">cache_course_code()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#course_hoanganhduc.config.clear_config"><code class="docutils literal notranslate"><span class="pre">clear_config()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#course_hoanganhduc.config.clear_credentials"><code class="docutils literal notranslate"><span class="pre">clear_credentials()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#course_hoanganhduc.config.get_cached_course_code"><code class="docutils literal notranslate"><span class="pre">get_cached_course_code()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#course_hoanganhduc.config.get_default_config_path"><code class="docutils literal notranslate"><span class="pre">get_default_config_path()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#course_hoanganhduc.config.get_default_credentials_path"><code class="docutils literal notranslate"><span class="pre">get_default_credentials_path()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#course_hoanganhduc.config.get_default_download_folder"><code class="docutils literal notranslate"><span class="pre">get_default_download_folder()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#course_hoanganhduc.config.get_default_token_path"><code class="docutils literal notranslate"><span class="pre">get_default_token_path()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#course_hoanganhduc.config.load_config"><code class="docutils literal notranslate"><span class="pre">load_config()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#course_hoanganhduc.config.validate_config"><code class="docutils literal notranslate"><span class="pre">validate_config()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#course_hoanganhduc.canvas.interactive_modify_database"><code class="docutils literal notranslate"><span class="pre">interactive_modify_database()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#course_hoanganhduc.google_classroom.CredentialSecurityError"><code class="docutils literal notranslate"><span class="pre">CredentialSecurityError</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#course_hoanganhduc.google_classroom.GoogleClassroomAPIError"><code class="docutils literal notranslate"><span class="pre">GoogleClassroomAPIError</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#course_hoanganhduc.google_classroom.GoogleClassroomError"><code class="docutils literal notranslate"><span class="pre">GoogleClassroomError</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#course_hoanganhduc.google_classroom.GoogleClassroomOutcomeUnknownError"><code class="docutils literal notranslate"><span class="pre">GoogleClassroomOutcomeUnknownError</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#course_hoanganhduc.google_classroom.GoogleClassroomPartialCreateError"><code class="docutils literal notranslate"><span class="pre">GoogleClassroomPartialCreateError</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#course_hoanganhduc.google_classroom.build_google_classroom_assignment_body"><code class="docutils literal notranslate"><span class="pre">build_google_classroom_assignment_body()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#course_hoanganhduc.google_classroom.build_google_classroom_rubric_body"><code class="docutils literal notranslate"><span class="pre">build_google_classroom_rubric_body()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#course_hoanganhduc.google_classroom.create_google_classroom_assignment"><code class="docutils literal notranslate"><span class="pre">create_google_classroom_assignment()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#course_hoanganhduc.google_classroom.create_google_classroom_assignment_with_rubric"><code class="docutils literal notranslate"><span class="pre">create_google_classroom_assignment_with_rubric()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#course_hoanganhduc.google_classroom.download_google_classroom_assignment_submissions"><code class="docutils literal notranslate"><span class="pre">download_google_classroom_assignment_submissions()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#course_hoanganhduc.google_classroom.download_google_sheet_to_csv"><code class="docutils literal notranslate"><span class="pre">download_google_sheet_to_csv()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#course_hoanganhduc.google_classroom.get_google_classroom_auth_status"><code class="docutils literal notranslate"><span class="pre">get_google_classroom_auth_status()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#course_hoanganhduc.google_classroom.get_google_classroom_coursework_service"><code class="docutils literal notranslate"><span class="pre">get_google_classroom_coursework_service()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#course_hoanganhduc.google_classroom.grade_google_classroom_assignment_submissions"><code class="docutils literal notranslate"><span class="pre">grade_google_classroom_assignment_submissions()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#course_hoanganhduc.google_classroom.resolve_coursework_auth_paths"><code class="docutils literal notranslate"><span class="pre">resolve_coursework_auth_paths()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#course_hoanganhduc.google_classroom.sync_students_with_google_classroom"><code class="docutils literal notranslate"><span class="pre">sync_students_with_google_classroom()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#course_hoanganhduc.google_classroom.unenroll_google_classroom_students"><code class="docutils literal notranslate"><span class="pre">unenroll_google_classroom_students()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#module-course_hoanganhduc.gclass_coursework">Google Classroom assignment creation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#agent-and-classroom50-modules">Agent and Classroom50 modules</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="changelog.html">Changelog</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="cli_reference.html" title="previous chapter">CLI Reference</a></li>
+      <li>Next: <a href="changelog.html" title="next chapter">Changelog</a></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &#169;2026, Duc A. Hoang.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 8.1.3</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+      |
+      <a href="_sources/api.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>
