@@ -109,6 +109,57 @@ Canvas: Rubrics and Grading
 Classroom50
 -----------
 
+Assignment administration (separate command)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Installing the package creates ``course-c50-admin``
+(``course_hoanganhduc.c50_admin_cli:main``), the dedicated Classroom50 operator CLI.
+The equivalent source-tree invocation is
+``python -m course_hoanganhduc.c50_admin_cli``. This mirrors the
+``course-gclass-admin`` boundary: the ``course`` flags listed below keep their read,
+roster-sync, export, and human-download workflows, while every operation that changes
+remote Classroom50 state lives on the separate command. The restricted
+``python -m course_hoanganhduc.c50_agent`` entrypoint continues to expose
+``preflight``, ``list-*``, allowlisted ``sync``, and ``export``; it explicitly refuses
+``assignment-add``, ``assignment-remove``, ``invite``, and ``download``.
+
+Every subcommand refuses in agent mode, requires an interactive terminal unless
+``--dry-run`` is given, and builds one fixed ``gh teacher`` command line. There is no
+free-form argument passthrough. The four subcommands are:
+
+- ``assignment-add --org ORG --classroom SHORT-NAME --slug SLUG --name NAME``
+  registers an assignment. Optional ``--template``, ``--tests``, ``--empty-repo``,
+  ``--mode {individual,group}``, ``--max-group-size N`` (required with ``--mode
+  group``), ``--available-from``, ``--due``, ``--feedback-pr``, ``--allowed-files``,
+  ``--pass-threshold``, ``--student-permission``, ``--description``, ``--locked``.
+  ``gh teacher assignment add`` replaces an existing entry in place and the pinned CLI
+  cannot set submission mode, so re-running it restores the default every-push mode and
+  discards a tagged-commit setting made in the web form. An existing slug is therefore
+  refused; overriding needs both ``--allow-overwrite`` and an interactive confirmation.
+- ``assignment-remove --org ORG --classroom SHORT-NAME --slug SLUG`` deletes the entry
+  from ``assignments.json``. It does not delete student repositories, and re-adding the
+  same slug is not a clean reset; the confirmation states both. An absent slug is
+  refused rather than silently succeeding.
+- ``invite --target ORG[/REPO] --username LOGIN [--username LOGIN ...]`` sends
+  invitations. Use ``--admin`` for an organization owner invitation, or
+  ``--permission {pull,triage,push,maintain,admin}`` for a repository invitation; the
+  two are mutually exclusive and each is valid for only one target kind. Repository
+  invitations are idempotent, organization invitations are not, so organization targets
+  are preflighted against ``gh teacher member list`` and logins that are already members
+  or hold a pending invitation are skipped. That read needs the ``admin:org`` scope.
+- ``download --org ORG --classroom SHORT-NAME --assignment SLUG --dest DIR`` collects
+  submissions. ``--by-pattern`` skips the team lookup, so it fetches no ``result.json``
+  and writes no ``scores.csv``. It is permitted only after the assignment record reports
+  empty-repository mode, and refused otherwise.
+
+Exit codes are ``0`` success, ``2`` validation failure or refusal, ``3`` the ``gh`` call
+failed and the remote outcome is unverified, and ``4`` a batch invite completed with
+failures. Student acceptance and student submission are not provided: both run under a
+student's own credentials.
+
+Toolkit flags
+~~~~~~~~~~~~~
+
 - ``--classroom50-assignment``: Classroom50 assignment slug (human download)
 - ``--classroom50-classroom``: Classroom50 classroom short-name
 - ``--classroom50-download-dest``: Destination directory for Classroom50 downloads

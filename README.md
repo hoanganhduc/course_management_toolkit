@@ -139,13 +139,67 @@ course --download-classroom50 --classroom50-org my-org --classroom50-classroom s
 
 Flags are listed under **Classroom50** in `docs/cli_reference.rst`.
 
+### Operator commands (`course-c50-admin`)
+
+Installing the package also creates `course-c50-admin`, a **human-only** entrypoint for the
+teacher-side operations that change remote state. It is separate from `course` for the same
+reason `course-gclass-admin` is: mutation never reaches the agent entrypoint. Every verb
+refuses in agent mode, requires an interactive terminal unless `--dry-run` is given, and
+builds one fixed `gh teacher` command — there is no free-form argv.
+
+```bash
+# Print the exact command and the preconditions, without touching the network
+course-c50-admin assignment-add --org my-org --classroom short-name \
+  --slug final-project --name "Final Examination Mini-Project" \
+  --mode group --max-group-size 5 --empty-repo --dry-run
+
+# Register an assignment (interactive confirmation)
+course-c50-admin assignment-add --org my-org --classroom short-name \
+  --slug week-1 --name "Week 1" --template my-org/week-1-template
+
+# Remove an assignment entry (does not delete student repositories)
+course-c50-admin assignment-remove --org my-org --classroom short-name --slug week-1
+
+# Invite users to an organization or a repository
+course-c50-admin invite --target my-org --username alice --username bob
+course-c50-admin invite --target my-org/week-1-alice --username bob --permission maintain
+
+# Download submissions
+course-c50-admin download --org my-org --classroom short-name \
+  --assignment week-1 --dest ./c50_submissions
+```
+
+Guards worth knowing before you run it:
+
+- **`assignment-add` refuses an existing slug.** `gh teacher assignment add` replaces the
+  entry in place, and the pinned CLI cannot set submission mode, so re-running it restores
+  the default every-push mode and discards a tagged-commit setting made in the web form.
+  Overwriting requires both `--allow-overwrite` and an interactive confirmation; there is
+  no `--yes`.
+- **`assignment-remove` refuses an absent slug** instead of exiting 0, and its confirmation
+  states that student repositories survive and that re-adding the same slug is not a clean
+  reset.
+- **`download --by-pattern` is permitted only for empty-repository assignments.** The flag
+  skips the team lookup, so it collects no `result.json` and writes no `scores.csv`; an
+  empty-repository assignment has neither, an autograded one does. The assignment record is
+  read first, and the flag is refused if `empty_repo` is not set.
+- **`invite` preflights organizations, not repositories.** Repository invitations are
+  idempotent; organization invitations are not, so actual membership is read first and
+  logins that are already members or hold a pending invitation are skipped rather than
+  failing the batch. Reading pending invitations needs the `admin:org` scope.
+
+Exit codes: `0` success, `2` validation or refusal, `3` the `gh` call failed and the remote
+outcome is unverified, `4` a batch invite had failures. Student acceptance and student
+submission are **not** provided: they run under a student's own credentials.
+
+
 ## Agent-safe entrypoints
 
 For AI agents (and for restricted automation), prefer dedicated modules that force **agent mode** (`COURSE_AGENT_MODE=1`). These surfaces refuse destructive or high-blast-radius ops (unenroll, grade-apply, invite, announcement, submission download, interactive DB modify, etc.). Use the interactive `course` CLI as a human when those are required.
 
 | Module | Role | Allowed (typical) | Refused (examples) |
 | --- | --- | --- | --- |
-| `python -m course_hoanganhduc.c50_agent` | Classroom50 | preflight, list-*, sync, export | download |
+| `python -m course_hoanganhduc.c50_agent` | Classroom50 | preflight, list-*, sync, export | assignment-add, assignment-remove, invite, download |
 | `python -m course_hoanganhduc.canvas_agent` | Canvas | preflight, list-assignments/members, search-user, sync | unenroll, grade, invite, announce, download, messages, pages |
 | `python -m course_hoanganhduc.gclass_agent` | Google Classroom | preflight, list-courses/students, sync | create-assignment, unenroll, grade, download |
 | `python -m course_hoanganhduc.db_agent` | Local students.db | search, details, list-*, export-*, count | modify, restore-db, import-apply, delete |
@@ -172,6 +226,15 @@ python -m course_hoanganhduc.db_agent export-roster --db students.db
 | `GCLASS_ACCOUNT_ALLOWLIST` | narrow Google Classroom admin smoke test |
 
 Comma-separated ids. Empty allowlist with a required id fails closed.
+
+Set these **in the invocation** (or in a file the spawner reads), not in `~/.bashrc`. A
+typical `.bashrc` returns early for non-interactive shells, so a variable exported there is
+absent under `env -i`, cron, systemd, CI, or any non-login agent spawn, and the fail-closed
+check then rejects every call:
+
+```bash
+CLASSROOM50_ORG_ALLOWLIST=my-org python -m course_hoanganhduc.c50_agent list-classrooms --org my-org
+```
 
 **ai-agents-skills:** install the `course-management` profile to get skills `classroom50`, `course-canvas`, `course-google-classroom`, and `course-db` that route through these modules. See [ai-agents-skills course management docs](https://github.com/hoanganhduc/ai-agents-skills/blob/main/docs/course-management.md).
 

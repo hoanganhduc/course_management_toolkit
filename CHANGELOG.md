@@ -1,5 +1,33 @@
 ﻿# Changelog
 
+## [0.3.0] - 2026-08-29
+
+- Added `course-c50-admin`, a human-only Classroom50 operator CLI with
+  `assignment-add`, `assignment-remove`, `invite`, and `download` subcommands. Each
+  verb refuses in agent mode, requires an interactive terminal unless `--dry-run` is
+  given, builds one fixed `gh teacher` command line, and redacts secrets from captured
+  output.
+- `assignment-add` refuses an existing slug by default because `gh teacher assignment
+  add` replaces the entry in place and the pinned CLI cannot set submission mode, so a
+  repeat run restores the default every-push mode and discards a tagged-commit setting
+  made in the web form. Overriding requires `--allow-overwrite` and an interactive
+  confirmation; there is no `--yes`.
+- `assignment-remove` refuses an absent slug and states in its confirmation that
+  student repositories survive and that re-adding the same slug is not a clean reset.
+- `invite` preflights organization targets against `gh teacher member list` and skips
+  logins that are already members or hold a pending invitation, since organization
+  invitations are not idempotent. Repository targets need no preflight.
+- Narrowed the blanket `--by-pattern` download ban to an evidence-based gate:
+  `--by-pattern` is now permitted only when the assignment record reports
+  empty-repository mode, which has no `result.json` or automatic score to collect, and
+  refused for autograded assignments where it would skip both.
+- `python -m course_hoanganhduc.c50_agent` now returns a structured refusal for
+  `assignment-add`, `assignment-remove`, and `invite` instead of an argparse usage
+  error. No agent-safe Classroom50 mutation path was added.
+- Documented that `CLASSROOM50_ORG_ALLOWLIST` must be set in the invocation rather than
+  `~/.bashrc`, whose non-interactive early return leaves it unset under `env -i`, cron,
+  systemd, and CI.
+
 ## [0.2.0] - 2026-08-28
 
 - Simplified Google Classroom assignment creation: removed redundant typed

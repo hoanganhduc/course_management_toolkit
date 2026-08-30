@@ -9,8 +9,25 @@ import os
 import sys
 
 
+# Mutating verbs live on course-c50-admin, for a human operator. They are named here
+# so an agent gets a structured refusal instead of an argparse usage error, whatever
+# arguments follow.
+REFUSED_VERBS = ("assignment-add", "assignment-remove", "invite")
+
+
 def main(argv=None) -> int:
     os.environ["COURSE_C50_AGENT_MODE"] = "1"
+
+    raw = list(sys.argv[1:] if argv is None else argv)
+    if raw and raw[0] in REFUSED_VERBS:
+        from .c50_cli import Classroom50Error
+        from .c50_ops import agent_refuse
+
+        try:
+            agent_refuse(raw[0].replace("-", " "))
+        except Classroom50Error as exc:
+            print(f"Classroom50 error: {exc}", file=sys.stderr)
+            return 1
 
     parser = argparse.ArgumentParser(
         prog="python -m course_hoanganhduc.c50_agent",
@@ -40,6 +57,8 @@ def main(argv=None) -> int:
     p_dl.add_argument("--classroom", default="")
     p_dl.add_argument("--assignment", default="")
     p_dl.add_argument("--dest", default="")
+    for name in REFUSED_VERBS:
+        sub.add_parser(name, help=f"(refused) {name} is not agent-safe")
 
     args = parser.parse_args(argv)
 

@@ -299,6 +299,51 @@ class TestDataMapping(unittest.TestCase):
         self.assertNotIn('"GitHub id": "GitHub Username"', src)
 
 
+class TestOperatorSurfaceRefusals(unittest.TestCase):
+    """The mutating verbs stay off the agent entrypoint (ADR D6)."""
+
+    def tearDown(self):
+        os.environ.pop("COURSE_C50_AGENT_MODE", None)
+
+    def test_agent_entrypoint_refuses_mutating_verbs(self):
+        import contextlib
+        import io
+
+        from course_hoanganhduc import c50_agent
+
+        for argv in (
+            ["assignment-add", "--org", "O"],
+            ["assignment-remove", "--org", "O"],
+            ["invite", "--target", "O"],
+            ["download", "--org", "O"],
+        ):
+            with self.subTest(verb=argv[0]):
+                err = io.StringIO()
+                with contextlib.redirect_stderr(err):
+                    code = c50_agent.main(argv)
+                self.assertEqual(code, 1)
+                self.assertIn("Classroom50 error", err.getvalue())
+
+    def test_agent_refuse_code(self):
+        from course_hoanganhduc.c50_ops import agent_refuse
+
+        with self.assertRaises(Classroom50Error) as ctx:
+            agent_refuse("invite")
+        self.assertEqual(ctx.exception.code, "agent_forbidden")
+
+    def test_human_download_still_refuses_unverified_by_pattern(self):
+        human = HumanCLI(runner=lambda a: RunResult(0))
+        with self.assertRaises(Classroom50Error) as ctx:
+            human.download("o", "c", "a", "dest", by_pattern=True)
+        self.assertEqual(ctx.exception.code, "by_pattern_not_permitted")
+
+    def test_plain_human_download_argv_unchanged(self):
+        human = HumanCLI(runner=lambda a: RunResult(0))
+        self.assertEqual(
+            human.download_argv("o", "c", "a", "dest"),
+            ["gh", "teacher", "download", "o", "c", "a", "-d", "dest"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
