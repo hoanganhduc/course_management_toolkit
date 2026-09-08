@@ -1,0 +1,83 @@
+"""Package settings and defaults."""
+
+### Constants and Configurations
+# === Global variables and default values (initialized as empty) ===
+DEFAULT_AI_METHOD = ""
+ALL_AI_METHODS = ["gemini", "huggingface", "local"]
+GEMINI_API_KEY = ""
+HUGGINGFACE_API_KEY = ""
+GEMINI_DEFAULT_MODEL = ""
+REPORT_REFINE_METHOD = ""
+LOCAL_LLM_COMMAND = "ollama"
+LOCAL_LLM_MODEL = "llama3.2:3b"
+LOCAL_LLM_ARGS = ""
+LOCAL_LLM_TIMEOUT = 120
+LOCAL_LLM_GGUF_DIR = r"C:\llm"
+DRY_RUN = False
+LOG_DIR = ""
+LOG_LEVEL = "INFO"
+LOG_MAX_BYTES = 5_000_000
+LOG_BACKUP_COUNT = 3
+DB_BACKUP_KEEP = 5
+CONFIG_BACKUP_KEEP = 5
+GRADE_AUDIT_ENABLED = True
+GRADE_AUDIT_FIELDS = [
+    "CC",
+    "GK",
+    "CK",
+    "Attendance",
+    "Midterm",
+    "Final",
+    "Override CC",
+    "Override GK",
+    "Override CK",
+    "Override Final Project",
+    "Override Final Project Reason",
+]
+WEIGHT_CC = 0.2
+WEIGHT_GK = 0.2
+WEIGHT_CK = 0.6
+QUALITY_MIN_CHARS = 50
+QUALITY_UNIQUE_CHAR_RATIO_MIN = 0.1
+QUALITY_REPEAT_CHAR_RATIO_MAX = 0.12
+QUALITY_VN_CHAR_RATIO_MIN = 0.03
+QUALITY_ALNUM_RATIO_MIN = 0.4
+QUALITY_SYMBOL_RATIO_MAX = 0.5
+QUALITY_EMPTY_LINE_RATIO_MAX = 0.6
+QUALITY_MATH_DENSITY_THRESHOLD = 0.05
+QUALITY_LENGTH_RATIO_LOW = 0.3
+QUALITY_LENGTH_RATIO_MEDIUM = 0.5
+QUALITY_LENGTH_RATIO_HIGH = 0.7
+STUDENT_SORT_METHOD = "first_last"
+
+DEFAULT_OCR_METHOD = "ocrspace"
+ALL_OCR_METHODS = ["ocrspace", "tesseract", "paddleocr"]
+OCRSPACE_API_KEY = ""
+OCRSPACE_API_URL = "https://api.ocr.space/parse/image"
+
+CANVAS_LMS_API_URL = ""
+CANVAS_LMS_API_KEY = ""
+CANVAS_LMS_COURSE_ID = ""
+GOOGLE_CLASSROOM_GRADE_CATEGORY_METHOD = "average"
+GOOGLE_CLASSROOM_CC_TOPICS = ""
+GOOGLE_CLASSROOM_GK_TOPICS = ""
+GOOGLE_CLASSROOM_CK_TOPICS = ""
+GOOGLE_SHEET_URL = ""
+GOOGLE_SHEET_LECTURER_TOPICS_URL = ""
+GOOGLE_SHEET_STUDENT_REGISTRATION_URL = ""
+
+# Default course code used in config path when none is provided.
+DEFAULT_COURSE_CODE = "mat3500"
+COURSE_CODE = ""
+COURSE_NAME = ""
+
+MIDTERM_DATE = ""
+
+EXAM_TYPE="" # 'midterm' or 'final'
+CANVAS_MIDTERM_ASSIGNMENT_ID = ""
+CANVAS_FINAL_ASSIGNMENT_ID = ""
+CANVAS_CC_ASSIGNMENT_ID = ""
+
+CANVAS_DEFAULT_ASSIGNMENT_CATEGORY = "Bài tập"
+DEFAULT_RESTRICTED = True
+

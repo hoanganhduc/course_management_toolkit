@@ -1,0 +1,5 @@
+Timestamp,Student ID,Full Name,Phone Number,Email,Class,Course,Desired Direction,Strengths,Weaknesses,Company Wishlist,Notes
+21/01/2026 09:00:00,22000001,Student One,0900000001,student1@example.com,K67A1,MAT3371 - Software Construction,Web/Mobile,"Agile, Diligent",Poor English,"FPT Software, Viettel, VNPT",
+21/01/2026 10:00:00,22000002,Student Two,0900000002,student2@example.com,K67A2,MAT3397 - Data Science,Data Science/AI,"Logical thinking, Math",Communication skills,"VinAI, Trustingsocial, Cinnamon",Interviewing
+22/01/2026 14:30:00,22000003,Student Three,0900000003,student3@example.com,K67A3,MAT1203 - Analysis & Design,Game Dev,"Game passion, Unity",Lazy,"VNG, Gameloft, Koei Tecmo",Accepted
+23/01/2026 15:00:00,22000004,Student Four,0900000004,student4@example.com,K67A4,MAT3500,Tester,Meticulous,Slow,"FPT Software, NashTech",

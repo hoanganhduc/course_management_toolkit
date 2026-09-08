@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "course-hoanganhduc"
+version = "0.4.0"
+description = "Course management utilities for roster, grading, and LMS workflows."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "GPL-3.0-only" }
+classifiers = [
+  "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+]
+dependencies = [
+  "canvasapi",
+  "google-api-python-client",
+  "google-auth>=2.15.0",
+  "google-auth-oauthlib>=1.0.0",
+  "numpy",
+  "opencv-python",
+  "openpyxl",
+  "paddleocr",
+  "pandas",
+  "pdf2image",
+  "pillow",
+  "PyPDF2",
+  "pytesseract",
+  "requests",
+  "scikit-learn",
+  "tqdm",
+]
+
+[project.scripts]
+course = "course_hoanganhduc.cli:main"
+course-gclass-admin = "course_hoanganhduc.gclass_admin_cli:main"
+course-c50-admin = "course_hoanganhduc.c50_admin_cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["course_hoanganhduc*"]
