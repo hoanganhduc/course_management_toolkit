@@ -322,6 +322,27 @@ def _shared_values(
     return {value: rows for value, rows in buckets.items() if len(rows) > 1}
 
 
+def _has_field(student: Any, key: str) -> bool:
+    """Whether the record carries the field at all, as opposed to carrying it empty."""
+    if isinstance(student, dict):
+        return key in student
+    return hasattr(student, key)
+
+
+def _collects_github(students: Sequence[Any]) -> bool:
+    """Whether the registration form asks for a GitHub username at all.
+
+    The import writes one field per column of the form, and writes it even when
+    the answer was left blank, so a course whose form never asked the question
+    leaves no record carrying the key.  The distinction matters because the two
+    cases deserve opposite treatment: a student who skipped a question they were
+    asked can go back and answer it, while a whole class cannot fill in a box
+    their form does not have.  Announcing the second names every student in the
+    course over a fix none of them can carry out.
+    """
+    return any(_has_field(student, "GitHub Username") for student in students)
+
+
 def list_invalid_info(
     students: Sequence[Any],
     *,
@@ -344,6 +365,7 @@ def list_invalid_info(
 
     shared_ids = _shared_values(students, "Student ID")
     shared_github = _shared_values(students, "GitHub Username")
+    asks_github = _collects_github(students)
 
     dominant_class: Dict[str, str] = {}
     class_counts: Dict[str, Counter] = defaultdict(Counter)
@@ -443,11 +465,12 @@ def list_invalid_info(
         raw_github = _field(student, "GitHub Username")
         github, _github_reason = validate_github_username(raw_github)
         if not raw_github:
-            add(
-                "github_missing", SEVERITY_ERROR, "GitHub Username", "",
-                "chưa có tài khoản GitHub",
-                "tạo tài khoản GitHub rồi điền lại form",
-            )
+            if asks_github:
+                add(
+                    "github_missing", SEVERITY_ERROR, "GitHub Username", "",
+                    "chưa có tài khoản GitHub",
+                    "tạo tài khoản GitHub rồi điền lại form",
+                )
         elif not github:
             add(
                 "github_syntax", SEVERITY_ERROR, "GitHub Username", raw_github,

@@ -40,6 +40,7 @@ from course_hoanganhduc.data import (  # noqa: E402
     read_students_from_excel_csv,
 )
 from course_hoanganhduc.models import Student  # noqa: E402
+from course_hoanganhduc.roster_audit import list_invalid_info  # noqa: E402
 
 HEADER = (
     "Timestamp,Email Address,Họ và Tên (Full Name),Emai VNU-HUS,GitHub Username,"
@@ -55,6 +56,11 @@ EARLIER = (
 LATER = (
     "9/6/2026 15:44:00,giangdp@gmail.com,Đỗ Phú Giang,24007001@hus.edu.vn,"
     "dophugiang-33,24007001,1/1/2006,K68A4,MAT1206E 1"
+)
+# A second invented student, who answered every question but the GitHub one.
+UNANSWERED = (
+    "9/5/2026 9:12:40,khiempt@gmail.com,Phạm Tuấn Khiêm,24007003@hus.edu.vn,,"
+    "24007003,2/2/2006,K68A4,MAT1206E 1"
 )
 
 
@@ -78,6 +84,10 @@ def only(records: List[Any]) -> Any:
     if len(records) != 1:
         raise AssertionError(f"expected one student, got {len(records)}")
     return records[0]
+
+
+def by_id(records: List[Any], student_id: str) -> Any:
+    return only([r for r in records if field(r, "Student ID") == student_id])
 
 
 def merge(*records: Student) -> List[Student]:
@@ -112,6 +122,28 @@ class SheetImport(unittest.TestCase):
         stored = only(load_database(path))
         self.assertEqual(field(stored, "GitHub Username"), "dophugiang-33")
         self.assertEqual(field(stored, "Student ID"), "24007001")
+
+    def test_a_question_left_blank_is_stored_empty(self) -> None:
+        """A cell nobody filled in is empty, not an account named 'nan'.
+
+        pandas hands a blank cell over as NaN, and NaN is truthy, so the import
+        read an unanswered question as an answer and stored ``str(nan)``.
+        """
+        students = read_students_from_excel_csv(sheet([EARLIER, UNANSWERED]))
+        self.assertEqual(field(by_id(students, "24007003"), "GitHub Username"), "")
+
+    def test_a_question_left_blank_reaches_the_audit_as_missing(self) -> None:
+        """Why it matters: a stored 'nan' is a syntactically valid username.
+
+        The audit therefore never told this student their answer was missing,
+        and every student who skipped the question shared one account with
+        every other, which is what ``github_shared`` is meant to catch.
+        """
+        students = read_students_from_excel_csv(sheet([EARLIER, UNANSWERED]))
+        issues = list_invalid_info(students)
+        missing = [i for i in issues if i.code == "github_missing"]
+        self.assertEqual([i.student.student_id for i in missing], ["24007003"])
+        self.assertEqual([i for i in issues if i.code == "github_shared"], [])
 
     def test_the_vietnamese_timestamp_header_still_decides(self) -> None:
         """A form in Vietnamese writes 'Dấu thời gian'; without the alias the

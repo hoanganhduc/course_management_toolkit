@@ -3620,6 +3620,15 @@ def read_students_from_excel_csv(file_path, db_path=None, verbose=False, preview
 
     df = normalize_columns(df, verbose=verbose)
 
+    # A question left blank is empty, not the word "nan".  pandas hands a blank
+    # cell over as NaN, and NaN is truthy, so every ``if student_dict[col]``
+    # below read an unanswered question as an answer and stored ``str(nan)``.
+    # A stored "nan" is a syntactically valid username, so the audit never told
+    # the student their GitHub account was missing, and everyone who skipped the
+    # question shared that one account with everyone else.  This runs after the
+    # dropna cleaning above, which still needs to see the blanks as NaN.
+    df = df.fillna("")
+
     if is_mat_file:
         mat_drop_cols = {
             "Attendance", "Midterm", "Final", "Participation", "Assignment", "Quiz",

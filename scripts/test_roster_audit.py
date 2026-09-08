@@ -165,6 +165,37 @@ class FormCoverage(unittest.TestCase):
 
 
 class FieldChecks(unittest.TestCase):
+    def test_github_is_not_asked_for_when_the_form_never_asked(self) -> None:
+        """A course whose form has no GitHub question leaves no record carrying the key.
+
+        Reporting the field there names every student in the class over a box
+        the form does not have, and the fix it offers -- fill the form in again
+        -- cannot be carried out.
+        """
+        rows = [
+            student(**{"GitHub Username": None}),
+            student(
+                Name="Nguyễn Văn B",
+                Email="24001112@hus.edu.vn",
+                **{"Student ID": "24001112", "GitHub Username": None},
+            ),
+        ]
+        self.assertNotIn("github_missing", codes(list_invalid_info(rows)))
+
+    def test_github_left_blank_is_still_reported_when_the_form_asked(self) -> None:
+        """The key is present but empty: this student did skip a question they were asked."""
+        rows = [
+            student(),
+            student(
+                Name="Nguyễn Văn B",
+                Email="24001112@hus.edu.vn",
+                **{"Student ID": "24001112", "GitHub Username": ""},
+            ),
+        ]
+        found = [i for i in list_invalid_info(rows) if i.code == "github_missing"]
+        self.assertEqual(len(found), 1)
+        self.assertEqual(found[0].student.student_id, "24001112")
+
     def test_github_username_with_a_space_is_an_error(self) -> None:
         issues = list_invalid_info([student(**{"GitHub Username": "Quan Vu"})])
         found = [i for i in issues if i.code == "github_syntax"]
