@@ -69,7 +69,7 @@ FINAL_SLUG = "final-project"
 # The two organization owners.  Both are collaborators on every repository and
 # both are on the teacher team, which is why they survive crediting and are only
 # removed by the staff subtraction.
-TEACHERS = ("hoanganhduc", "HoTroLop7")
+TEACHERS = ("hoanganhduc", "Ivy")
 
 GITHUB_IDS = {
     "alice": 111,
@@ -78,9 +78,9 @@ GITHUB_IDS = {
     "dave": 444,
     "erin": 555,
     "frank": 666,
-    "24007008-debug": 631690257,
-    "hoanganhduc": 663849,
-    "hotrolop7": 782486747,
+    "24007008-debug": 888,
+    "hoanganhduc": 700,
+    "ivy": 777,
 }
 
 ROSTER = [
@@ -90,8 +90,8 @@ ROSTER = [
     {"login": "dave", "kind": "user", "role": "", "github_id": 444},
     {"login": "erin", "kind": "user", "role": "", "github_id": 555},
     {"login": "frank", "kind": "user", "role": "", "github_id": 666},
-    {"login": "hoanganhduc", "kind": "user", "role": "teacher", "github_id": 663849},
-    {"login": "HoTroLop7", "kind": "user", "role": "teacher", "github_id": 782486747},
+    {"login": "hoanganhduc", "kind": "user", "role": "teacher", "github_id": 700},
+    {"login": "Ivy", "kind": "user", "role": "teacher", "github_id": 777},
 ]
 
 MANIFEST = {
@@ -120,11 +120,11 @@ MANIFEST = {
 # so a rebuilt slug can name a team that does not exist.
 CLASSROOM_CONFIG = {
     "org": "vnu-hus",
-    "team": {"id": 18900350, "slug": "classroom50-vnu-hus-mat1206e-winter-2026"},
+    "team": {"id": 9000, "slug": "classroom50-vnu-hus-mat1206e-winter-2026"},
     "teams": {
-        "teacher": {"id": 18900351, "slug": "renamed-teacher-team-2"},
-        "hta": {"id": 18900353, "slug": "renamed-hta-team-2"},
-        "ta": {"id": 18900354, "slug": "renamed-ta-team-2"},
+        "teacher": {"id": 9001, "slug": "renamed-teacher-team-2"},
+        "hta": {"id": 9003, "slug": "renamed-hta-team-2"},
+        "ta": {"id": 9004, "slug": "renamed-ta-team-2"},
     },
 }
 
@@ -422,13 +422,13 @@ class TestCreditingSteps(unittest.TestCase):
 
     def setUp(self) -> None:
         self.roster_logins = all_roster_logins(ROSTER)
-        self.staff = frozenset({"hoanganhduc", "hotrolop7"})
+        self.staff = frozenset({"hoanganhduc", "ivy"})
         self.collaborators = [
             Collaborator(login="alice", github_id="111"),
             Collaborator(login="bob", github_id="222"),
             Collaborator(login="carol", github_id="333"),
-            Collaborator(login="hoanganhduc", github_id="663849"),
-            Collaborator(login="hotrolop7", github_id="782486747"),
+            Collaborator(login="hoanganhduc", github_id="700"),
+            Collaborator(login="ivy", github_id="777"),
         ]
 
     def test_step_three_keeps_the_teachers_and_step_four_removes_them(self) -> None:
@@ -437,8 +437,8 @@ class TestCreditingSteps(unittest.TestCase):
         )
         # Upstream credits anyone on the classroom teams, staff included.
         self.assertIn("hoanganhduc", credited)
-        self.assertIn("hotrolop7", credited)
-        self.assertEqual(credited, ["alice", "bob", "carol", "hoanganhduc", "hotrolop7"])
+        self.assertIn("ivy", credited)
+        self.assertEqual(credited, ["alice", "bob", "carol", "hoanganhduc", "ivy"])
 
         students = student_members(credited, staff_logins=self.staff)
         self.assertEqual(students, ["alice", "bob", "carol"])
@@ -471,8 +471,8 @@ class TestCreditingSteps(unittest.TestCase):
             Collaborator(login=login, github_id=str(GITHUB_IDS[login]))
             for login in ("alice", "bob", "carol", "dave", "erin")
         ] + [
-            Collaborator(login="hoanganhduc", github_id="663849"),
-            Collaborator(login="hotrolop7", github_id="782486747"),
+            Collaborator(login="hoanganhduc", github_id="700"),
+            Collaborator(login="ivy", github_id="777"),
         ]
         credited = credit_members(
             collaborators, roster_logins=self.roster_logins, owner="alice"
@@ -667,7 +667,7 @@ class TestStaffResolution(unittest.TestCase):
         runner = FakeRunner(
             roster=roster,
             teams={
-                "renamed-teacher-team-2": ["hoanganhduc", "HoTroLop7"],
+                "renamed-teacher-team-2": ["hoanganhduc", "Ivy"],
                 "renamed-hta-team-2": [],
                 "renamed-ta-team-2": [],
             },
@@ -1225,7 +1225,7 @@ class TestFailures(unittest.TestCase):
         runner = FakeRunner(repos=[W00_REPO])
         runner.failures["/collaborators"] = RunResult(
             returncode=1,
-            stderr="gh: API rate limit exceeded for user ID 663849 (HTTP 403)",
+            stderr="gh: API rate limit exceeded for user ID 700 (HTTP 403)",
         )
         sleeper = RecordingSleeper()
         with self.assertRaises(Classroom50Error) as caught:

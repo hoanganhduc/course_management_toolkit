@@ -80,7 +80,7 @@ ROSTER = [
     {"login": "alice", "kind": "user", "role": "", "github_id": 111},
     {"login": "bob", "kind": "user", "role": "", "github_id": 222},
     {"login": "carol", "kind": "user", "role": "", "github_id": 333},
-    {"login": "hoanganhduc", "kind": "user", "role": "teacher", "github_id": 663849},
+    {"login": "hoanganhduc", "kind": "user", "role": "teacher", "github_id": 700},
 ]
 
 MANIFEST = {
@@ -225,7 +225,7 @@ class TestDocumentShape(unittest.TestCase):
         partial = RunResult(
             returncode=1,
             stdout=json.dumps(scores_doc({"ch01-introduction": {"type": "individual", "entries": []}})),
-            stderr="gh: API rate limit exceeded for user ID 663849 (HTTP 403)",
+            stderr="gh: API rate limit exceeded for user ID 700 (HTTP 403)",
         )
         students = klass()
         runner = FakeRunner(failures={"scores.json": partial})

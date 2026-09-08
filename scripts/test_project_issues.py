@@ -66,7 +66,7 @@ REPO_AN = f"{ORG}/{CLASSROOM}-final-project-an-nguyen"
 REPO_BINH = f"{ORG}/{CLASSROOM}-final-project-binh-tran"
 KNOWN_REPOS = frozenset({REPO_AN, REPO_BINH})
 
-STAFF = frozenset({"hoanganhduc", "hotrolop7"})
+STAFF = frozenset({"hoanganhduc", "ivy"})
 
 SHA_ONE = "3af80db0206215cfd43314b5feba8060c632e417"
 SHA_TWO = "cbb330fa1d2e3f405162738495a6b7c8d9e0f102"
@@ -1465,7 +1465,7 @@ class TestLane(unittest.TestCase):
         runner = FakeRunner(issues=[issue_row(7, body=body)], edits=[edit_node(7)])
         runner.failures["/issues?"] = self._partial_then_error(
             "API rate limit exceeded",
-            "gh: API rate limit exceeded for user ID 663849 (HTTP 403)",
+            "gh: API rate limit exceeded for user ID 700 (HTTP 403)",
         )
         with self.assertRaises(Classroom50Error) as caught:
             self.run_lane(runner, students)
