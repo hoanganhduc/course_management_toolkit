@@ -1,5 +1,9 @@
 # FROM python:3.11-slim
-FROM mcr.microsoft.com/devcontainers/base:ubuntu
+# Pinned to 24.04: the rolling ":ubuntu" tag follows the current LTS, which has
+# moved on to a release that no longer packages python3.12, so the apt-get below
+# stopped resolving.  The version this image installs is named in that list, so
+# the base it installs from is named here.
+FROM mcr.microsoft.com/devcontainers/base:ubuntu-24.04
 
 # Metadata for the image
 LABEL org.opencontainers.image.title="Course Management Toolkit" \
