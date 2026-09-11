@@ -196,6 +196,22 @@ def team_payload(**overrides: Any) -> Dict[str, Any]:
     return payload
 
 
+def w00_team_payload(**overrides: Any) -> Dict[str, Any]:
+    """A ``team.json`` in the shape ``check_submission.py`` demands.
+
+    The w00 template ships its own checker, and that checker wants exactly
+    ``team_name`` and ``members`` as bare logins.  It is a different file from
+    the final project's, so it gets a different fixture rather than being made
+    to stand in for one.
+    """
+    payload: Dict[str, Any] = {
+        "team_name": "Nhóm Alpha",
+        "members": ["alice", "bob"],
+    }
+    payload.update(overrides)
+    return payload
+
+
 class Student:
     """The attribute bag the database layer hands around."""
 
@@ -868,33 +884,33 @@ class TestConflicts(unittest.TestCase):
             }
         )
         runner = FakeRunner(
-            repos=[W00_REPO],
-            collaborators={W00_REPO: ["alice", "bob", *TEACHERS]},
-            team_json={W00_REPO: payload},
+            repos=[FINAL_REPO],
+            collaborators={FINAL_REPO: ["alice", "bob", *TEACHERS]},
+            team_json={FINAL_REPO: payload},
         )
         students = klass()
-        report = run_import(runner, students, assignment=GROUP_SLUG, with_team_json=True)
+        report = run_import(runner, students, assignment=FINAL_SLUG, with_team_json=True)
         self.assertIn("team_json_extra_member", codes(report.findings))
         self.assertEqual(report.updated, 0)
 
     def test_a_collaborator_left_out_of_the_file_holds_the_group(self) -> None:
         payload = team_payload(members=[team_payload()["members"][0]])
         runner = FakeRunner(
-            repos=[W00_REPO],
-            collaborators={W00_REPO: ["alice", "bob", *TEACHERS]},
-            team_json={W00_REPO: payload},
+            repos=[FINAL_REPO],
+            collaborators={FINAL_REPO: ["alice", "bob", *TEACHERS]},
+            team_json={FINAL_REPO: payload},
         )
-        report = run_import(runner, klass(), assignment=GROUP_SLUG, with_team_json=True)
+        report = run_import(runner, klass(), assignment=FINAL_SLUG, with_team_json=True)
         self.assertIn("team_json_missing_member", codes(report.findings))
         self.assertEqual(report.updated, 0)
 
     def test_a_founder_that_disagrees_with_the_repository_holds_the_group(self) -> None:
         runner = FakeRunner(
-            repos=[W00_REPO],
-            collaborators={W00_REPO: ["alice", "bob", *TEACHERS]},
-            team_json={W00_REPO: team_payload(founder="bob")},
+            repos=[FINAL_REPO],
+            collaborators={FINAL_REPO: ["alice", "bob", *TEACHERS]},
+            team_json={FINAL_REPO: team_payload(founder="bob")},
         )
-        report = run_import(runner, klass(), assignment=GROUP_SLUG, with_team_json=True)
+        report = run_import(runner, klass(), assignment=FINAL_SLUG, with_team_json=True)
         founder = [f for f in report.findings if f.code == "founder_mismatch"]
         self.assertEqual(len(founder), 1)
         self.assertEqual(founder[0].found, "bob")
@@ -902,17 +918,17 @@ class TestConflicts(unittest.TestCase):
 
     def test_the_wrong_course_holds_the_group(self) -> None:
         runner = FakeRunner(
-            repos=[W00_REPO],
-            collaborators={W00_REPO: ["alice", "bob", *TEACHERS]},
-            team_json={W00_REPO: team_payload(course="MAT3508")},
+            repos=[FINAL_REPO],
+            collaborators={FINAL_REPO: ["alice", "bob", *TEACHERS]},
+            team_json={FINAL_REPO: team_payload(course="MAT3508")},
         )
-        report = run_import(runner, klass(), assignment=GROUP_SLUG, with_team_json=True)
+        report = run_import(runner, klass(), assignment=FINAL_SLUG, with_team_json=True)
         self.assertIn("course_mismatch", codes(report.findings))
         self.assertEqual(course_for_classroom(CLASSROOM), "MAT1206E")
         self.assertEqual(report.updated, 0)
 
     def test_one_student_number_in_two_files_holds_both_groups(self) -> None:
-        second = repo_name(GROUP_SLUG, "carol")
+        second = repo_name(FINAL_SLUG, "carol")
         first_file = team_payload(members=[team_payload()["members"][0]])
         second_file = team_payload(
             founder="carol",
@@ -926,19 +942,21 @@ class TestConflicts(unittest.TestCase):
             ],
         )
         runner = FakeRunner(
-            repos=[W00_REPO, second],
+            repos=[FINAL_REPO, second],
             collaborators={
-                W00_REPO: ["alice", *TEACHERS],
+                FINAL_REPO: ["alice", *TEACHERS],
                 second: ["carol", *TEACHERS],
             },
-            team_json={W00_REPO: first_file, second: second_file},
+            team_json={FINAL_REPO: first_file, second: second_file},
         )
-        report = run_import(runner, klass(), assignment=GROUP_SLUG, with_team_json=True)
+        report = run_import(runner, klass(), assignment=FINAL_SLUG, with_team_json=True)
         self.assertEqual(codes(report.findings), ["student_id_shared_groups"])
-        self.assertEqual(sorted(report.quarantined[GROUP_SLUG]), sorted([W00_REPO, second]))
+        self.assertEqual(
+            sorted(report.quarantined[FINAL_SLUG]), sorted([FINAL_REPO, second])
+        )
 
     def test_a_shared_group_name_is_only_a_warning(self) -> None:
-        second = repo_name(GROUP_SLUG, "carol")
+        second = repo_name(FINAL_SLUG, "carol")
         first_file = team_payload(members=[team_payload()["members"][0]])
         second_file = team_payload(
             founder="carol",
@@ -951,22 +969,22 @@ class TestConflicts(unittest.TestCase):
             ],
         )
         runner = FakeRunner(
-            repos=[W00_REPO, second],
+            repos=[FINAL_REPO, second],
             collaborators={
-                W00_REPO: ["alice", *TEACHERS],
+                FINAL_REPO: ["alice", *TEACHERS],
                 second: ["carol", *TEACHERS],
             },
-            team_json={W00_REPO: first_file, second: second_file},
+            team_json={FINAL_REPO: first_file, second: second_file},
         )
         students = klass()
-        report = run_import(runner, students, assignment=GROUP_SLUG, with_team_json=True)
+        report = run_import(runner, students, assignment=FINAL_SLUG, with_team_json=True)
         self.assertEqual(codes(report.findings), ["group_name_shared"])
         self.assertEqual(
             [f.severity for f in report.findings], [SEVERITY_WARNING]
         )
         self.assertEqual(report.quarantined, {})
         self.assertEqual(report.updated, 2)
-        self.assertEqual(group_of(students[0])["group_name"], "Nhóm Alpha")
+        self.assertEqual(group_of(students[0], FINAL_SLUG)["group_name"], "Nhóm Alpha")
 
     def test_the_sheet_lane_disagreeing_is_a_warning_that_writes_nothing_back(self) -> None:
         runner = FakeRunner(
@@ -1352,7 +1370,7 @@ class TestLongFormExport(unittest.TestCase):
         options: Dict[str, Any] = {
             "repos": [W00_REPO],
             "scores": scores_doc({GROUP_SLUG: group_bucket("alice", ["alice", "bob"])}),
-            "team_json": {W00_REPO: team_payload()},
+            "team_json": {W00_REPO: w00_team_payload()},
         }
         options.update(runner_kwargs)
         report = run_import(FakeRunner(**options), records, with_team_json=True)
@@ -1505,7 +1523,7 @@ class TestLongFormExport(unittest.TestCase):
                 scores=scores_doc(
                     {GROUP_SLUG: group_bucket("alice", ["alice", "bob"])}
                 ),
-                team_json={W00_REPO: team_payload()},
+                team_json={W00_REPO: w00_team_payload()},
             ),
             klass(),
             with_team_json=True,

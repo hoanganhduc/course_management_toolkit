@@ -75,13 +75,34 @@ SOURCE_COLLABORATORS = "c50-collaborators"
 SOURCE_SCORES = "scores.json"
 
 MINI_PROJECT_SLUG = "final-project"
+W00_GROUP_SLUG = "w00-group-collaboration"
 
-# ``check_project_files.py``, pinned at blob
-# 3af80db0206215cfd43314b5feba8060c632e417.  These are that file's constants,
-# copied rather than reinvented: a group whose ``team.json`` passes the staff
-# checker but fails ours would be told to fix a file that is already correct.
+# Each group assignment ships its own checker inside its own template, and the
+# two checkers want two different ``team.json`` shapes.  Both are correct; they
+# belong to different assignments.  Naming the schema after the checker that
+# owns it is what keeps them apart, because applying one assignment's rules to
+# the other's submissions told 64 w00 groups to repair a file their own
+# autograder accepts.
+TEAM_SCHEMA_PROJECT = "check_project_files.py"
+TEAM_SCHEMA_W00 = "check_submission.py"
+TEAM_SCHEMA_BY_SLUG: Dict[str, str] = {
+    MINI_PROJECT_SLUG: TEAM_SCHEMA_PROJECT,
+    W00_GROUP_SLUG: TEAM_SCHEMA_W00,
+}
+
+# ``check_project_files.py`` from ``VNU-HUS/introai-final-project-template``,
+# pinned at blob 3af80db0206215cfd43314b5feba8060c632e417.  These are that
+# file's constants, copied rather than reinvented: a group whose ``team.json``
+# passes the staff checker but fails ours would be told to fix a file that is
+# already correct.
 TEAM_KEYS: FrozenSet[str] = frozenset({"course", "group_name", "founder", "members"})
 MEMBER_KEYS: FrozenSet[str] = frozenset({"full_name", "student_id", "github_username"})
+
+# ``check_submission.py`` from ``VNU-HUS/introai-w00-group-template``, whose
+# ``load_team`` demands exactly these two keys and reads ``members`` as bare
+# GitHub logins rather than as objects.
+W00_TEAM_KEYS: FrozenSet[str] = frozenset({"team_name", "members"})
+W00_MIN_TEAM_NAME = 2
 KNOWN_COURSES: Tuple[str, ...] = ("MAT1206E", "MAT3508")
 USERNAME_PATTERN = re.compile(
     r"(?=.{1,39}\Z)(?!-)[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\Z"
@@ -142,6 +163,11 @@ class TeamFile(NamedTuple):
     founder: str
     members: List[TeamMember]
     faults: List[TeamFault]
+    # Which checker's rules produced ``faults``.  Two group assignments use two
+    # different shapes, so "no faults" only means something once the reader can
+    # see which rules were applied; empty means no rules were, and the fields
+    # below carry whatever the file happened to hold.
+    schema: str = ""
 
 
 class Group(NamedTuple):
@@ -496,6 +522,7 @@ def read_team_json(
     org: str,
     repo: str,
     *,
+    schema: str = TEAM_SCHEMA_PROJECT,
     runner: Optional[Runner] = None,
     timeout: Optional[float] = DEFAULT_TIMEOUT,
     sleeper: Callable[[float], None] = time.sleep,
@@ -539,8 +566,9 @@ def read_team_json(
                     fix="Mở team.json, sửa lỗi cú pháp JSON rồi commit lại.",
                 )
             ],
+            schema=schema,
         )
-    return parse_team_json(payload, repo=repo)
+    return parse_team_json(payload, repo=repo, schema=schema)
 
 
 # --------------------------------------------------------------------------
@@ -645,13 +673,29 @@ def _placeholder_in(value: str) -> bool:
     return any(marker in upper for marker in PLACEHOLDER_PATTERNS)
 
 
-def parse_team_json(payload: Any, *, repo: str) -> TeamFile:
-    """Check one ``team.json`` against the staff checker's rules.
+def team_schema_for_slug(slug: str) -> str:
+    """Which checker owns ``team.json`` for one assignment, or ``""``.
+
+    An assignment this lane has not been told the rules for gets no rules at
+    all.  Guessing means handing a group the other assignment's checklist, which
+    is the failure this mapping exists to stop.
+    """
+    return TEAM_SCHEMA_BY_SLUG.get(str(slug or "").strip(), "")
+
+
+def parse_team_json(
+    payload: Any, *, repo: str, schema: str = TEAM_SCHEMA_PROJECT
+) -> TeamFile:
+    """Check one ``team.json`` against the checker that owns its assignment.
 
     Faults are collected rather than raised: one group's unfinished file must
     not stop the pass over the other groups, and a student needs to be told
     everything that is wrong at once rather than one item per run.
     """
+    if schema == TEAM_SCHEMA_W00:
+        return _parse_w00_team_json(payload, repo=repo)
+    if schema != TEAM_SCHEMA_PROJECT:
+        return _read_team_json_unchecked(payload, repo=repo)
     faults: List[TeamFault] = []
     if not isinstance(payload, dict):
         return TeamFile(
@@ -667,6 +711,7 @@ def parse_team_json(payload: Any, *, repo: str) -> TeamFile:
                     fix="Chép lại team.json từ template rồi điền thông tin nhóm.",
                 )
             ],
+            schema=schema,
         )
 
     keys = set(payload)
@@ -846,6 +891,187 @@ def parse_team_json(payload: Any, *, repo: str) -> TeamFile:
         founder=founder,
         members=members,
         faults=faults,
+        schema=TEAM_SCHEMA_PROJECT,
+    )
+
+
+def _read_team_json_unchecked(payload: Any, *, repo: str) -> TeamFile:
+    """Whatever the file holds, with no rules applied and so no faults.
+
+    Reached when the assignment's checker is unknown to this lane.  Reporting
+    the contents is still useful; reporting faults against rules that may not
+    govern this assignment is how a correct file gets called broken.
+    """
+    if not isinstance(payload, dict):
+        return TeamFile(
+            repo=repo, course="", group_name="", founder="", members=[], faults=[]
+        )
+    members: List[TeamMember] = []
+    for row in payload.get("members") or []:
+        if isinstance(row, dict):
+            members.append(
+                TeamMember(
+                    full_name=str(row.get("full_name") or "").strip(),
+                    student_id=str(row.get("student_id") or "").strip(),
+                    github_username=str(row.get("github_username") or "").strip(),
+                )
+            )
+        elif isinstance(row, str):
+            members.append(
+                TeamMember(full_name="", student_id="", github_username=row.strip())
+            )
+    return TeamFile(
+        repo=repo,
+        course=str(payload.get("course") or "").strip(),
+        group_name=str(
+            payload.get("group_name") or payload.get("team_name") or ""
+        ).strip(),
+        founder=str(payload.get("founder") or "").strip(),
+        members=members,
+        faults=[],
+    )
+
+
+def _parse_w00_team_json(payload: Any, *, repo: str) -> TeamFile:
+    """Check one ``team.json`` against ``check_submission.py``'s ``load_team``.
+
+    That checker ships inside the w00 template and is what actually grades the
+    group, so its rules are the ones a w00 group must satisfy: exactly two keys,
+    and ``members`` as bare GitHub logins rather than as objects.  There is no
+    ``course`` and no ``founder`` in this shape, so neither is invented here.
+    """
+    if not isinstance(payload, dict):
+        return TeamFile(
+            repo=repo,
+            course="",
+            group_name="",
+            founder="",
+            members=[],
+            faults=[
+                TeamFault(
+                    code="team_json_invalid",
+                    detail=f"team.json holds a {type(payload).__name__}, not an object",
+                    fix="Chép lại team.json từ template rồi điền tên nhóm và members.",
+                )
+            ],
+            schema=TEAM_SCHEMA_W00,
+        )
+
+    faults: List[TeamFault] = []
+    keys = set(payload)
+    missing = sorted(W00_TEAM_KEYS - keys)
+    extra = sorted(keys - W00_TEAM_KEYS)
+    if missing or extra:
+        faults.append(
+            TeamFault(
+                code="team_json_keys",
+                detail=(
+                    f"team.json khoá thiếu {missing or '(không)'}, "
+                    f"khoá thừa {extra or '(không)'}"
+                ),
+                fix="team.json phải có đúng hai khoá: team_name và members.",
+            )
+        )
+
+    raw_name = payload.get("team_name")
+    group_name = raw_name.strip() if isinstance(raw_name, str) else ""
+    if not isinstance(raw_name, str):
+        faults.append(
+            TeamFault(
+                code="team_json_keys",
+                detail=f"team_name là {type(raw_name).__name__}, phải là chuỗi",
+                fix="team_name phải là một chuỗi.",
+            )
+        )
+    elif len(group_name) < W00_MIN_TEAM_NAME or _placeholder_in(group_name):
+        faults.append(
+            TeamFault(
+                code="team_json_placeholder"
+                if _placeholder_in(group_name)
+                else "team_json_keys",
+                detail=f"team_name = {group_name!r}",
+                fix=(
+                    f"Đặt tên nhóm thật, dài ít nhất {W00_MIN_TEAM_NAME} ký tự, "
+                    "không để chỗ điền mẫu."
+                ),
+            )
+        )
+
+    raw_members = payload.get("members")
+    if not isinstance(raw_members, list):
+        faults.append(
+            TeamFault(
+                code="team_json_keys",
+                detail=f"members là {type(raw_members).__name__}, phải là danh sách",
+                fix="members phải là một danh sách tên đăng nhập GitHub.",
+            )
+        )
+        raw_members = []
+    elif not (MIN_MEMBERS <= len(raw_members) <= MAX_MEMBERS):
+        faults.append(
+            TeamFault(
+                code="team_json_size",
+                detail=f"members có {len(raw_members)} người",
+                fix=f"Nhóm phải có từ {MIN_MEMBERS} đến {MAX_MEMBERS} thành viên.",
+            )
+        )
+
+    members: List[TeamMember] = []
+    for position, row in enumerate(raw_members, start=1):
+        if not isinstance(row, str):
+            faults.append(
+                TeamFault(
+                    code="team_json_member_keys",
+                    detail=f"thành viên thứ {position} không phải một chuỗi",
+                    fix="Mỗi thành viên là một tên đăng nhập GitHub dạng chuỗi.",
+                )
+            )
+            continue
+        login = row.strip()
+        if _placeholder_in(login):
+            faults.append(
+                TeamFault(
+                    code="team_json_placeholder",
+                    detail=f"còn sót chỗ điền mẫu: {login!r}",
+                    fix="Thay chỗ điền mẫu bằng tên đăng nhập GitHub thật.",
+                )
+            )
+        elif not USERNAME_PATTERN.match(login):
+            faults.append(
+                TeamFault(
+                    code="team_json_username",
+                    detail=f"thành viên thứ {position} = {login!r} không hợp lệ",
+                    fix=(
+                        "Điền tên đăng nhập GitHub, tức phần sau dấu gạch chéo trong "
+                        "github.com/<tên đăng nhập>."
+                    ),
+                )
+            )
+        members.append(TeamMember(full_name="", student_id="", github_username=login))
+
+    seen_logins: Set[str] = set()
+    for member in members:
+        login = _norm_login(member.github_username)
+        if not login:
+            continue
+        if login in seen_logins:
+            faults.append(
+                TeamFault(
+                    code="team_json_duplicate_member",
+                    detail=f"{member.github_username} xuất hiện hai lần",
+                    fix="Mỗi thành viên chỉ được liệt kê một lần trong team.json.",
+                )
+            )
+        seen_logins.add(login)
+
+    return TeamFile(
+        repo=repo,
+        course="",
+        group_name=group_name,
+        founder="",
+        members=members,
+        faults=faults,
+        schema=TEAM_SCHEMA_W00,
     )
 
 
@@ -1210,6 +1436,7 @@ def _team_to_dict(team: Optional[TeamFile]) -> Optional[Dict[str, Any]]:
         "founder": team.founder,
         "members": [member._asdict() for member in team.members],
         "faults": [fault._asdict() for fault in team.faults],
+        "schema": team.schema,
     }
 
 
@@ -1501,7 +1728,13 @@ def import_groups(
         team: Optional[TeamFile] = None
         if with_team_json:
             team = read_team_json(
-                org, entry.repo, runner=api, timeout=timeout, sleeper=sleeper, pace=pace
+                org,
+                entry.repo,
+                schema=team_schema_for_slug(entry.slug),
+                runner=api,
+                timeout=timeout,
+                sleeper=sleeper,
+                pace=pace,
             )
             if team is None:
                 skipped_team_json.append(entry.repo)
@@ -1815,15 +2048,30 @@ def _group_block(
         out.append("  team.json      : chưa đọc (chạy lại với --read-team-json)")
     else:
         out.append("  team.json:")
-        out.append(f"      {'Môn':<24}: {team.get('course') or '(bỏ trống)'}")
+        # Which checker's rules were applied, named before its verdict.  The two
+        # group assignments want two different shapes, so "hợp lệ" means nothing
+        # until the reader knows which rules it passed -- and the fields this
+        # schema does not have are left out rather than printed as blank, which
+        # would read as a group that forgot to fill them in.
+        schema = str(team.get("schema") or "")
+        out.append(
+            f"      {'Theo checker':<24}: {schema or '(không rõ bài này dùng checker nào — bỏ qua kiểm tra)'}"
+        )
+        if schema != TEAM_SCHEMA_W00:
+            out.append(f"      {'Môn':<24}: {team.get('course') or '(bỏ trống)'}")
         out.append(f"      {'Tên nhóm':<24}: {team.get('group_name') or '(bỏ trống)'}")
-        out.append(f"      {'Trưởng nhóm khai báo':<24}: {team.get('founder') or '(bỏ trống)'}")
+        if schema != TEAM_SCHEMA_W00:
+            out.append(
+                f"      {'Trưởng nhóm khai báo':<24}: {team.get('founder') or '(bỏ trống)'}"
+            )
         declared_members = [
             one for one in (team.get("members") or []) if isinstance(one, dict)
         ]
         out.append(f"      {'Số thành viên khai báo':<24}: {len(declared_members)}")
         faults = [one for one in (team.get("faults") or []) if isinstance(one, dict)]
-        if not faults:
+        if not schema:
+            out.append(f"      {'Kiểm tra':<24}: không kiểm tra")
+        elif not faults:
             out.append(f"      {'Kiểm tra':<24}: hợp lệ")
         else:
             out.append(f"      Lỗi ({len(faults)}):")
