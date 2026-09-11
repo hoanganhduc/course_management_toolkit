@@ -70,6 +70,11 @@ REQUIRED_STR_FIELDS: Tuple[str, ...] = (
 )
 
 FIELD_GRADES = "Classroom50 Grades"
+# Every repository that paid a student for one assignment, not just the one
+# whose grade won.  ``FIELD_GRADES`` is keyed by slug alone, so a student on two
+# group repositories keeps only the later submission and the other grade is gone
+# with no record that it existed; this field is that record.
+FIELD_GRADE_CANDIDATES = "Classroom50 Grade Candidates"
 FIELD_SUBMISSIONS = "Classroom50 Submissions"
 FIELD_DETAILS = "Classroom50 Submission Details"
 FIELD_OVERRIDES = "Classroom50 Score Overrides"
@@ -618,6 +623,15 @@ def credit_findings(
     return findings
 
 
+def _points(record: Mapping[str, Any]) -> str:
+    """One stored grade record as ``85/100``, for a message a student reads."""
+    grade = record.get("grade")
+    if grade is None:
+        return "chưa chấm"
+    maximum = record.get("max_points")
+    return f"{grade}/{maximum}" if maximum is not None else f"{grade}"
+
+
 def _parse_iso(value: Any) -> Optional[datetime]:
     """An ISO-8601 timestamp as an aware ``datetime``, or ``None``.
 
@@ -826,6 +840,10 @@ def merge_into_students(
     stale_skipped: List[str] = []
     overrides: List[str] = []
     group_slugs: set = set()
+    # ``refreshed`` is the ``(record, slug)`` pairs this run has already rebuilt,
+    # so the first entry replaces the stored candidates and the rest add to them.
+    refreshed: set = set()
+    contested: Dict[Tuple[str, str], Dict[str, Dict[str, Any]]] = {}
     updated = 0
 
     for score in scores:
@@ -839,14 +857,7 @@ def merge_into_students(
         if not _not_older(collected_at, getattr(student, FIELD_COLLECTED_AT, None)):
             stale_skipped.append(f"{score.slug}/{score.username}: older snapshot")
             continue
-        grades = dict(getattr(student, FIELD_GRADES, None) or {})
-        previous = grades.get(score.slug)
-        if isinstance(previous, dict) and not _not_older(
-            score.datetime, previous.get("datetime")
-        ):
-            stale_skipped.append(f"{score.slug}/{score.username}: older submission")
-            continue
-        grades[score.slug] = {
+        record = {
             "grade": score.grade,
             "max_points": score.max_points,
             "commit": score.commit,
@@ -859,6 +870,36 @@ def merge_into_students(
             # notice that somebody was dropped from the group.
             "owner": score.owner,
         }
+
+        # Recorded before the staleness check below, because the entry that
+        # check discards is exactly the one that would otherwise vanish: two
+        # group repositories crediting the same student share one ``slug`` key,
+        # so the later submission silently replaces the earlier grade.
+        #
+        # The slug's candidates are rebuilt from the snapshot in hand rather
+        # than added to, so a repository that has stopped crediting the student
+        # stops being reported instead of accusing them forever.
+        #
+        # Keyed by the record rather than by the login, because the field lives
+        # on the record: two logins resolving to one student must not each
+        # rebuild the same slug and wipe what the other just wrote.
+        seen = (id(student), score.slug)
+        candidates = dict(getattr(student, FIELD_GRADE_CANDIDATES, None) or {})
+        paying = dict(candidates.get(score.slug) or {}) if seen in refreshed else {}
+        paying[score.owner] = record
+        candidates[score.slug] = paying
+        setattr(student, FIELD_GRADE_CANDIDATES, candidates)
+        refreshed.add(seen)
+        contested[(score.username, score.slug)] = paying
+
+        grades = dict(getattr(student, FIELD_GRADES, None) or {})
+        previous = grades.get(score.slug)
+        if isinstance(previous, dict) and not _not_older(
+            score.datetime, previous.get("datetime")
+        ):
+            stale_skipped.append(f"{score.slug}/{score.username}: older submission")
+            continue
+        grades[score.slug] = dict(record)
         setattr(student, FIELD_GRADES, grades)
 
         details = dict(getattr(student, FIELD_DETAILS, None) or {})
@@ -877,6 +918,42 @@ def merge_into_students(
             setattr(student, FIELD_OVERRIDES, stored)
             overrides.append(f"{score.slug}/{score.username}")
         updated += 1
+
+    # Two repositories paying the same student for the same assignment is the
+    # one conflict this lane resolves silently -- the later submission wins by
+    # the same rule that keeps a re-collect from walking a grade back, which was
+    # never meant to arbitrate between two repositories.  The rule stands; what
+    # changes here is that it stops being silent.
+    findings: List[Issue] = []
+    for (login, slug), paying in sorted(contested.items()):
+        if len(paying) < 2:
+            continue
+        in_effect = ""
+        stored = (getattr(index[login], FIELD_GRADES, None) or {}).get(slug)
+        if isinstance(stored, dict):
+            in_effect = _norm_login(stored.get("owner") or "")
+        shown = ", ".join(
+            f"{owner}: {_points(paying[owner])}"
+            + (" (đang dùng)" if owner == in_effect else "")
+            for owner in sorted(paying)
+        )
+        findings.append(
+            Issue(
+                code="grade_multi_repo",
+                severity=SEVERITY_ERROR,
+                student=_ref_for(login, index),
+                field="GitHub Username",
+                found=login,
+                detail=(
+                    f"bài {slug}: {len(paying)} kho nhóm cùng tính điểm cho bạn "
+                    f"-- {shown}; chỉ một điểm được ghi vào sổ"
+                ),
+                fix=(
+                    "Mỗi bạn chỉ ở một nhóm cho mỗi bài. Rời khỏi kho của nhóm "
+                    "không phải nhóm của mình, rồi báo giảng viên thu lại điểm."
+                ),
+            )
+        )
 
     # A student with no entry for an assignment has not necessarily failed to
     # submit; what can be said depends on when the snapshot was taken relative to
@@ -913,7 +990,7 @@ def merge_into_students(
         credited={},
         overrides=sorted(overrides),
         warnings=report_warnings,
-        findings=[],
+        findings=findings,
     )
 
 
@@ -1025,7 +1102,9 @@ def import_scores(
         assignments=manifest,
         warnings=doc.warnings,
     )
+    # The merge reports the conflicts it had to resolve; ``credit_findings``
+    # reports who the document never paid at all.  Neither subsumes the other.
     return report._replace(
         credited=credit_snapshot(doc, staff_logins=staff),
-        findings=findings,
+        findings=list(findings) + list(report.findings),
     )

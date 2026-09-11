@@ -5254,6 +5254,7 @@ def en_to_vn_field(field, verbose=False):
         "MiniProject_Advisor_Email": "Email GVHD mini-project",
         # Classroom50 lanes
         "Classroom50 Grades": "Điểm Classroom50",
+        "Classroom50 Grade Candidates": "Điểm Classroom50 theo từng kho",
         "Classroom50 Submissions": "Trạng thái nộp bài (Classroom50)",
         "Classroom50 Submission Details": "Chi tiết bài nộp Classroom50",
         "Classroom50 Score Overrides": "Điểm Classroom50 giảng viên đã sửa",
@@ -5302,6 +5303,7 @@ def en_to_vn_field(field, verbose=False):
 
 _C50_CONTAINER_FIELDS = (
     "Classroom50 Grades",
+    "Classroom50 Grade Candidates",
     "Classroom50 Submissions",
     "Classroom50 Submission Details",
     "Classroom50 Score Overrides",
@@ -5315,7 +5317,7 @@ def _classroom50_detail_lines(data):
 
     print_all_student_details and export_all_details_to_txt each keep their own
     tuple of keys held back from the plain key loop, and those two tuples have
-    already drifted apart.  Rendering the containers here means these six
+    already drifted apart.  Rendering the containers here means these seven
     cannot drift the same way: whichever view holds them back prints the same
     lines from the same code.
     """
@@ -5368,6 +5370,42 @@ def _classroom50_detail_lines(data):
             )
         elif total > 0:
             lines.append(f"Total score (Classroom50) (Tổng điểm Classroom50): {total}")
+
+    # Only a slug paid by more than one repository is worth printing: with one,
+    # the candidate just repeats the grade line above it.  The grade in the book
+    # is marked, because the point of the block is the marks that are not in it.
+    candidates = data.get("Classroom50 Grade Candidates")
+    candidates = candidates if isinstance(candidates, dict) else {}
+    contested = {
+        slug: paying
+        for slug, paying in candidates.items()
+        if isinstance(paying, dict) and len(paying) > 1
+    }
+    if contested:
+        lines.append("Classroom50 contested grades (Điểm Classroom50 theo từng kho):")
+        for slug in sorted(contested):
+            paying = contested[slug]
+            stored = grades.get(slug) if isinstance(grades, dict) else None
+            in_effect = stored.get("owner") if isinstance(stored, dict) else None
+            lines.append(f"  - {slug}:")
+            for owner in sorted(paying):
+                info = paying.get(owner) or {}
+                if not isinstance(info, dict):
+                    lines.append(f"      * kho {owner}: {info}")
+                    continue
+                grade = info.get("grade")
+                max_points = info.get("max_points")
+                if grade is not None and max_points is not None:
+                    value = f"{grade}/{max_points}"
+                elif grade is not None:
+                    value = f"{grade}"
+                else:
+                    value = "chưa chấm"
+                marks = [str(info.get("datetime"))] if info.get("datetime") else []
+                if owner == in_effect:
+                    marks.append("đang dùng")
+                suffix = f" ({', '.join(marks)})" if marks else ""
+                lines.append(f"      * kho {owner}: {value}{suffix}")
 
     # An override is normally reported beside its grade, so only the ones with
     # no grade to sit beside still need a line of their own.

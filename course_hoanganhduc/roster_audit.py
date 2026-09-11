@@ -75,6 +75,7 @@ CONSEQUENTIAL_CODES = frozenset(
         "github_not_found",
         "github_shared",
         "group_multi_repo",
+        "grade_multi_repo",
         "group_over_size",
         "group_member_dropped",
         "group_credit_owner_only",

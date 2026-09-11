@@ -19,9 +19,11 @@ if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
 from course_hoanganhduc.c50_cli import Classroom50Error, RunResult  # noqa: E402
+from course_hoanganhduc.roster_audit import CONSEQUENTIAL_CODES  # noqa: E402
 from course_hoanganhduc.c50_scores import (  # noqa: E402
     FIELD_COLLECTED_AT,
     FIELD_DETAILS,
+    FIELD_GRADE_CANDIDATES,
     FIELD_GRADES,
     FIELD_OVERRIDES,
     FIELD_SUBMISSIONS,
@@ -506,6 +508,189 @@ class TestGroupCredit(unittest.TestCase):
             students, expand_entries(parsed), collected_at=COLLECTED_AT, roster=ROSTER
         )
         self.assertEqual(previous_credit_snapshot(students), credit_snapshot(parsed))
+
+
+class TestMultipleRepositories(unittest.TestCase):
+    """One student credited by two group repositories in the same assignment."""
+
+    SLUG = "w00-group-collaboration"
+
+    def contested(self) -> Dict[str, Any]:
+        """Alice paid 100 by her own repository and 0 by a later one."""
+        return scores_doc(
+            {
+                self.SLUG: {
+                    "type": "group",
+                    "entries": [
+                        {
+                            "owner": "alice",
+                            "member_usernames": ["alice"],
+                            "submissions": [
+                                payload(
+                                    owner="alice",
+                                    assignment_type="group",
+                                    score=100,
+                                    datetime="2026-09-09T08:31:44Z",
+                                )
+                            ],
+                        },
+                        {
+                            "owner": "bob",
+                            "member_usernames": ["alice", "bob"],
+                            "submissions": [
+                                payload(
+                                    owner="bob",
+                                    assignment_type="group",
+                                    score=0,
+                                    datetime="2026-09-10T08:28:54Z",
+                                )
+                            ],
+                        },
+                    ],
+                }
+            }
+        )
+
+    def test_the_losing_repository_is_kept_although_it_does_not_win(self):
+        students = klass()
+        parsed = parse_scores(self.contested())
+        merge_into_students(
+            students, expand_entries(parsed), collected_at=COLLECTED_AT, roster=ROSTER
+        )
+        alice = students[0]
+        # The rule itself is unchanged: the later submission is still the grade.
+        self.assertEqual(getattr(alice, FIELD_GRADES)[self.SLUG]["grade"], 0)
+        self.assertEqual(getattr(alice, FIELD_GRADES)[self.SLUG]["owner"], "bob")
+        candidates = getattr(alice, FIELD_GRADE_CANDIDATES)[self.SLUG]
+        self.assertEqual(sorted(candidates), ["alice", "bob"])
+        self.assertEqual(candidates["alice"]["grade"], 100)
+        self.assertEqual(candidates["bob"]["grade"], 0)
+
+    def test_the_grade_that_wins_is_not_aliased_to_the_candidate(self):
+        students = klass()
+        parsed = parse_scores(self.contested())
+        merge_into_students(
+            students, expand_entries(parsed), collected_at=COLLECTED_AT, roster=ROSTER
+        )
+        alice = students[0]
+        self.assertIsNot(
+            getattr(alice, FIELD_GRADES)[self.SLUG],
+            getattr(alice, FIELD_GRADE_CANDIDATES)[self.SLUG]["bob"],
+        )
+
+    def test_the_conflict_is_reported_and_names_both_repositories(self):
+        students = klass()
+        report = import_scores(
+            students,
+            org="VNU-HUS",
+            classroom="c",
+            runner=FakeRunner(scores=self.contested()),
+        )
+        findings = [f for f in report.findings if f.code == "grade_multi_repo"]
+        self.assertEqual([f.found for f in findings], ["alice"])
+        self.assertEqual(findings[0].severity, "error")
+        self.assertIn(self.SLUG, findings[0].detail)
+        self.assertIn("alice: 100/100", findings[0].detail)
+        self.assertIn("bob: 0/100", findings[0].detail)
+        # The teacher has to know which of the two the database now holds.
+        self.assertIn("bob: 0/100 (đang dùng)", findings[0].detail)
+        self.assertTrue(findings[0].fix.strip())
+
+    def test_bob_is_credited_by_one_repository_and_is_not_reported(self):
+        students = klass()
+        report = import_scores(
+            students,
+            org="VNU-HUS",
+            classroom="c",
+            runner=FakeRunner(scores=self.contested()),
+        )
+        self.assertEqual(
+            sorted(getattr(students[1], FIELD_GRADE_CANDIDATES)[self.SLUG]), ["bob"]
+        )
+        self.assertNotIn("bob", [f.found for f in report.findings])
+
+    def test_an_uncontested_grade_reports_nothing(self):
+        students = klass()
+        report = import_scores(students, org="VNU-HUS", classroom="c", runner=FakeRunner())
+        self.assertEqual([f for f in report.findings if f.code == "grade_multi_repo"], [])
+
+    def test_a_repository_that_stops_paying_stops_being_reported(self):
+        # The candidate set is the snapshot in hand, not a growing history: once
+        # the student leaves the second repository the conflict is over, and a
+        # leftover entry would keep reporting a fault nobody can still fix.
+        students = klass()
+        import_scores(
+            students, org="VNU-HUS", classroom="c", runner=FakeRunner(scores=self.contested())
+        )
+        resolved = scores_doc(
+            {
+                self.SLUG: {
+                    "type": "group",
+                    "entries": [
+                        {
+                            "owner": "alice",
+                            "member_usernames": ["alice"],
+                            "submissions": [
+                                payload(
+                                    owner="alice",
+                                    assignment_type="group",
+                                    score=100,
+                                    datetime="2026-09-11T08:31:44Z",
+                                )
+                            ],
+                        }
+                    ],
+                }
+            }
+        )
+        report = import_scores(
+            students,
+            org="VNU-HUS",
+            classroom="c",
+            runner=FakeRunner(
+                scores=resolved,
+                commits=[{"commit": {"committer": {"date": "2026-09-13T09:00:00Z"}}}],
+            ),
+        )
+        alice = students[0]
+        self.assertEqual(sorted(getattr(alice, FIELD_GRADE_CANDIDATES)[self.SLUG]), ["alice"])
+        self.assertEqual(getattr(alice, FIELD_GRADES)[self.SLUG]["grade"], 100)
+        self.assertEqual([f for f in report.findings if f.code == "grade_multi_repo"], [])
+
+    def test_an_older_snapshot_does_not_rewrite_the_candidates(self):
+        students = klass()
+        import_scores(
+            students, org="VNU-HUS", classroom="c", runner=FakeRunner(scores=self.contested())
+        )
+        stale = FakeRunner(
+            scores=scores_doc(
+                {
+                    self.SLUG: {
+                        "type": "group",
+                        "entries": [
+                            {
+                                "owner": "carol",
+                                "member_usernames": ["alice", "carol"],
+                                "submissions": [
+                                    payload(owner="carol", assignment_type="group", score=5)
+                                ],
+                            }
+                        ],
+                    }
+                }
+            ),
+            commits=[{"commit": {"committer": {"date": "2026-08-10T04:52:10Z"}}}],
+        )
+        import_scores(students, org="VNU-HUS", classroom="c", runner=stale)
+        self.assertEqual(
+            sorted(getattr(students[0], FIELD_GRADE_CANDIDATES)[self.SLUG]),
+            ["alice", "bob"],
+        )
+
+    def test_the_code_is_registered_as_consequential(self):
+        # Students fix this one themselves by leaving the wrong repository, so
+        # it belongs in the notice rather than in a staff-only report.
+        self.assertIn("grade_multi_repo", CONSEQUENTIAL_CODES)
 
 
 class TestSubmissionState(unittest.TestCase):
