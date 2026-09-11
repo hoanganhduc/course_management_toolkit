@@ -1728,6 +1728,7 @@ def _group_block(
     of: int,
     org: str,
     index: Mapping[str, Any],
+    skipped: FrozenSet[str],
     thin: str,
 ) -> List[str]:
     """One group, in the order a teacher would ask the questions."""
@@ -1761,8 +1762,18 @@ def _group_block(
     out.append("")
     out.append("  Đối chiếu danh sách:")
     out.append(f"      {'Nguồn đang dùng':<24}: {row.get('source') or '(không rõ)'}")
+    # ``credited`` is a copy of ``snapshot`` whenever the collector published
+    # nothing for the assignment, so printing it under this label would put the
+    # collector's name on a list it never saw.
+    if row.get("source") == SOURCE_SCORES:
+        names = ", ".join(str(name) for name in (row.get("credited") or []))
+        out.append(f"      {'Classroom50 tính điểm':<24}: {names or '(không có)'}")
+    else:
+        out.append(
+            f"      {'Classroom50 tính điểm':<24}: "
+            "(chưa công bố — bài này không có trong scores.json)"
+        )
     for label, field in (
-        ("Classroom50 tính điểm", "credited"),
         ("Cộng tác viên hiện tại", "snapshot"),
         ("Ngoài danh sách lớp", "outsiders"),
     ):
@@ -1795,8 +1806,13 @@ def _group_block(
                 )
 
     out.append("")
-    if team is None:
-        out.append("  team.json      : chưa đọc (cần --read-team-json) hoặc kho chưa có")
+    if team is None and repo in skipped:
+        # Telling a teacher who passed the flag to pass the flag sends them to
+        # look for a bug in the run instead of at the group that never wrote
+        # the file.  ``skipped`` is what separates the two.
+        out.append("  team.json      : kho chưa có file team.json")
+    elif team is None:
+        out.append("  team.json      : chưa đọc (chạy lại với --read-team-json)")
     else:
         out.append("  team.json:")
         out.append(f"      {'Môn':<24}: {team.get('course') or '(bỏ trống)'}")
@@ -1817,10 +1833,12 @@ def _group_block(
                     out.append(f"          cách sửa: {fault.get('fix')}")
 
     out.append("")
+    # What the reading found, not what was written: an export does not save,
+    # so "đã ghi vào database" would be false in the only place this is printed.
     out.append(
-        "  Trạng thái     : GIỮ LẠI — không ghi vào database"
+        "  Trạng thái     : CÓ MÂU THUẪN — bản đọc này không dùng để ghi vào database"
         if row.get("quarantined")
-        else "  Trạng thái     : đã ghi vào database"
+        else "  Trạng thái     : không có mâu thuẫn"
     )
     for reason in row.get("reasons") or []:
         out.append(f"      - {reason}")
@@ -1851,10 +1869,13 @@ def format_groups_txt(
     from .roster_audit import format_issues
 
     index, _ = _student_index(students, None)
+    skipped = frozenset(report.skipped_team_json)
     rule = "=" * 78
     thin = "-" * 78
-    total = sum(len(rows) for rows in report.groups.values())
+    rows_all = [row for rows in report.groups.values() for row in rows]
+    total = len(rows_all)
     held = sum(len(repos) for repos in report.quarantined.values())
+    marked = any(row.get("result") for row in rows_all)
 
     lines = [rule, "THÔNG TIN NHÓM — Classroom50", rule]
     if org:
@@ -1864,12 +1885,15 @@ def format_groups_txt(
     lines.append(f"Bài tập        : {', '.join(report.slugs) or '(không có)'}")
     if generated_at:
         lines.append(f"Xuất lúc       : {generated_at}")
-    if collected_at:
+    # The gradebook's timestamp is only about this export if something in it was
+    # marked.  ``final-project`` has autograding off and never appears in
+    # ``scores.json``, so printing a collection time there dates grades that do
+    # not exist.
+    if marked and collected_at:
         lines.append(f"Điểm thu lúc   : {collected_at}")
-    lines.append(
-        f"Tổng cộng      : {total} nhóm, {held} nhóm bị giữ lại, "
-        f"{report.updated} bản ghi được cập nhật"
-    )
+    elif not marked:
+        lines.append("Điểm           : không kho nào của bài này có trong scores.json")
+    lines.append(f"Tổng cộng      : {total} nhóm, {held} nhóm có mâu thuẫn")
     if not students:
         lines.append(
             "Ghi chú        : chạy không kèm database, nên không có MSSV, họ tên "
@@ -1888,6 +1912,7 @@ def format_groups_txt(
                     of=len(rows),
                     org=org,
                     index=index,
+                    skipped=skipped,
                     thin=thin,
                 )
             )

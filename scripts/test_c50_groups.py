@@ -1437,8 +1437,66 @@ class TestLongFormExport(unittest.TestCase):
         self.assertIn("Lỗi (", text)
         self.assertIn("cách sửa:", text)
 
-    def test_every_group_says_whether_it_was_written_down(self) -> None:
-        self.assertIn("đã ghi vào database", self.export())
+    def test_a_group_reports_what_was_found_not_what_was_written(self) -> None:
+        # The only caller never saves, so a line claiming the group was written
+        # down would be false wherever it is actually read.
+        text = self.export()
+        self.assertIn("không có mâu thuẫn", text)
+        self.assertNotIn("đã ghi vào database", text)
+
+    def test_a_repository_with_no_team_json_is_not_blamed_on_the_flag(self) -> None:
+        # The flag was passed; the group simply never wrote the file.  Telling
+        # the teacher to pass it again sends them after a bug that is not there.
+        text = self.export(team_json={})
+        self.assertIn("kho chưa có file team.json", text)
+        self.assertNotIn("--read-team-json", text)
+
+    def test_an_assignment_with_no_marks_is_not_given_a_collection_time(self) -> None:
+        records = klass()
+        report = run_import(
+            FakeRunner(repos=[FINAL_REPO]), records, assignment=FINAL_SLUG
+        )
+        text = format_groups_txt(
+            report,
+            org=ORG,
+            classroom=CLASSROOM,
+            students=records,
+            collected_at="2026-09-10T08:59:28Z",
+        )
+        self.assertNotIn("2026-09-10T08:59:28Z", text)
+        self.assertIn("không kho nào của bài này có trong scores.json", text)
+
+    def test_an_ungraded_assignment_does_not_claim_the_collector_credited_it(
+        self,
+    ) -> None:
+        # ``credited`` is a copy of the collaborator list when nothing was
+        # published, and reading it under the collector's name would say the
+        # marks went somewhere they never went.
+        records = klass()
+        report = run_import(
+            FakeRunner(repos=[FINAL_REPO]), records, assignment=FINAL_SLUG
+        )
+        text = format_groups_txt(
+            report, org=ORG, classroom=CLASSROOM, students=records
+        )
+        line = next(
+            row for row in text.splitlines() if "Classroom50 tính điểm" in row
+        )
+        self.assertIn("chưa công bố", line)
+
+    def test_a_graded_assignment_still_names_who_the_collector_paid(self) -> None:
+        line = next(
+            row
+            for row in self.export().splitlines()
+            if "Classroom50 tính điểm" in row
+        )
+        self.assertIn("alice", line)
+        self.assertIn("bob", line)
+
+    def test_the_header_counts_groups_rather_than_writes(self) -> None:
+        text = self.export()
+        self.assertIn("nhóm có mâu thuẫn", text)
+        self.assertNotIn("bản ghi được cập nhật", text)
 
     def test_the_report_row_keeps_what_it_used_to_discard(self) -> None:
         report = run_import(
