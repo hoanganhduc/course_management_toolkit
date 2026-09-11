@@ -34,9 +34,11 @@ from course_hoanganhduc.c50_groups import (  # noqa: E402
     MAX_MEMBERS,
     SOURCE_COLLABORATORS,
     SOURCE_SCORES,
+    TEAM_SCHEMA_W00,
     Collaborator,
     Group,
     all_roster_logins,
+    commit_sha,
     course_for_classroom,
     credit_members,
     detect_group_conflicts,
@@ -48,6 +50,7 @@ from course_hoanganhduc.c50_groups import (  # noqa: E402
     merge_groups_into_students,
     parse_group_repo_name,
     parse_team_json,
+    read_team_json,
     report_to_dict,
     select_group_slugs,
     staff_team_slugs,
@@ -803,6 +806,68 @@ class TestTeamJson(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# which commit the file is read at
+# ---------------------------------------------------------------------------
+
+
+class TestGradedRef(unittest.TestCase):
+    """``team.json`` is read at the commit that was marked, not at the branch tip.
+
+    A group that pushes after submitting leaves the two out of step, and reading
+    the tip then judges a file the autograder never saw.  One real group scored
+    100/100 and was told to fill in a template it had already filled in, because
+    a member pushed the untouched template over the group's work eight minutes
+    after the marked submission.
+    """
+
+    def test_a_commit_url_yields_its_sha(self) -> None:
+        self.assertEqual(commit_sha(f"https://github.com/o/r/commit/{'a' * 40}"), "a" * 40)
+
+    def test_a_bare_sha_is_taken_as_it_stands(self) -> None:
+        self.assertEqual(commit_sha("b" * 40), "b" * 40)
+
+    def test_anything_that_is_not_a_commit_names_none(self) -> None:
+        # A blank field, a submission link and a truncated sha all mean the same
+        # thing here: nothing to pin the read to, so the read stays on the branch.
+        for value in ("", "   ", "https://github.com/o/r", "deadbeef", "not a sha"):
+            self.assertEqual(commit_sha(value), "", value)
+
+    def test_the_read_asks_github_for_that_commit(self) -> None:
+        runner = FakeRunner(repos=[W00_REPO], team_json={W00_REPO: w00_team_payload()})
+        team = read_team_json(
+            ORG, W00_REPO, schema=TEAM_SCHEMA_W00, runner=runner, ref="c" * 40, pace=0
+        )
+        self.assertTrue(any(p.endswith(f"?ref={'c' * 40}") for p in runner.api_paths()))
+        self.assertEqual(team.ref, "c" * 40)
+
+    def test_without_a_commit_the_read_stays_on_the_branch(self) -> None:
+        runner = FakeRunner(repos=[W00_REPO], team_json={W00_REPO: w00_team_payload()})
+        team = read_team_json(
+            ORG, W00_REPO, schema=TEAM_SCHEMA_W00, runner=runner, pace=0
+        )
+        self.assertTrue(all("?ref=" not in path for path in runner.api_paths()))
+        self.assertEqual(team.ref, "")
+
+    def test_the_import_pins_the_read_to_the_marked_commit(self) -> None:
+        runner = FakeRunner(
+            repos=[W00_REPO],
+            team_json={W00_REPO: w00_team_payload()},
+            scores=scores_doc({GROUP_SLUG: group_bucket("alice", ["alice", "bob"])}),
+        )
+        run_import(runner, klass(), with_team_json=True)
+        reads = [path for path in runner.api_paths() if "/contents/team.json" in path]
+        self.assertEqual(len(reads), 1)
+        self.assertTrue(reads[0].endswith(f"?ref={'0' * 40}"))
+
+    def test_a_group_with_no_marked_submission_is_read_on_the_branch(self) -> None:
+        runner = FakeRunner(repos=[W00_REPO], team_json={W00_REPO: w00_team_payload()})
+        run_import(runner, klass(), with_team_json=True)
+        reads = [path for path in runner.api_paths() if "/contents/team.json" in path]
+        self.assertEqual(len(reads), 1)
+        self.assertNotIn("?ref=", reads[0])
+
+
+# ---------------------------------------------------------------------------
 # conflicts
 # ---------------------------------------------------------------------------
 
@@ -1405,6 +1470,17 @@ class TestLongFormExport(unittest.TestCase):
         text = self.export()
         self.assertIn("90/100", text)
         self.assertIn("2026-09-10T02:00:00Z", text)
+
+    def test_the_block_names_the_commit_the_file_was_read_at(self) -> None:
+        # Without it a reader cannot tell a group that never filled the file in
+        # from one that filled it in, was marked, and pushed over it afterwards.
+        text = self.export()
+        self.assertIn("Đọc tại", text)
+        self.assertIn("0" * 8, text)
+
+    def test_a_group_with_no_marked_submission_says_it_read_the_branch(self) -> None:
+        text = self.export(scores=scores_doc({}))
+        self.assertIn("nhánh mặc định", text)
 
     def test_a_login_with_no_database_record_says_so_and_is_not_dropped(self) -> None:
         text = self.export(students=[klass()[0]])

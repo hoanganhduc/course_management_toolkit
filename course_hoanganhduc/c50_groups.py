@@ -110,6 +110,11 @@ USERNAME_PATTERN = re.compile(
 PLACEHOLDER_PATTERNS: Tuple[str, ...] = ("REPLACE", "THAY ", "TODO")
 MIN_MEMBERS = 1
 MAX_MEMBERS = 5
+# ``scores.json`` records the marked commit as a browser link rather than as a
+# sha, and older entries record nothing at all.  Both endings are accepted here;
+# nothing shorter is, because a read pinned to a guessed commit looks exactly as
+# authoritative as a correct one.
+COMMIT_SHA_PATTERN = re.compile(r"(?:\A|/commit/)([0-9a-f]{40})\Z")
 
 # One request per repository adds up, and the secondary rate limit is shaped by
 # burst rather than by total volume.  Calls are sequential, spaced, and retried
@@ -168,6 +173,10 @@ class TeamFile(NamedTuple):
     # see which rules were applied; empty means no rules were, and the fields
     # below carry whatever the file happened to hold.
     schema: str = ""
+    # The commit this was read at; empty means the branch tip.  A group that
+    # pushes after submitting moves the tip away from what was marked, so the
+    # verdict above belongs to one commit and has to name it.
+    ref: str = ""
 
 
 class Group(NamedTuple):
@@ -523,6 +532,7 @@ def read_team_json(
     repo: str,
     *,
     schema: str = TEAM_SCHEMA_PROJECT,
+    ref: str = "",
     runner: Optional[Runner] = None,
     timeout: Optional[float] = DEFAULT_TIMEOUT,
     sleeper: Callable[[float], None] = time.sleep,
@@ -532,14 +542,20 @@ def read_team_json(
 
     A missing file is the ordinary state before the proposal deadline, so it is
     not an error and not a fault: the group simply has nothing to check yet.
+
+    ``ref`` pins the read to one commit.  Left empty the read lands on the branch
+    tip, which is the right answer only while the tip is still what was marked.
     """
     runner = runner or timeout_runner(timeout or DEFAULT_TIMEOUT)
+    path = f"repos/{org}/{repo}/contents/team.json"
+    if ref:
+        path = f"{path}?ref={ref}"
     argv = [
         "gh",
         "api",
         "-H",
         "Accept: application/vnd.github.raw",
-        f"repos/{org}/{repo}/contents/team.json",
+        path,
     ]
     try:
         text = _call(
@@ -567,13 +583,25 @@ def read_team_json(
                 )
             ],
             schema=schema,
+            ref=ref,
         )
-    return parse_team_json(payload, repo=repo, schema=schema)
+    return parse_team_json(payload, repo=repo, schema=schema)._replace(ref=ref)
 
 
 # --------------------------------------------------------------------------
 # pure logic
 # --------------------------------------------------------------------------
+
+
+def commit_sha(value: str) -> str:
+    """The commit a submission was marked at, out of what the gradebook recorded.
+
+    Returns ``""`` for anything that is not a full sha, which leaves the caller
+    reading the branch tip.  That is the honest fallback: an unmarked group has
+    no commit to be read at, and a half-recognised one is not a commit at all.
+    """
+    match = COMMIT_SHA_PATTERN.search(str(value or "").strip())
+    return match.group(1) if match else ""
 
 
 def parse_group_repo_name(
@@ -1437,6 +1465,7 @@ def _team_to_dict(team: Optional[TeamFile]) -> Optional[Dict[str, Any]]:
         "members": [member._asdict() for member in team.members],
         "faults": [fault._asdict() for fault in team.faults],
         "schema": team.schema,
+        "ref": team.ref,
     }
 
 
@@ -1724,6 +1753,22 @@ def import_groups(
             credited = student_members(published, staff_logins=staff)
             source = SOURCE_SCORES
 
+        result = results_by_slug.get(entry.slug, {}).get(_norm_login(entry.founder))
+        # The mark belongs to one commit, and for a group that pushed after
+        # submitting the branch has moved on since.  Reading the tip then judges
+        # a file the autograder never saw: one group here scored full marks and
+        # was told to fill in a template it had already filled in, because a
+        # member pushed the untouched template over the group's work minutes
+        # after the marked submission.  An unmarked group has no commit to pin
+        # to and is read on the branch, which is all there is to read.
+        graded = ""
+        if isinstance(result, dict):
+            newest = [
+                one for one in (result.get("submissions") or []) if isinstance(one, dict)
+            ]
+            if newest:
+                graded = commit_sha(str(newest[0].get("commit") or ""))
+
         group_name = ""
         team: Optional[TeamFile] = None
         if with_team_json:
@@ -1731,6 +1776,7 @@ def import_groups(
                 org,
                 entry.repo,
                 schema=team_schema_for_slug(entry.slug),
+                ref=graded,
                 runner=api,
                 timeout=timeout,
                 sleeper=sleeper,
@@ -1754,9 +1800,7 @@ def import_groups(
                 outsiders=outsiders,
                 group_name=group_name,
                 team=team,
-                result=results_by_slug.get(entry.slug, {}).get(
-                    _norm_login(entry.founder)
-                ),
+                result=result,
             )
         )
 
@@ -2056,6 +2100,18 @@ def _group_block(
         schema = str(team.get("schema") or "")
         out.append(
             f"      {'Theo checker':<24}: {schema or '(không rõ bài này dùng checker nào — bỏ qua kiểm tra)'}"
+        )
+        # Named before the contents, because it says what the contents are of.
+        # A group that pushed after submitting has two different files, and only
+        # this line separates "chưa điền" from "điền rồi, bị ghi đè sau khi nộp".
+        ref = str(team.get("ref") or "")
+        out.append(
+            f"      {'Đọc tại':<24}: "
+            + (
+                f"commit được chấm {ref[:8]}"
+                if ref
+                else "nhánh mặc định (chưa có lần nộp nào được chấm)"
+            )
         )
         if schema != TEAM_SCHEMA_W00:
             out.append(f"      {'Môn':<24}: {team.get('course') or '(bỏ trống)'}")
