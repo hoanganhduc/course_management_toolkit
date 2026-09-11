@@ -279,6 +279,61 @@ def import_groups(
     return report, text
 
 
+def export_groups_txt(
+    students: Sequence[Any],
+    *,
+    org: str,
+    classroom: str,
+    assignment: Optional[str] = None,
+    with_team_json: bool = False,
+    cli: Optional[AgentCLI] = None,
+    runner: Optional[Runner] = None,
+) -> tuple:
+    """Read the groups and render them long-form, for a file a teacher keeps.
+
+    It is the same read as :func:`import_groups` -- the records are updated in
+    place and saving them stays the caller's decision -- rendered for somebody
+    who wants the whole picture of one group rather than a summary of the run.
+    ``students`` carries the names, student numbers and recorded grades, so an
+    export run without a database is thinner but still valid.
+
+    "How fresh are these grades" is asked of the server rather than the clock,
+    and a classroom whose gradebook cannot be read is still worth exporting:
+    the failure costs the header line, not the file.
+    """
+    from datetime import datetime, timezone
+
+    from .c50_groups import format_groups_txt
+
+    report, _ = import_groups(
+        students,
+        org=org,
+        classroom=classroom,
+        assignment=assignment,
+        with_team_json=with_team_json,
+        cli=cli,
+        runner=runner,
+    )
+
+    collected_at = ""
+    try:
+        from .c50_scores import fetch_scores_collected_at
+
+        collected_at = fetch_scores_collected_at(org, classroom, runner=runner) or ""
+    except Classroom50Error:
+        collected_at = ""
+
+    text = format_groups_txt(
+        report,
+        org=org,
+        classroom=classroom,
+        students=students,
+        collected_at=collected_at,
+        generated_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    )
+    return report, text
+
+
 def import_project_issues(
     students: Sequence[Any],
     *,

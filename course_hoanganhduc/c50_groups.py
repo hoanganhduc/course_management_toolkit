@@ -156,6 +156,16 @@ class Group(NamedTuple):
     snapshot: List[str]
     outsiders: List[str]
     group_name: str
+    # The parsed ``team.json`` rather than just the name taken out of it.  The
+    # full names and student numbers a group declares there are the only
+    # identity its repository carries, and dropping them means a reader that
+    # wants to know who ``@someone`` is has to ask the database or GitHub.
+    team: Optional[TeamFile] = None
+    # What the collector published about this repository: the marks, the
+    # submission history, whether the result was overridden.  It arrives in the
+    # same entry as ``credited`` and was being discarded, so keeping it costs
+    # nothing and saves a reader from fetching the whole gradebook again.
+    result: Optional[Dict[str, Any]] = None
 
 
 class GroupReport(NamedTuple):
@@ -170,6 +180,18 @@ class GroupReport(NamedTuple):
     skipped_team_json: List[str]
     warnings: List[str]
     findings: List[Issue]
+
+
+def _group_order(group: Group) -> Tuple[str, str]:
+    """Sort key for a :class:`Group`.
+
+    A repository belongs to exactly one group, so this orders the same way the
+    bare tuple used to.  It is spelled out because ``Group`` now carries a
+    parsed ``team.json`` and a result payload, neither of which can be compared,
+    and a bare ``sorted`` would reach them the day two rows tie on the fields
+    above.
+    """
+    return (group.slug, group.repo)
 
 
 # --------------------------------------------------------------------------
@@ -910,7 +932,7 @@ def detect_group_conflicts(
     seen_group_names: Dict[Tuple[str, str], List[str]] = {}
     seen_student_ids: Dict[str, List[str]] = {}
 
-    for group in sorted(groups):
+    for group in sorted(groups, key=_group_order):
         if len(group.members) > MAX_MEMBERS:
             findings.append(
                 _issue(
@@ -1096,7 +1118,7 @@ def detect_group_conflicts(
             )
         )
 
-    for group in sorted(groups):
+    for group in sorted(groups, key=_group_order):
         expected = sheet_groups.get(group.repo)
         if expected is None:
             continue
@@ -1114,7 +1136,7 @@ def detect_group_conflicts(
                 )
             )
 
-    for group in sorted(groups):
+    for group in sorted(groups, key=_group_order):
         before = previous.get(group.slug, {}).get(group.repo)
         if not before:
             continue
@@ -1178,6 +1200,19 @@ def quarantined_units(
     return {slug: sorted(values) for slug, values in out.items()}
 
 
+def _team_to_dict(team: Optional[TeamFile]) -> Optional[Dict[str, Any]]:
+    """A parsed ``team.json`` as plain data, for a report that has to be JSON."""
+    if team is None:
+        return None
+    return {
+        "course": team.course,
+        "group_name": team.group_name,
+        "founder": team.founder,
+        "members": [member._asdict() for member in team.members],
+        "faults": [fault._asdict() for fault in team.faults],
+    }
+
+
 def merge_groups_into_students(
     students: Sequence[Any],
     groups: Sequence[Group],
@@ -1213,7 +1248,7 @@ def merge_groups_into_students(
     updated = 0
     payload: Dict[str, List[Dict[str, Any]]] = {}
 
-    for group in sorted(groups):
+    for group in sorted(groups, key=_group_order):
         quarantined = group.repo in held.get(group.slug, [])
         payload.setdefault(group.slug, []).append(
             {
@@ -1223,6 +1258,19 @@ def merge_groups_into_students(
                 "source": group.source,
                 "group_name": group.group_name,
                 "quarantined": quarantined,
+                # Everything the read resolved, not only the part the database
+                # write needs: who the collector paid, who the repository has
+                # as collaborators now, who is on it without being on the
+                # roster, why it was held back, what the group says about
+                # itself, and what it was marked.  A reader that wanted the
+                # whole picture used to have to go back to GitHub for all of
+                # this, although the fetch had already produced it.
+                "credited": list(group.credited),
+                "snapshot": list(group.snapshot),
+                "outsiders": list(group.outsiders),
+                "reasons": sorted(set(reasons.get(group.repo, []))),
+                "team": _team_to_dict(group.team),
+                "result": dict(group.result) if group.result else None,
             }
         )
         for login in group.members:
@@ -1390,6 +1438,11 @@ def import_groups(
     # collector never writes a bucket for it, so the read could only ever return
     # nothing, and a private repository answers a failed read with 404.
     credited_by_slug: Dict[str, Dict[str, List[str]]] = {}
+    # ``slug -> owner -> what the collector marked that repository``.  Read from
+    # the same entries as ``credited_by_slug`` and in the same pass, so it adds
+    # no request; without it a reader wanting a group's marks has to fetch the
+    # gradebook a second time and re-derive which repository each one came from.
+    results_by_slug: Dict[str, Dict[str, Dict[str, Any]]] = {}
     if any(manifest[slug].graded for slug in slugs if slug in manifest):
         # fetch_scores already validates the schema and returns a parsed
         # document, so there is nothing left to parse here.
@@ -1411,6 +1464,10 @@ def import_groups(
                             {_norm_login(name) for name in entry.member_usernames if name}
                             | {owner}
                         )
+                        results_by_slug.setdefault(slug, {})[owner] = {
+                            "override": entry.override,
+                            "submissions": list(entry.submissions),
+                        }
 
     repos = list_group_repos(
         org, classroom, slugs, runner=api, timeout=timeout, sleeper=sleeper, pace=pace
@@ -1441,6 +1498,7 @@ def import_groups(
             source = SOURCE_SCORES
 
         group_name = ""
+        team: Optional[TeamFile] = None
         if with_team_json:
             team = read_team_json(
                 org, entry.repo, runner=api, timeout=timeout, sleeper=sleeper, pace=pace
@@ -1462,6 +1520,10 @@ def import_groups(
                 snapshot=snapshot,
                 outsiders=outsiders,
                 group_name=group_name,
+                team=team,
+                result=results_by_slug.get(entry.slug, {}).get(
+                    _norm_login(entry.founder)
+                ),
             )
         )
 
@@ -1554,6 +1616,299 @@ def format_groups(report: GroupReport) -> str:
     if report.findings:
         text += "\n\n" + format_issues(report.findings)
     return text
+
+
+# --------------------------------------------------------------------------
+# the long-form export
+# --------------------------------------------------------------------------
+
+
+def _repo_url(org: str, repo: str) -> str:
+    """A repository's browser address, for a teacher who wants to open it."""
+    return f"https://github.com/{org}/{repo}" if org and repo else ""
+
+
+def _mark(value: Any, yes: str = "có", no: str = "không") -> str:
+    """A flag in words.  ``None`` is not the same answer as ``False``."""
+    if value is None:
+        return "không rõ"
+    return yes if value else no
+
+
+def _submission_points(payload: Mapping[str, Any]) -> str:
+    """One submission's marks as ``85/100``, or why there are none."""
+    score = payload.get("score")
+    if score is None:
+        return "chưa chấm"
+    maximum = payload.get("max-score")
+    return f"{score}/{maximum}" if maximum is not None else f"{score}"
+
+
+def _member_lines(
+    login: str,
+    position: int,
+    *,
+    slug: str,
+    founder: str,
+    team: Optional[Mapping[str, Any]],
+    index: Mapping[str, Any],
+) -> List[str]:
+    """One member: the login, who the database says that is, who they say they are.
+
+    The three never come from the same place, and the point of printing them
+    together is that they can disagree -- a student number in ``team.json`` that
+    belongs to somebody else is invisible until the two sit on adjacent lines.
+    """
+    from .c50_scores import FIELD_GRADE_CANDIDATES, FIELD_GRADES, _points
+
+    key = _norm_login(login)
+    role = "  [người tạo kho]" if key and key == _norm_login(founder) else ""
+    out = [f"    {position}. @{login}{role}"]
+
+    student = index.get(key)
+    if student is None:
+        out.append("       (không có bản ghi trong database)")
+    else:
+        for label, field in (
+            ("MSSV", "Student ID"),
+            ("Họ tên", "Name"),
+            ("Email", "Email"),
+            ("Email HUS", "Emai VNU-HUS"),
+            ("Lớp", "Class"),
+            ("Nhóm lớp", "Section"),
+        ):
+            value = str(getattr(student, field, "") or "").strip()
+            if value:
+                out.append(f"       {label:<11}: {value}")
+
+    if isinstance(team, dict):
+        for member in team.get("members") or []:
+            if not isinstance(member, dict):
+                continue
+            if _norm_login(member.get("github_username")) != key:
+                continue
+            told = " — ".join(
+                part
+                for part in (
+                    str(member.get("full_name") or "").strip(),
+                    str(member.get("student_id") or "").strip(),
+                )
+                if part
+            )
+            out.append(f"       {'Tự khai':<11}: {told or '(bỏ trống)'}  (theo team.json)")
+
+    if student is not None:
+        grades = getattr(student, FIELD_GRADES, None)
+        stored = grades.get(slug) if isinstance(grades, dict) else None
+        if isinstance(stored, dict):
+            out.append(
+                f"       {'Điểm trong sổ':<11}: {_points(stored)} "
+                f"(ghi từ kho {stored.get('owner') or 'không rõ'})"
+            )
+        candidates = getattr(student, FIELD_GRADE_CANDIDATES, None)
+        paying = candidates.get(slug) if isinstance(candidates, dict) else None
+        if isinstance(paying, dict) and len(paying) > 1:
+            shown = ", ".join(
+                f"{owner}: {_points(paying[owner])}"
+                for owner in sorted(paying)
+                if isinstance(paying[owner], dict)
+            )
+            out.append(
+                f"       {'CẢNH BÁO':<11}: {len(paying)} kho cùng tính điểm cho bạn "
+                f"này — {shown}"
+            )
+    return out
+
+
+def _group_block(
+    row: Mapping[str, Any],
+    *,
+    slug: str,
+    position: int,
+    of: int,
+    org: str,
+    index: Mapping[str, Any],
+    thin: str,
+) -> List[str]:
+    """One group, in the order a teacher would ask the questions."""
+    repo = str(row.get("repo") or "")
+    founder = str(row.get("founder") or "")
+    declared = str(row.get("group_name") or "")
+    members = [str(name) for name in (row.get("members") or [])]
+    team = row.get("team") if isinstance(row.get("team"), dict) else None
+    result = row.get("result") if isinstance(row.get("result"), dict) else None
+
+    title = declared or (f"@{founder}" if founder else "(nhóm chưa rõ tên)")
+    out = ["", thin, f"[{position}/{of}] {title}", thin]
+    out.append(f"  Kho            : {repo or '(không rõ)'}")
+    url = _repo_url(org, repo)
+    if url:
+        out.append(f"  Địa chỉ        : {url}")
+    out.append(f"  Người tạo kho  : {'@' + founder if founder else '(không rõ)'}")
+    out.append(f"  Tên nhóm       : {declared or '(chưa đặt)'}")
+
+    out.append("")
+    out.append(f"  Thành viên ({len(members)}):")
+    if not members:
+        out.append("    (không có)")
+    for number, login in enumerate(members, start=1):
+        out.extend(
+            _member_lines(
+                login, number, slug=slug, founder=founder, team=team, index=index
+            )
+        )
+
+    out.append("")
+    out.append("  Đối chiếu danh sách:")
+    out.append(f"      {'Nguồn đang dùng':<24}: {row.get('source') or '(không rõ)'}")
+    for label, field in (
+        ("Classroom50 tính điểm", "credited"),
+        ("Cộng tác viên hiện tại", "snapshot"),
+        ("Ngoài danh sách lớp", "outsiders"),
+    ):
+        names = ", ".join(str(name) for name in (row.get(field) or []))
+        out.append(f"      {label:<24}: {names or '(không có)'}")
+
+    out.append("")
+    if result is None:
+        out.append("  Điểm của kho   : chưa có trong scores.json")
+    else:
+        submissions = [
+            one for one in (result.get("submissions") or []) if isinstance(one, dict)
+        ]
+        newest = submissions[0] if submissions else {}
+        out.append("  Điểm của kho:")
+        out.append(f"      {'Kết quả':<24}: {_submission_points(newest)}")
+        out.append(f"      {'Nộp lúc':<24}: {newest.get('datetime') or '(không rõ)'}")
+        out.append(f"      {'Trễ hạn':<24}: {_mark(newest.get('late'))}")
+        if newest.get("commit"):
+            out.append(f"      {'Commit':<24}: {newest.get('commit')}")
+        if newest.get("release"):
+            out.append(f"      {'Release':<24}: {newest.get('release')}")
+        out.append(f"      {'Chấm tay ghi đè':<24}: {_mark(result.get('override'))}")
+        if len(submissions) > 1:
+            out.append(f"      Các lần nộp ({len(submissions)}):")
+            for number, one in enumerate(submissions, start=1):
+                out.append(
+                    f"        {number}. {one.get('datetime') or '(không rõ)'} — "
+                    f"{_submission_points(one)} — trễ: {_mark(one.get('late'))}"
+                )
+
+    out.append("")
+    if team is None:
+        out.append("  team.json      : chưa đọc (cần --read-team-json) hoặc kho chưa có")
+    else:
+        out.append("  team.json:")
+        out.append(f"      {'Môn':<24}: {team.get('course') or '(bỏ trống)'}")
+        out.append(f"      {'Tên nhóm':<24}: {team.get('group_name') or '(bỏ trống)'}")
+        out.append(f"      {'Trưởng nhóm khai báo':<24}: {team.get('founder') or '(bỏ trống)'}")
+        declared_members = [
+            one for one in (team.get("members") or []) if isinstance(one, dict)
+        ]
+        out.append(f"      {'Số thành viên khai báo':<24}: {len(declared_members)}")
+        faults = [one for one in (team.get("faults") or []) if isinstance(one, dict)]
+        if not faults:
+            out.append(f"      {'Kiểm tra':<24}: hợp lệ")
+        else:
+            out.append(f"      Lỗi ({len(faults)}):")
+            for fault in faults:
+                out.append(f"        - {fault.get('code')}: {fault.get('detail')}")
+                if fault.get("fix"):
+                    out.append(f"          cách sửa: {fault.get('fix')}")
+
+    out.append("")
+    out.append(
+        "  Trạng thái     : GIỮ LẠI — không ghi vào database"
+        if row.get("quarantined")
+        else "  Trạng thái     : đã ghi vào database"
+    )
+    for reason in row.get("reasons") or []:
+        out.append(f"      - {reason}")
+    return out
+
+
+def format_groups_txt(
+    report: GroupReport,
+    *,
+    org: str = "",
+    classroom: str = "",
+    students: Sequence[Any] = (),
+    collected_at: str = "",
+    generated_at: str = "",
+) -> str:
+    """The whole reading as a file to keep, one block per group.
+
+    :func:`format_groups` answers "did the import go well".  This answers "who
+    is in this group, where is their repository, and what were they marked",
+    which needs the three places that knowledge lives -- the repositories, the
+    ``team.json`` each group wrote about itself, and the local database -- none
+    of which knows what the other two hold.
+
+    ``students`` may be empty.  The file is then written without student
+    numbers, names or recorded grades, and says so at the top rather than
+    leaving a reader to conclude that the members are only GitHub logins.
+    """
+    from .roster_audit import format_issues
+
+    index, _ = _student_index(students, None)
+    rule = "=" * 78
+    thin = "-" * 78
+    total = sum(len(rows) for rows in report.groups.values())
+    held = sum(len(repos) for repos in report.quarantined.values())
+
+    lines = [rule, "THÔNG TIN NHÓM — Classroom50", rule]
+    if org:
+        lines.append(f"Tổ chức        : {org}")
+    if classroom:
+        lines.append(f"Lớp            : {classroom}")
+    lines.append(f"Bài tập        : {', '.join(report.slugs) or '(không có)'}")
+    if generated_at:
+        lines.append(f"Xuất lúc       : {generated_at}")
+    if collected_at:
+        lines.append(f"Điểm thu lúc   : {collected_at}")
+    lines.append(
+        f"Tổng cộng      : {total} nhóm, {held} nhóm bị giữ lại, "
+        f"{report.updated} bản ghi được cập nhật"
+    )
+    if not students:
+        lines.append(
+            "Ghi chú        : chạy không kèm database, nên không có MSSV, họ tên "
+            "hay điểm trong sổ"
+        )
+
+    for slug in report.slugs:
+        rows = report.groups.get(slug, [])
+        lines.extend(["", rule, f"BÀI: {slug} — {len(rows)} nhóm", rule])
+        for position, row in enumerate(rows, start=1):
+            lines.extend(
+                _group_block(
+                    row,
+                    slug=slug,
+                    position=position,
+                    of=len(rows),
+                    org=org,
+                    index=index,
+                    thin=thin,
+                )
+            )
+
+    lines.extend(["", rule, "PHẦN CÒN LẠI CỦA BÁO CÁO", rule])
+    lines.append(
+        f"Không có bản ghi trong database ({len(report.unmatched)}): "
+        + (", ".join(report.unmatched) or "(không có)")
+    )
+    lines.append(
+        f"Chưa có team.json ({len(report.skipped_team_json)}): "
+        + (", ".join(report.skipped_team_json) or "(không có)")
+    )
+    for warning in report.warnings:
+        lines.append(f"Cảnh báo: {warning}")
+
+    text = "\n".join(lines)
+    if report.findings:
+        text += f"\n\n{rule}\nLỖI VÀ CẢNH BÁO THEO SINH VIÊN\n{rule}\n"
+        text += format_issues(report.findings)
+    return text + "\n"
 
 
 def list_groups(

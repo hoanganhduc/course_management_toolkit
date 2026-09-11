@@ -71,6 +71,15 @@ def main(argv=None) -> int:
     p_lg.add_argument("--classroom", required=True)
     p_lg.add_argument("--assignment", default=None)
     p_lg.add_argument("--read-team-json", action="store_true")
+    p_eg = sub.add_parser(
+        "export-groups", help="Write everything known about the groups to a text file"
+    )
+    p_eg.add_argument("--org", required=True)
+    p_eg.add_argument("--classroom", required=True)
+    p_eg.add_argument("--assignment", default=None)
+    p_eg.add_argument("--db", default="students.db")
+    p_eg.add_argument("--read-team-json", action="store_true")
+    p_eg.add_argument("--out", default="classroom50_groups.txt")
     p_ex = sub.add_parser("export", help="Export local roster as C50 CSV")
     p_ex.add_argument("--db", default="students.db")
     p_ex.add_argument("--out", default="classroom50_roster.csv")
@@ -89,6 +98,7 @@ def main(argv=None) -> int:
     from .c50_ops import (
         agent_refuse_download,
         export_csv,
+        export_groups_txt,
         import_scores,
         list_assignments,
         list_classrooms,
@@ -178,6 +188,30 @@ def main(argv=None) -> int:
                     indent=2,
                     ensure_ascii=False,
                 )
+            )
+            return 0
+        if args.cmd == "export-groups":
+            from .data import load_database
+
+            students = []
+            if os.path.exists(args.db):
+                students = load_database(args.db, verbose=False) or []
+            report, text = export_groups_txt(
+                students,
+                org=args.org,
+                classroom=args.classroom,
+                assignment=args.assignment,
+                with_team_json=args.read_team_json,
+            )
+            with open(args.out, "w", encoding="utf-8") as fh:
+                fh.write(text)
+            # The read updates the records in memory, as every read in this
+            # module does; an export is not the place to decide that a group is
+            # settled, so nothing is saved and the line below says so.
+            total = sum(len(rows) for rows in report.groups.values())
+            print(
+                f"wrote {args.out} groups={total} "
+                f"students={len(students)} database=not saved"
             )
             return 0
         if args.cmd == "export":

@@ -41,6 +41,7 @@ from course_hoanganhduc.c50_groups import (  # noqa: E402
     credit_members,
     detect_group_conflicts,
     format_groups,
+    format_groups_txt,
     import_groups,
     list_groups,
     list_repo_collaborators,
@@ -53,7 +54,11 @@ from course_hoanganhduc.c50_groups import (  # noqa: E402
     student_members,
     timeout_runner,
 )
-from course_hoanganhduc.c50_scores import parse_assignments  # noqa: E402
+from course_hoanganhduc.c50_scores import (  # noqa: E402
+    FIELD_GRADE_CANDIDATES,
+    FIELD_GRADES,
+    parse_assignments,
+)
 from course_hoanganhduc.roster_audit import (  # noqa: E402
     SEVERITY_ERROR,
     SEVERITY_WARNING,
@@ -1326,6 +1331,152 @@ class TestFailures(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # hygiene
 # ---------------------------------------------------------------------------
+
+
+class TestLongFormExport(unittest.TestCase):
+    """The file a teacher keeps: one block per group, everything that is known.
+
+    The point of the format is the join.  Who a login is comes from the
+    database, what the group says about itself comes from ``team.json``, and
+    what it was marked comes from the gradebook; the tests below are mostly
+    about each of those three surviving the trip into the file.
+    """
+
+    def export(
+        self,
+        *,
+        students: Optional[Sequence[Any]] = None,
+        **runner_kwargs: Any,
+    ) -> str:
+        records = klass() if students is None else students
+        options: Dict[str, Any] = {
+            "repos": [W00_REPO],
+            "scores": scores_doc({GROUP_SLUG: group_bucket("alice", ["alice", "bob"])}),
+            "team_json": {W00_REPO: team_payload()},
+        }
+        options.update(runner_kwargs)
+        report = run_import(FakeRunner(**options), records, with_team_json=True)
+        return format_groups_txt(
+            report, org=ORG, classroom=CLASSROOM, students=records
+        )
+
+    def test_the_repository_and_the_address_to_open_it_are_both_there(self) -> None:
+        text = self.export()
+        self.assertIn(W00_REPO, text)
+        self.assertIn(f"https://github.com/{ORG}/{W00_REPO}", text)
+
+    def test_a_member_carries_the_name_and_number_the_database_has(self) -> None:
+        text = self.export()
+        self.assertIn("Nguyễn Thị An", text)
+        self.assertIn("24001111", text)
+
+    def test_the_founder_is_marked_among_the_members(self) -> None:
+        text = self.export()
+        self.assertIn("@alice", text)
+        self.assertIn("[người tạo kho]", text)
+
+    def test_what_the_group_declared_about_itself_is_printed(self) -> None:
+        # Parsed and thrown away before this: ``import_groups`` kept the name
+        # out of ``team.json`` and dropped the members it was read from.
+        text = self.export()
+        self.assertIn("Nhóm Alpha", text)
+        self.assertIn("theo team.json", text)
+        self.assertIn("24002222", text)
+
+    def test_the_marks_and_the_moment_they_were_earned_are_printed(self) -> None:
+        text = self.export()
+        self.assertIn("90/100", text)
+        self.assertIn("2026-09-10T02:00:00Z", text)
+
+    def test_a_login_with_no_database_record_says_so_and_is_not_dropped(self) -> None:
+        text = self.export(students=[klass()[0]])
+        self.assertIn("@bob", text)
+        self.assertIn("không có bản ghi trong database", text)
+
+    def test_an_export_without_a_database_says_what_is_missing(self) -> None:
+        text = self.export(students=[])
+        self.assertIn("không kèm database", text)
+        self.assertIn("không có bản ghi trong database", text)
+
+    def test_the_recorded_grade_names_the_repository_it_was_written_from(self) -> None:
+        records = klass()
+        setattr(
+            records[0],
+            FIELD_GRADES,
+            {GROUP_SLUG: {"grade": 0, "max_points": 100, "owner": "zoe"}},
+        )
+        self.assertIn("ghi từ kho zoe", self.export(students=records))
+
+    def test_two_repositories_paying_one_member_are_flagged_beside_them(self) -> None:
+        records = klass()
+        setattr(
+            records[0],
+            FIELD_GRADE_CANDIDATES,
+            {
+                GROUP_SLUG: {
+                    "alice": {"grade": 100, "max_points": 100, "owner": "alice"},
+                    "zoe": {"grade": 0, "max_points": 100, "owner": "zoe"},
+                }
+            },
+        )
+        text = self.export(students=records)
+        self.assertIn("2 kho cùng tính điểm", text)
+        self.assertIn("zoe: 0/100", text)
+
+    def test_a_collaborator_who_is_not_in_the_class_is_named(self) -> None:
+        text = self.export(
+            collaborators={W00_REPO: ["alice", "bob", "stranger", *TEACHERS]}
+        )
+        line = next(
+            row for row in text.splitlines() if "Ngoài danh sách lớp" in row
+        )
+        self.assertIn("stranger", line)
+
+    def test_a_broken_team_json_prints_the_fault_and_how_to_fix_it(self) -> None:
+        text = self.export(team_json={W00_REPO: team_payload(course="MAT9999")})
+        self.assertIn("Lỗi (", text)
+        self.assertIn("cách sửa:", text)
+
+    def test_every_group_says_whether_it_was_written_down(self) -> None:
+        self.assertIn("đã ghi vào database", self.export())
+
+    def test_the_report_row_keeps_what_it_used_to_discard(self) -> None:
+        report = run_import(
+            FakeRunner(
+                repos=[W00_REPO],
+                scores=scores_doc(
+                    {GROUP_SLUG: group_bucket("alice", ["alice", "bob"])}
+                ),
+                team_json={W00_REPO: team_payload()},
+            ),
+            klass(),
+            with_team_json=True,
+        )
+        row = report.groups[GROUP_SLUG][0]
+        for key in ("credited", "snapshot", "outsiders", "reasons", "team", "result"):
+            self.assertIn(key, row)
+        self.assertEqual(row["team"]["group_name"], "Nhóm Alpha")
+        self.assertEqual(row["result"]["submissions"][0]["score"], 90)
+        # ``list-groups`` prints this dict, so the widening has to survive it.
+        serialised = report_to_dict(report)["groups"][GROUP_SLUG][0]
+        self.assertEqual(serialised["credited"], row["credited"])
+        json.dumps(serialised)
+
+    def test_a_run_that_never_read_team_json_says_so_instead_of_guessing(self) -> None:
+        records = klass()
+        report = run_import(
+            FakeRunner(
+                repos=[W00_REPO],
+                scores=scores_doc(
+                    {GROUP_SLUG: group_bucket("alice", ["alice", "bob"])}
+                ),
+            ),
+            records,
+        )
+        text = format_groups_txt(
+            report, org=ORG, classroom=CLASSROOM, students=records
+        )
+        self.assertIn("--read-team-json", text)
 
 
 class TestHygiene(unittest.TestCase):
