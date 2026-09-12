@@ -762,6 +762,45 @@ def main():
     config_group.add_argument('--clear-credentials', '-ccred', action='store_true',
                               help="Delete stored credentials.json and token.pickle from the default location",
                               dest="clear_credentials")
+    config_group.add_argument('--init-course', '-init', action='store_true',
+                              help="Set up a new course: config, credentials, and folder scripts",
+                              dest="init_course")
+    config_group.add_argument('--init-dir', type=str,
+                              help="Course folder to set up with --init-course (default: current folder)",
+                              dest="init_dir", metavar="DIR")
+    config_group.add_argument('--init-name', type=str,
+                              help="Course name for --init-course",
+                              dest="init_name", metavar="NAME")
+    config_group.add_argument('--inherit-from', type=str,
+                              help="Course code to inherit shared settings (API keys, OCR, AI) from",
+                              dest="inherit_from", metavar="COURSE_CODE")
+    config_group.add_argument('--init-google-id', type=str,
+                              help="Google Classroom course id or URL for --init-course",
+                              dest="init_google_id", metavar="ID")
+    config_group.add_argument('--init-canvas-id', type=str,
+                              help="Canvas course id for --init-course",
+                              dest="init_canvas_id", metavar="ID")
+    config_group.add_argument('--init-c50-org', type=str,
+                              help="Classroom50 GitHub organization for --init-course",
+                              dest="init_c50_org", metavar="ORG")
+    config_group.add_argument('--init-c50-classroom', type=str,
+                              help="Classroom50 classroom short name for --init-course",
+                              dest="init_c50_classroom", metavar="NAME")
+    config_group.add_argument('--init-sheet-url', type=str,
+                              help="Google Sheet URL of the registration form for --init-course",
+                              dest="init_sheet_url", metavar="URL")
+    config_group.add_argument('--init-no-scaffold', action='store_true',
+                              help="With --init-course: write config only, no folder files",
+                              dest="init_no_scaffold")
+    config_group.add_argument('--init-no-db', action='store_true',
+                              help="With --init-course: do not create an empty students.db",
+                              dest="init_no_db")
+    config_group.add_argument('--init-non-interactive', action='store_true',
+                              help="With --init-course: never prompt; use flags and inheritance only",
+                              dest="init_non_interactive")
+    config_group.add_argument('--init-force', action='store_true',
+                              help="With --init-course: overwrite an existing config.json",
+                              dest="init_force")
     config_group.add_argument('--backup-config', nargs='?', const=True,
                               help="Back up config.json to a timestamped file (optional: backup dir)",
                               dest="backup_config", metavar="BACKUP_DIR")
@@ -1375,7 +1414,9 @@ def main():
         return 0
 
     # Persist course code early so config resolution is consistent for this run.
-    if args.course_code:
+    # --init-course writes .course_code itself, so it must not be written here during a
+    # dry run of that command.
+    if args.course_code and not (args.init_course and args.dry_run):
         cache_course_code(args.course_code)
 
     if args.clear_config or args.clear_credentials:
@@ -1390,6 +1431,35 @@ def main():
                 any_removed = results.get("credentials") or results.get("token")
                 msg = "Credentials cleared." if any_removed else "Credentials not found or could not be removed."
                 print(msg)
+        raise SystemExit(0)
+
+    # Initialization runs before the config load below, because that path prompts for a
+    # course code and exits when there is no .course_code yet -- which is exactly the
+    # situation --init-course exists to fix.
+    if args.init_course:
+        from .init_course import InitCourseError, run_init_course, summarize
+        try:
+            result = run_init_course(
+                course_code=args.course_code,
+                course_name=args.init_name,
+                directory=args.init_dir,
+                inherit_from=args.inherit_from,
+                google_course_id=args.init_google_id,
+                canvas_course_id=args.init_canvas_id,
+                c50_org=args.init_c50_org,
+                c50_classroom=args.init_c50_classroom,
+                sheet_url=args.init_sheet_url,
+                scaffold=not args.init_no_scaffold,
+                make_db=not args.init_no_db,
+                interactive=not args.init_non_interactive,
+                force=args.init_force,
+                dry_run=args.dry_run,
+                verbose=args.verbose,
+            )
+        except InitCourseError as e:
+            print(f"[InitCourse] {e}")
+            raise SystemExit(2)
+        summarize(result)
         raise SystemExit(0)
 
     # Load config and set global variables for downstream modules.

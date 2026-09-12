@@ -81,6 +81,22 @@ def get_cached_course_code():
     return _normalize_course_code(_load_cached_course_code())
 
 
+def get_config_base_dir():
+    r"""
+    Get the directory that holds one config folder per course, without creating anything.
+    - Windows: %APPDATA%\course
+    - macOS: ~/Library/Application Support/course
+    - Linux: ~/.config/course
+    """
+    system = platform.system().lower()
+    if system == "windows":
+        appdata = os.environ.get("APPDATA", str(Path.home()))
+        return os.path.join(appdata, "course")
+    if system == "darwin":  # macOS
+        return os.path.join(str(Path.home()), "Library", "Application Support", "course")
+    return os.path.join(str(Path.home()), ".config", "course")  # Linux and others
+
+
 def get_default_config_path(course_code=None, verbose=False):
     r"""
     Get the default config file path for the current operating system.
@@ -102,13 +118,7 @@ def get_default_config_path(course_code=None, verbose=False):
         print("[Config] A course code is required to run this script. Exiting.")
         raise SystemExit(2)
     system = platform.system().lower()
-    if system == "windows":
-        appdata = os.environ.get("APPDATA", str(Path.home()))
-        config_dir = os.path.join(appdata, "course", course_code)
-    elif system == "darwin":  # macOS
-        config_dir = os.path.join(str(Path.home()), "Library", "Application Support", "course", course_code)
-    else:  # Linux and others
-        config_dir = os.path.join(str(Path.home()), ".config", "course", course_code)
+    config_dir = os.path.join(get_config_base_dir(), course_code)
     os.makedirs(config_dir, exist_ok=True)
     config_path = os.path.join(config_dir, "config.json")
     if verbose:
