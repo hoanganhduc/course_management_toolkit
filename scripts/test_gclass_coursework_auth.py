@@ -91,6 +91,11 @@ def google_dependencies_available():
 
 
 class TestPathResolution(unittest.TestCase):
+    # The three fixtures below feed POSIX absolute paths such as "/secrets/client.json".
+    # Path is host-flavoured, so on Windows those carry no drive letter, is_absolute() is
+    # False, and resolve_coursework_auth_paths rejects them before reaching what is under
+    # test.  The rejection is correct there; the fixtures are what does not travel.
+    @unittest.skipIf(os.name == "nt", "POSIX absolute paths are not absolute on Windows")
     def test_linux_default_is_account_scoped(self):
         paths = resolve_coursework_auth_paths(
             "Teacher@Example.edu",
@@ -105,6 +110,7 @@ class TestPathResolution(unittest.TestCase):
             f"{account_fingerprint('teacher@example.edu')}.json",
         )
 
+    @unittest.skipIf(os.name == "nt", "POSIX absolute paths are not absolute on Windows")
     def test_cli_pair_and_token_only(self):
         pair = resolve_coursework_auth_paths(
             "teacher@example.edu",
@@ -144,6 +150,7 @@ class TestPathResolution(unittest.TestCase):
                 "teacher@example.edu", token_path="/", env={}
             )
 
+    @unittest.skipIf(os.name == "nt", "POSIX absolute paths are not absolute on Windows")
     def test_environment_pair_and_invalid_relative_values(self):
         paths = resolve_coursework_auth_paths(
             "teacher@example.edu",

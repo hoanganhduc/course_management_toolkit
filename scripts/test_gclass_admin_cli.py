@@ -821,6 +821,11 @@ class TestAdminCLI(SpecFixture):
         self.assertFalse(auth_kwargs[0]["open_browser"])
         self.assertTrue(auth_kwargs[0]["require_existing_token"])
 
+    # --agent-safe-draft goes through TokenFileLock and the secure token store, and
+    # gclass_coursework_auth._require_posix_security refuses both on native Windows by
+    # design.  Every test below would therefore only re-check that refusal, never the
+    # duplicate-preflight, collision and read-back behaviour they are written for.
+    @unittest.skipIf(os.name == "nt", "agent-safe draft needs POSIX credential security")
     def test_agent_safe_draft_creates_once_after_allowlisted_duplicate_preflight(self):
         path = self.write_spec(
             {
@@ -961,6 +966,7 @@ class TestAdminCLI(SpecFixture):
             },
         )
 
+    @unittest.skipIf(os.name == "nt", "agent-safe draft needs POSIX credential security")
     def test_agent_safe_draft_reuses_one_identical_match_across_pages(self):
         path = self.write_spec({"title": "Smoke", "description": "Exact"})
         token = self.write_token_placeholder()
@@ -1064,6 +1070,7 @@ class TestAdminCLI(SpecFixture):
         )
         self.assertEqual(service.calls[3][1]["pageToken"], "page-2")
 
+    @unittest.skipIf(os.name == "nt", "agent-safe draft needs POSIX credential security")
     def test_agent_safe_draft_fails_closed_on_collision_and_policy_mismatch(self):
         path = self.write_spec({"title": "Smoke", "description": "Exact"})
         token = self.write_token_placeholder()
@@ -1289,6 +1296,7 @@ class TestAdminCLI(SpecFixture):
         self.assertIn("materials", errors)
         self.assertNotIn("courseWork.create", [call[0] for call in service.calls])
 
+    @unittest.skipIf(os.name == "nt", "agent-safe draft needs POSIX credential security")
     def test_agent_safe_draft_blocks_same_title_published_or_deleted_replay(self):
         path = self.write_spec({"title": "One shot", "description": "Exact"})
         token = self.write_token_placeholder()
@@ -1370,6 +1378,7 @@ class TestAdminCLI(SpecFixture):
                     "courseWork.create", [call[0] for call in service.calls]
                 )
 
+    @unittest.skipIf(os.name == "nt", "agent-safe draft needs POSIX credential security")
     def test_agent_safe_draft_readback_failure_is_partial_and_never_retried(self):
         path = self.write_spec({"title": "Read back", "description": "Exact"})
         token = self.write_token_placeholder()
@@ -1520,6 +1529,7 @@ class TestAdminCLI(SpecFixture):
             [call[0] for call in service.calls], ["courses.get", "courses.get"]
         )
 
+    @unittest.skipIf(os.name == "nt", "agent-safe draft needs POSIX credential security")
     def test_agent_safe_draft_operation_lock_blocks_concurrent_local_run(self):
         path = self.write_spec({"title": "Locked", "description": "Exact"})
         token = self.write_token_placeholder()
