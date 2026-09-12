@@ -38,6 +38,18 @@ def _configure_canvas() -> None:
     selected: dict[str, str] = {}
     configured_path = os.environ.get("CANVAS_CONFIG_PATH")
     if configured_path:
+        if os.name == "nt":
+            # Everything below is a POSIX guarantee: ownership through os.getuid, and a
+            # mode carrying no group or other bits.  Windows has neither -- os.getuid does
+            # not exist there, and os.chmod(path, 0o600) still leaves the mode reading
+            # 0o666 -- so the file cannot be shown to be private.  Refuse on purpose, or
+            # os.getuid raises AttributeError and reports a missing attribute instead of
+            # the reason.
+            raise CourseAgentError(
+                "CANVAS_CONFIG_PATH cannot be secured on native Windows; "
+                "pass the values through CANVAS_LMS_API_URL, CANVAS_LMS_API_KEY "
+                "and CANVAS_LMS_COURSE_ID instead"
+            )
         path = Path(configured_path).expanduser()
         if not path.is_absolute():
             raise CourseAgentError("CANVAS_CONFIG_PATH must be absolute")

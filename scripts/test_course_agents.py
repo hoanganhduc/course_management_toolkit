@@ -375,6 +375,7 @@ class TestCanvasGclassAgent(unittest.TestCase):
         os.environ.pop("COURSE_AGENT_MODE", None)
         os.environ.pop("CANVAS_COURSE_ALLOWLIST", None)
 
+    @unittest.skipIf(os.name == "nt", "needs POSIX ownership and 0o600 on the fixture")
     def test_canvas_preflight_loads_explicit_private_config(self):
         with tempfile.TemporaryDirectory() as temporary:
             config = os.path.join(temporary, "canvas.json")
@@ -412,6 +413,34 @@ class TestCanvasGclassAgent(unittest.TestCase):
             )
             self.assertNotIn("fixture-secret", output.getvalue())
 
+    @unittest.skipUnless(os.name == "nt", "describes the native Windows refusal")
+    def test_canvas_private_config_refuses_windows_intelligibly(self):
+        # The loader's guarantees are POSIX ones: file ownership via os.getuid and a mode
+        # with no group or other bits.  Windows has neither, so the path is refused -- but
+        # it has to be refused on purpose, not by os.getuid raising AttributeError, or the
+        # operator is told "module 'os' has no attribute 'getuid'" instead of the reason.
+        with tempfile.TemporaryDirectory() as temporary:
+            config = os.path.join(temporary, "canvas.json")
+            with open(config, "w", encoding="utf-8") as stream:
+                json.dump({"CANVAS_LMS_API_KEY": "fixture-secret"}, stream)
+            previous = os.environ.get("CANVAS_CONFIG_PATH")
+            os.environ["CANVAS_CONFIG_PATH"] = config
+            output, errors = StringIO(), StringIO()
+            try:
+                with redirect_stdout(output), redirect_stderr(errors):
+                    result = canvas_main(["preflight"])
+            finally:
+                if previous is None:
+                    os.environ.pop("CANVAS_CONFIG_PATH", None)
+                else:
+                    os.environ["CANVAS_CONFIG_PATH"] = previous
+            transcript = output.getvalue() + errors.getvalue()
+            self.assertEqual(result, 1)
+            self.assertIn("Windows", transcript)
+            self.assertNotIn("getuid", transcript)
+            self.assertNotIn("fixture-secret", transcript)
+
+    @unittest.skipIf(os.name == "nt", "0o644 and symlinks have no POSIX meaning here")
     def test_canvas_config_rejects_public_mode_and_symlink(self):
         with tempfile.TemporaryDirectory() as temporary:
             config = os.path.join(temporary, "canvas.json")
