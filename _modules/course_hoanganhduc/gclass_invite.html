@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>course_hoanganhduc.gclass_invite &#8212; Course Management Toolkit 0.2.0 documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="../../_static/basic.css?v=686e5160" />
+    <link rel="stylesheet" type="text/css" href="../../_static/alabaster.css?v=27fed22d" />
+    <script src="../../_static/documentation_options.js?v=938c9ccc"></script>
+    <script src="../../_static/doctools.js?v=9bcbadda"></script>
+    <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+   
+  <link rel="stylesheet" href="../../_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <h1>Source code for course_hoanganhduc.gclass_invite</h1><div class="highlight"><pre>
+<span></span><span class="c1"># -*- coding: utf-8 -*-</span>
+<span class="sd">"""Invite students from the local database to a Google Classroom course.</span>
+
+<span class="sd">The flow mirrors :mod:`course_hoanganhduc.gclass_unenroll` (all-keyword</span>
+<span class="sd">signature, interactive course picker, numbered selection, confirmation before</span>
+<span class="sd">the dry-run check).  Three deliberate departures from that template:</span>
+
+<span class="sd">* ``service`` and ``sleep_fn`` can be injected.  When ``service`` is ``None``</span>
+<span class="sd">  this module builds its own exactly as the unenroll template does, so the</span>
+<span class="sd">  injection is a strict superset that exists only to make the operation</span>
+<span class="sd">  testable offline.</span>
+<span class="sd">* A summary ``dict`` is returned instead of a bare ``int``.  Removing a student</span>
+<span class="sd">  has one outcome; inviting one has six, and a caller cannot tell them apart</span>
+<span class="sd">  from a count.  ``canvas_invites.invite_students_if_not_enrolled`` already</span>
+<span class="sd">  returns a dict for the same operation.</span>
+<span class="sd">* ``load_database``/``save_database`` are imported lazily inside the branches</span>
+<span class="sd">  that need them.  ``data`` pulls pandas/openpyxl/sklearn at module scope, and</span>
+<span class="sd">  importing it here would force every test of this module to stub them.</span>
+
+<span class="sd">Retries: ``gclass_coursework`` pins ``num_retries=0`` because a coursework</span>
+<span class="sd">create whose outcome is unknown must never be repeated.  Invitations are</span>
+<span class="sd">different -- ``invitations().create`` is naturally deduplicated by its own 409</span>
+<span class="sd">ALREADY_EXISTS -- so a bounded retry on transient statuses is safe here.  Do</span>
+<span class="sd">not "fix" this to match the coursework module.</span>
+
+<span class="sd">Dry-run placement: the check sits *after* the confirmation, as in the unenroll</span>
+<span class="sd">template.  ``c50_admin_cli`` places it *before* its confirmation.  Both halves</span>
+<span class="sd">are internally consistent with their own surface; unifying them would change a</span>
+<span class="sd">shipped convention for no functional gain.</span>
+<span class="sd">"""</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">datetime</span><span class="p">,</span> <span class="n">timezone</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Callable</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">NamedTuple</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">,</span> <span class="n">Set</span><span class="p">,</span> <span class="n">Tuple</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">googleapiclient.discovery</span><span class="w"> </span><span class="kn">import</span> <span class="n">build</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">googleapiclient.errors</span><span class="w"> </span><span class="kn">import</span> <span class="n">HttpError</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">.gclass_auth</span><span class="w"> </span><span class="kn">import</span> <span class="n">_get_google_classroom_credentials</span><span class="p">,</span> <span class="n">list_google_classroom_courses</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_input_with_quit</span><span class="p">,</span> <span class="n">parse_selection</span>
+
+<span class="c1"># Documented Classroom quota is 3,000 queries/minute/project (50 QPS) and 1,200</span>
+<span class="c1"># queries/minute/user (20 QPS), checked on a 60-second moving average</span>
+<span class="c1"># (developers.google.com/workspace/classroom/limits). The loop paces well under</span>
+<span class="c1"># both rather than racing a whole class into a 429.</span>
+<span class="n">_WRITE_INTERVAL</span> <span class="o">=</span> <span class="mf">0.2</span>
+<span class="n">_TRANSIENT_STATUSES</span> <span class="o">=</span> <span class="p">(</span><span class="mi">429</span><span class="p">,</span> <span class="mi">500</span><span class="p">,</span> <span class="mi">503</span><span class="p">)</span>
+<span class="n">_RETRY_ATTEMPTS</span> <span class="o">=</span> <span class="mi">4</span>
+<span class="n">_RETRY_BASE_SECONDS</span> <span class="o">=</span> <span class="mf">1.0</span>
+
+<span class="n">_SECTION_FIELDS</span> <span class="o">=</span> <span class="p">(</span><span class="s2">"Section"</span><span class="p">,</span> <span class="s2">"Canvas Section"</span><span class="p">,</span> <span class="s2">"Additional Section"</span><span class="p">)</span>
+
+<span class="n">STATUS_INVITED</span> <span class="o">=</span> <span class="s2">"invited"</span>
+<span class="n">STATUS_SKIPPED_ENROLLED</span> <span class="o">=</span> <span class="s2">"skipped_enrolled"</span>
+<span class="n">STATUS_SKIPPED_PENDING</span> <span class="o">=</span> <span class="s2">"skipped_pending"</span>
+<span class="n">STATUS_SKIPPED_MISSING</span> <span class="o">=</span> <span class="s2">"skipped_missing"</span>
+<span class="n">STATUS_SKIPPED_DUPLICATE</span> <span class="o">=</span> <span class="s2">"skipped_duplicate"</span>
+<span class="n">STATUS_SKIPPED_NOT_IN_DB</span> <span class="o">=</span> <span class="s2">"skipped_not_in_db"</span>
+<span class="n">STATUS_SKIPPED_ABORTED</span> <span class="o">=</span> <span class="s2">"skipped_aborted"</span>
+<span class="n">STATUS_SKIPPED_PRECONDITION</span> <span class="o">=</span> <span class="s2">"skipped_precondition"</span>
+<span class="n">STATUS_FAILED</span> <span class="o">=</span> <span class="s2">"failed"</span>
+
+<span class="n">_COUNTER_KEYS</span> <span class="o">=</span> <span class="p">(</span>
+    <span class="n">STATUS_INVITED</span><span class="p">,</span>
+    <span class="n">STATUS_SKIPPED_ENROLLED</span><span class="p">,</span>
+    <span class="n">STATUS_SKIPPED_PENDING</span><span class="p">,</span>
+    <span class="n">STATUS_SKIPPED_MISSING</span><span class="p">,</span>
+    <span class="n">STATUS_SKIPPED_DUPLICATE</span><span class="p">,</span>
+    <span class="n">STATUS_SKIPPED_NOT_IN_DB</span><span class="p">,</span>
+    <span class="n">STATUS_SKIPPED_ABORTED</span><span class="p">,</span>
+    <span class="n">STATUS_SKIPPED_PRECONDITION</span><span class="p">,</span>
+    <span class="n">STATUS_FAILED</span><span class="p">,</span>
+<span class="p">)</span>
+
+
+<span class="k">class</span><span class="w"> </span><span class="nc">_Candidate</span><span class="p">(</span><span class="n">NamedTuple</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""One database student considered for invitation."""</span>
+
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">email</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">google_id</span><span class="p">:</span> <span class="nb">str</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_normalize_values</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Split a comma string or sequence into stripped lowercase entries."""</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">value</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">[]</span>
+    <span class="n">raw</span> <span class="o">=</span> <span class="n">value</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">raw</span><span class="p">,</span> <span class="p">(</span><span class="nb">list</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">,</span> <span class="nb">set</span><span class="p">)):</span>
+        <span class="n">raw</span> <span class="o">=</span> <span class="p">[</span><span class="n">v</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="nb">str</span><span class="p">(</span><span class="n">raw</span><span class="p">)</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">","</span><span class="p">)</span> <span class="k">if</span> <span class="n">v</span><span class="o">.</span><span class="n">strip</span><span class="p">()]</span>
+    <span class="k">return</span> <span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">v</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">raw</span> <span class="k">if</span> <span class="nb">str</span><span class="p">(</span><span class="n">v</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()]</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_normalize_domains</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+    <span class="k">return</span> <span class="p">[</span><span class="n">d</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="k">if</span> <span class="n">d</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">"@"</span><span class="p">)</span> <span class="k">else</span> <span class="n">d</span> <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="n">_normalize_values</span><span class="p">(</span><span class="n">value</span><span class="p">)]</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_field</span><span class="p">(</span><span class="n">student</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Read one Student attribute.  Field names contain spaces, so getattr."""</span>
+    <span class="k">return</span> <span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">student</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_utc_now</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="k">return</span> <span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">(</span><span class="n">timezone</span><span class="o">.</span><span class="n">utc</span><span class="p">)</span><span class="o">.</span><span class="n">strftime</span><span class="p">(</span><span class="s2">"%Y-%m-</span><span class="si">%d</span><span class="s2">T%H:%M:%SZ"</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_http_status</span><span class="p">(</span><span class="n">exc</span><span class="p">:</span> <span class="n">HttpError</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]:</span>
+    <span class="k">return</span> <span class="nb">getattr</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">exc</span><span class="p">,</span> <span class="s2">"resp"</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span> <span class="s2">"status"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_canonical_status</span><span class="p">(</span><span class="n">exc</span><span class="p">:</span> <span class="n">HttpError</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Read the canonical error name (``FAILED_PRECONDITION``, ...) from the body.</span>
+
+<span class="sd">    Several distinct Classroom conditions share HTTP 400, so the numeric status</span>
+<span class="sd">    alone cannot classify them; the canonical name in ``error.status`` can.</span>
+<span class="sd">    """</span>
+    <span class="n">content</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">exc</span><span class="p">,</span> <span class="s2">"content"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">content</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s2">""</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">content</span><span class="p">,</span> <span class="nb">bytes</span><span class="p">):</span>
+            <span class="n">content</span> <span class="o">=</span> <span class="n">content</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="s2">"utf-8"</span><span class="p">,</span> <span class="s2">"replace"</span><span class="p">)</span>
+        <span class="n">body</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">content</span><span class="p">)</span>
+    <span class="k">except</span> <span class="p">(</span><span class="ne">ValueError</span><span class="p">,</span> <span class="ne">AttributeError</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s2">""</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">body</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s2">""</span>
+    <span class="n">error</span> <span class="o">=</span> <span class="n">body</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"error"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">error</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s2">""</span>
+    <span class="k">return</span> <span class="nb">str</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"status"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_api_message</span><span class="p">(</span><span class="n">exc</span><span class="p">:</span> <span class="n">HttpError</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="n">content</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">exc</span><span class="p">,</span> <span class="s2">"content"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">content</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s2">""</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">content</span><span class="p">,</span> <span class="nb">bytes</span><span class="p">):</span>
+            <span class="n">content</span> <span class="o">=</span> <span class="n">content</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="s2">"utf-8"</span><span class="p">,</span> <span class="s2">"replace"</span><span class="p">)</span>
+        <span class="n">body</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">content</span><span class="p">)</span>
+    <span class="k">except</span> <span class="p">(</span><span class="ne">ValueError</span><span class="p">,</span> <span class="ne">AttributeError</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s2">""</span>
+    <span class="n">error</span> <span class="o">=</span> <span class="n">body</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"error"</span><span class="p">)</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">body</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="k">else</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">error</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s2">""</span>
+    <span class="k">return</span> <span class="nb">str</span><span class="p">(</span><span class="n">error</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"message"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_paginate</span><span class="p">(</span><span class="n">list_fn</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">page_size</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">"""Collect every page of a Classroom list call."""</span>
+    <span class="n">items</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">token</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+        <span class="n">params</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="n">params</span><span class="p">[</span><span class="s2">"pageSize"</span><span class="p">]</span> <span class="o">=</span> <span class="n">page_size</span>
+        <span class="k">if</span> <span class="n">token</span><span class="p">:</span>
+            <span class="n">params</span><span class="p">[</span><span class="s2">"pageToken"</span><span class="p">]</span> <span class="o">=</span> <span class="n">token</span>
+        <span class="n">resp</span> <span class="o">=</span> <span class="n">list_fn</span><span class="p">(</span><span class="o">**</span><span class="n">params</span><span class="p">)</span><span class="o">.</span><span class="n">execute</span><span class="p">()</span>
+        <span class="n">items</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">resp</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="p">[])</span> <span class="ow">or</span> <span class="p">[])</span>
+        <span class="n">token</span> <span class="o">=</span> <span class="n">resp</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"nextPageToken"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">token</span><span class="p">:</span>
+            <span class="k">break</span>
+    <span class="k">return</span> <span class="n">items</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_execute_with_retry</span><span class="p">(</span>
+    <span class="n">make_request</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[],</span> <span class="n">Any</span><span class="p">],</span>
+    <span class="n">sleep_fn</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="nb">float</span><span class="p">],</span> <span class="kc">None</span><span class="p">],</span>
+    <span class="n">attempts</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">_RETRY_ATTEMPTS</span><span class="p">,</span>
+    <span class="n">base</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="n">_RETRY_BASE_SECONDS</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Run a request, retrying only on transient statuses."""</span>
+    <span class="k">for</span> <span class="n">attempt</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">attempts</span> <span class="o">+</span> <span class="mi">1</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">make_request</span><span class="p">()</span><span class="o">.</span><span class="n">execute</span><span class="p">()</span>
+        <span class="k">except</span> <span class="n">HttpError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">_http_status</span><span class="p">(</span><span class="n">exc</span><span class="p">)</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_TRANSIENT_STATUSES</span> <span class="ow">or</span> <span class="n">attempt</span> <span class="o">==</span> <span class="n">attempts</span><span class="p">:</span>
+                <span class="k">raise</span>
+            <span class="n">sleep_fn</span><span class="p">(</span><span class="n">base</span> <span class="o">*</span> <span class="p">(</span><span class="mi">2</span> <span class="o">**</span> <span class="p">(</span><span class="n">attempt</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)))</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_new_report</span><span class="p">(</span><span class="n">course_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">dry_run</span><span class="p">:</span> <span class="nb">bool</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+    <span class="n">report</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"course_id"</span><span class="p">:</span> <span class="n">course_id</span><span class="p">,</span> <span class="s2">"results"</span><span class="p">:</span> <span class="p">[],</span> <span class="s2">"dry_run"</span><span class="p">:</span> <span class="nb">bool</span><span class="p">(</span><span class="n">dry_run</span><span class="p">)}</span>
+    <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">_COUNTER_KEYS</span><span class="p">:</span>
+        <span class="n">report</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">return</span> <span class="n">report</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_record</span><span class="p">(</span>
+    <span class="n">report</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span>
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">email</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">status</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">detail</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">""</span><span class="p">,</span>
+    <span class="n">user_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">""</span><span class="p">,</span>
+    <span class="n">invitation_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">""</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="n">report</span><span class="p">[</span><span class="s2">"results"</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+        <span class="s2">"name"</span><span class="p">:</span> <span class="n">name</span><span class="p">,</span>
+        <span class="s2">"email"</span><span class="p">:</span> <span class="n">email</span><span class="p">,</span>
+        <span class="s2">"status"</span><span class="p">:</span> <span class="n">status</span><span class="p">,</span>
+        <span class="s2">"detail"</span><span class="p">:</span> <span class="n">detail</span><span class="p">,</span>
+        <span class="s2">"user_id"</span><span class="p">:</span> <span class="n">user_id</span><span class="p">,</span>
+        <span class="s2">"invitation_id"</span><span class="p">:</span> <span class="n">invitation_id</span><span class="p">,</span>
+    <span class="p">})</span>
+    <span class="n">report</span><span class="p">[</span><span class="n">status</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_select_course_interactively</span><span class="p">(</span>
+    <span class="n">credentials_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">token_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">verbose</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
+    <span class="n">open_browser</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">bool</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+    <span class="n">courses</span> <span class="o">=</span> <span class="n">list_google_classroom_courses</span><span class="p">(</span>
+        <span class="n">credentials_path</span><span class="p">,</span> <span class="n">token_path</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="n">verbose</span><span class="p">,</span> <span class="n">open_browser</span><span class="o">=</span><span class="n">open_browser</span>
+    <span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">courses</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">"No courses found."</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"Available Google Classroom courses:"</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">c</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">courses</span><span class="p">,</span> <span class="mi">1</span><span class="p">):</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">. </span><span class="si">{</span><span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'name'</span><span class="p">)</span><span class="si">}</span><span class="s2"> (ID: </span><span class="si">{</span><span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'id'</span><span class="p">)</span><span class="si">}</span><span class="s2">)"</span><span class="p">)</span>
+    <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+        <span class="n">sel</span> <span class="o">=</span> <span class="n">get_input_with_quit</span><span class="p">(</span><span class="s2">"Select course number (or 'q' to quit): "</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">sel</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">idx</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">sel</span><span class="o">.</span><span class="n">strip</span><span class="p">())</span> <span class="o">-</span> <span class="mi">1</span>
+        <span class="k">except</span> <span class="p">(</span><span class="ne">TypeError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">):</span>
+            <span class="k">continue</span>
+        <span class="k">if</span> <span class="mi">0</span> <span class="o">&lt;=</span> <span class="n">idx</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">courses</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">courses</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"id"</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_collect_candidates</span><span class="p">(</span>
+    <span class="n">students</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">Any</span><span class="p">],</span>
+    <span class="n">report</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span>
+    <span class="n">emails_list</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+    <span class="n">domains_list</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+    <span class="n">section</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+    <span class="n">class_name</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">_Candidate</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Filter database students down to the ones worth inviting."""</span>
+    <span class="n">section_wanted</span> <span class="o">=</span> <span class="p">(</span><span class="n">section</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+    <span class="n">class_wanted</span> <span class="o">=</span> <span class="p">(</span><span class="n">class_name</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+    <span class="n">email_filter</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">emails_list</span><span class="p">)</span>
+
+    <span class="n">candidates</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">_Candidate</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">seen</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+    <span class="n">found_emails</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+
+    <span class="k">for</span> <span class="n">student</span> <span class="ow">in</span> <span class="n">students</span><span class="p">:</span>
+        <span class="n">name</span> <span class="o">=</span> <span class="n">_field</span><span class="p">(</span><span class="n">student</span><span class="p">,</span> <span class="s2">"Name"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">_field</span><span class="p">(</span><span class="n">student</span><span class="p">,</span> <span class="s2">"Full Name"</span><span class="p">)</span>
+        <span class="n">email</span> <span class="o">=</span> <span class="n">_field</span><span class="p">(</span><span class="n">student</span><span class="p">,</span> <span class="s2">"Email"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">email</span><span class="p">:</span>
+            <span class="n">_record</span><span class="p">(</span><span class="n">report</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="s2">""</span><span class="p">,</span> <span class="n">STATUS_SKIPPED_MISSING</span><span class="p">,</span> <span class="s2">"no email address in the local database"</span><span class="p">)</span>
+            <span class="k">continue</span>
+        <span class="n">email_lower</span> <span class="o">=</span> <span class="n">email</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="n">email_filter</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">email_lower</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">email_filter</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">found_emails</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">email_lower</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">domains_list</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">any</span><span class="p">(</span><span class="n">email_lower</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s2">"@"</span> <span class="o">+</span> <span class="n">d</span><span class="p">)</span> <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="n">domains_list</span><span class="p">):</span>
+            <span class="k">continue</span>
+        <span class="k">if</span> <span class="n">section_wanted</span><span class="p">:</span>
+            <span class="n">values</span> <span class="o">=</span> <span class="p">[</span><span class="n">_field</span><span class="p">(</span><span class="n">student</span><span class="p">,</span> <span class="n">f</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">_SECTION_FIELDS</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">section_wanted</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">[</span><span class="n">v</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">values</span> <span class="k">if</span> <span class="n">v</span><span class="p">]:</span>
+                <span class="k">continue</span>
+        <span class="k">if</span> <span class="n">class_wanted</span> <span class="ow">and</span> <span class="n">_field</span><span class="p">(</span><span class="n">student</span><span class="p">,</span> <span class="s2">"Class"</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="o">!=</span> <span class="n">class_wanted</span><span class="p">:</span>
+            <span class="k">continue</span>
+
+        <span class="k">if</span> <span class="n">email_lower</span> <span class="ow">in</span> <span class="n">seen</span><span class="p">:</span>
+            <span class="n">_record</span><span class="p">(</span><span class="n">report</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">email</span><span class="p">,</span> <span class="n">STATUS_SKIPPED_DUPLICATE</span><span class="p">,</span> <span class="s2">"duplicate email in the local database"</span><span class="p">)</span>
+            <span class="k">continue</span>
+        <span class="n">seen</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">email_lower</span><span class="p">)</span>
+        <span class="n">candidates</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_Candidate</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span> <span class="n">email</span><span class="o">=</span><span class="n">email</span><span class="p">,</span> <span class="n">google_id</span><span class="o">=</span><span class="n">_field</span><span class="p">(</span><span class="n">student</span><span class="p">,</span> <span class="s2">"Google_ID"</span><span class="p">)))</span>
+
+    <span class="k">for</span> <span class="n">requested</span> <span class="ow">in</span> <span class="n">email_filter</span> <span class="o">-</span> <span class="n">found_emails</span><span class="p">:</span>
+        <span class="n">_record</span><span class="p">(</span>
+            <span class="n">report</span><span class="p">,</span>
+            <span class="s2">""</span><span class="p">,</span>
+            <span class="n">requested</span><span class="p">,</span>
+            <span class="n">STATUS_SKIPPED_NOT_IN_DB</span><span class="p">,</span>
+            <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">requested</span><span class="si">}</span><span class="s2"> is not in the local database -- run: course --add-google-sheet &lt;URL&gt;"</span><span class="p">,</span>
+        <span class="p">)</span>
+    <span class="k">return</span> <span class="n">candidates</span>
+
+
+<span class="k">class</span><span class="w"> </span><span class="nc">_Membership</span><span class="p">(</span><span class="n">NamedTuple</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""Tier 1 membership.  The teacher sets are subsets of the first two.</span>
+
+<span class="sd">    Both roles have to live in one set for the skip decision -- a teacher is as</span>
+<span class="sd">    much "already on the course" as a student -- but the skip *reason* needs</span>
+<span class="sd">    them apart, so the teacher halves are kept alongside rather than merged.</span>
+<span class="sd">    """</span>
+
+    <span class="n">emails</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
+    <span class="n">user_ids</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
+    <span class="n">teacher_emails</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
+    <span class="n">teacher_user_ids</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_read_course_membership</span><span class="p">(</span><span class="n">service</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">course_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">verbose</span><span class="p">:</span> <span class="nb">bool</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">_Membership</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Tier 1: everyone already on the course, as emails and as user ids."""</span>
+    <span class="n">emails</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+    <span class="n">user_ids</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+    <span class="n">teacher_emails</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+    <span class="n">teacher_user_ids</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">entries</span> <span class="ow">in</span> <span class="p">(</span>
+        <span class="p">(</span><span class="s2">"students"</span><span class="p">,</span> <span class="n">_paginate</span><span class="p">(</span><span class="n">service</span><span class="o">.</span><span class="n">courses</span><span class="p">()</span><span class="o">.</span><span class="n">students</span><span class="p">()</span><span class="o">.</span><span class="n">list</span><span class="p">,</span> <span class="s2">"students"</span><span class="p">,</span> <span class="mi">200</span><span class="p">,</span> <span class="n">courseId</span><span class="o">=</span><span class="n">course_id</span><span class="p">)),</span>
+        <span class="p">(</span><span class="s2">"teachers"</span><span class="p">,</span> <span class="n">_paginate</span><span class="p">(</span><span class="n">service</span><span class="o">.</span><span class="n">courses</span><span class="p">()</span><span class="o">.</span><span class="n">teachers</span><span class="p">()</span><span class="o">.</span><span class="n">list</span><span class="p">,</span> <span class="s2">"teachers"</span><span class="p">,</span> <span class="mi">200</span><span class="p">,</span> <span class="n">courseId</span><span class="o">=</span><span class="n">course_id</span><span class="p">)),</span>
+    <span class="p">):</span>
+        <span class="n">is_teacher</span> <span class="o">=</span> <span class="n">key</span> <span class="o">==</span> <span class="s2">"teachers"</span>
+        <span class="k">for</span> <span class="n">entry</span> <span class="ow">in</span> <span class="n">entries</span><span class="p">:</span>
+            <span class="n">profile</span> <span class="o">=</span> <span class="n">entry</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"profile"</span><span class="p">,</span> <span class="p">{})</span> <span class="ow">or</span> <span class="p">{}</span>
+            <span class="n">email</span> <span class="o">=</span> <span class="p">(</span><span class="n">profile</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"emailAddress"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">email</span><span class="p">:</span>
+                <span class="n">emails</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">email</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">is_teacher</span><span class="p">:</span>
+                    <span class="n">teacher_emails</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">email</span><span class="p">)</span>
+            <span class="n">user_id</span> <span class="o">=</span> <span class="n">entry</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"userId"</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">user_id</span><span class="p">:</span>
+                <span class="n">user_ids</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">user_id</span><span class="p">))</span>
+                <span class="k">if</span> <span class="n">is_teacher</span><span class="p">:</span>
+                    <span class="n">teacher_user_ids</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">user_id</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">verbose</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"[GClassroom] Read </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">entries</span><span class="p">)</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2"> already on the course."</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">_Membership</span><span class="p">(</span><span class="n">emails</span><span class="p">,</span> <span class="n">user_ids</span><span class="p">,</span> <span class="n">teacher_emails</span><span class="p">,</span> <span class="n">teacher_user_ids</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_read_pending_invitations</span><span class="p">(</span>
+    <span class="n">service</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+    <span class="n">course_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">known_google_ids</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+    <span class="n">profile_lookup_limit</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">verbose</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">"""Tier 2: pending invitations, as resolved emails and as user ids.</span>
+
+<span class="sd">    An Invitation carries a numeric ``userId`` and never an email address, so</span>
+<span class="sd">    matching by email needs a per-invitation profile lookup.  Local Google_ID</span>
+<span class="sd">    values are checked first because they cost nothing, and the fan-out for the</span>
+<span class="sd">    rest is capped -- the 409 backstop covers whatever this misses.</span>
+<span class="sd">    """</span>
+    <span class="n">invitations</span> <span class="o">=</span> <span class="n">_paginate</span><span class="p">(</span><span class="n">service</span><span class="o">.</span><span class="n">invitations</span><span class="p">()</span><span class="o">.</span><span class="n">list</span><span class="p">,</span> <span class="s2">"invitations"</span><span class="p">,</span> <span class="mi">500</span><span class="p">,</span> <span class="n">courseId</span><span class="o">=</span><span class="n">course_id</span><span class="p">)</span>
+    <span class="n">user_ids</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+    <span class="n">emails</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+    <span class="n">lookups</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">limit_notice_shown</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="k">for</span> <span class="n">invitation</span> <span class="ow">in</span> <span class="n">invitations</span><span class="p">:</span>
+        <span class="n">user_id</span> <span class="o">=</span> <span class="n">invitation</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"userId"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">user_id</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="n">user_id</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">user_id</span><span class="p">)</span>
+        <span class="n">user_ids</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">user_id</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">user_id</span> <span class="ow">in</span> <span class="n">known_google_ids</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="k">if</span> <span class="n">lookups</span> <span class="o">&gt;=</span> <span class="n">profile_lookup_limit</span><span class="p">:</span>
+            <span class="c1"># continue, not break: the userId above is already recorded, and</span>
+            <span class="c1"># matching a candidate by Google_ID against it costs nothing.</span>
+            <span class="k">if</span> <span class="n">verbose</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">limit_notice_shown</span><span class="p">:</span>
+                <span class="n">limit_notice_shown</span> <span class="o">=</span> <span class="kc">True</span>
+                <span class="nb">print</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">"[GClassroom] Profile lookup limit (</span><span class="si">{</span><span class="n">profile_lookup_limit</span><span class="si">}</span><span class="s2">) reached; "</span>
+                    <span class="s2">"remaining pending invitations rely on Google_ID and the 409 check."</span>
+                <span class="p">)</span>
+            <span class="k">continue</span>
+        <span class="n">lookups</span> <span class="o">+=</span> <span class="mi">1</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">profile</span> <span class="o">=</span> <span class="n">service</span><span class="o">.</span><span class="n">userProfiles</span><span class="p">()</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">userId</span><span class="o">=</span><span class="n">user_id</span><span class="p">)</span><span class="o">.</span><span class="n">execute</span><span class="p">()</span>
+        <span class="k">except</span> <span class="n">HttpError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">verbose</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"[GClassroom] Could not resolve pending invitation </span><span class="si">{</span><span class="n">user_id</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">exc</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+            <span class="k">continue</span>
+        <span class="n">email</span> <span class="o">=</span> <span class="p">(</span><span class="n">profile</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"emailAddress"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">email</span><span class="p">:</span>
+            <span class="n">emails</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">email</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">verbose</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"[GClassroom] Read </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">invitations</span><span class="p">)</span><span class="si">}</span><span class="s2"> pending invitation(s), </span><span class="si">{</span><span class="n">lookups</span><span class="si">}</span><span class="s2"> profile lookup(s)."</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">emails</span><span class="p">,</span> <span class="n">user_ids</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_write_back_google_ids</span><span class="p">(</span>
+    <span class="n">db_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">invited</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]],</span>
+    <span class="n">verbose</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Fill Google_ID and invitation bookkeeping without ever overwriting."""</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">.data</span><span class="w"> </span><span class="kn">import</span> <span class="n">load_database</span><span class="p">,</span> <span class="n">save_database</span>
+
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">students</span> <span class="o">=</span> <span class="n">load_database</span><span class="p">(</span><span class="n">db_path</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="n">verbose</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">"Warning: could not read </span><span class="si">{</span><span class="n">db_path</span><span class="si">}</span><span class="s2"> to record </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">invited</span><span class="p">)</span><span class="si">}</span><span class="s2"> sent invitation(s): </span><span class="si">{</span><span class="n">exc</span><span class="si">}</span><span class="s2">. "</span>
+            <span class="s2">"The invitations were sent; Google_ID was not saved, so the next run spends "</span>
+            <span class="s2">"profile lookups again."</span>
+        <span class="p">)</span>
+        <span class="k">return</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">students</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">"Warning: </span><span class="si">{</span><span class="n">db_path</span><span class="si">}</span><span class="s2"> holds no student records, so </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">invited</span><span class="p">)</span><span class="si">}</span><span class="s2"> sent invitation(s) "</span>
+            <span class="s2">"were not recorded. The next run spends profile lookups again."</span>
+        <span class="p">)</span>
+        <span class="k">return</span>
+    <span class="n">updated</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">for</span> <span class="n">student</span> <span class="ow">in</span> <span class="n">students</span><span class="p">:</span>
+        <span class="n">email</span> <span class="o">=</span> <span class="n">_field</span><span class="p">(</span><span class="n">student</span><span class="p">,</span> <span class="s2">"Email"</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+        <span class="n">entry</span> <span class="o">=</span> <span class="n">invited</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">email</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">entry</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="k">if</span> <span class="n">entry</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"user_id"</span><span class="p">)</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">_field</span><span class="p">(</span><span class="n">student</span><span class="p">,</span> <span class="s2">"Google_ID"</span><span class="p">):</span>
+            <span class="nb">setattr</span><span class="p">(</span><span class="n">student</span><span class="p">,</span> <span class="s2">"Google_ID"</span><span class="p">,</span> <span class="n">entry</span><span class="p">[</span><span class="s2">"user_id"</span><span class="p">])</span>
+        <span class="k">if</span> <span class="n">entry</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"invitation_id"</span><span class="p">):</span>
+            <span class="nb">setattr</span><span class="p">(</span><span class="n">student</span><span class="p">,</span> <span class="s2">"Google_Invitation_ID"</span><span class="p">,</span> <span class="n">entry</span><span class="p">[</span><span class="s2">"invitation_id"</span><span class="p">])</span>
+        <span class="nb">setattr</span><span class="p">(</span><span class="n">student</span><span class="p">,</span> <span class="s2">"Google_Classroom_Invited_At"</span><span class="p">,</span> <span class="n">entry</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"invited_at"</span><span class="p">,</span> <span class="s2">""</span><span class="p">))</span>
+        <span class="n">updated</span> <span class="o">+=</span> <span class="mi">1</span>
+    <span class="k">if</span> <span class="n">updated</span><span class="p">:</span>
+        <span class="n">save_database</span><span class="p">(</span><span class="n">students</span><span class="p">,</span> <span class="n">db_path</span><span class="o">=</span><span class="n">db_path</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="n">verbose</span><span class="p">,</span> <span class="n">audit_source</span><span class="o">=</span><span class="s2">"gclass-invite"</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Updated </span><span class="si">{</span><span class="n">updated</span><span class="si">}</span><span class="s2"> student record(s) in the local database."</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="invite_students_to_google_classroom">
+<a class="viewcode-back" href="../../api.html#course_hoanganhduc.google_classroom.invite_students_to_google_classroom">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">invite_students_to_google_classroom</span><span class="p">(</span>
+    <span class="n">course_id</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">emails</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">domains</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">section</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">class_name</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">role</span><span class="o">=</span><span class="s2">"STUDENT"</span><span class="p">,</span>
+    <span class="n">apply_all</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="n">credentials_path</span><span class="o">=</span><span class="s1">'gclassroom_credentials.json'</span><span class="p">,</span>
+    <span class="n">token_path</span><span class="o">=</span><span class="s1">'token.pickle'</span><span class="p">,</span>
+    <span class="n">db_path</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">update_local_db</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="n">dry_run</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="n">verbose</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="n">service</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">sleep_fn</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">profile_lookup_limit</span><span class="o">=</span><span class="mi">200</span><span class="p">,</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">"""Invite local-database students to a Google Classroom course.</span>
+
+<span class="sd">    Students already enrolled, already teaching, or already holding a pending</span>
+<span class="sd">    invitation are skipped, so re-running the command is safe and quiet.</span>
+<span class="sd">    Returns a summary dict; see the module docstring for the departures from</span>
+<span class="sd">    the unenroll template.</span>
+<span class="sd">    """</span>
+    <span class="n">sleep_fn</span> <span class="o">=</span> <span class="n">sleep_fn</span> <span class="ow">or</span> <span class="n">time</span><span class="o">.</span><span class="n">sleep</span>
+
+    <span class="k">if</span> <span class="n">service</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">creds</span> <span class="o">=</span> <span class="n">_get_google_classroom_credentials</span><span class="p">(</span><span class="n">credentials_path</span><span class="p">,</span> <span class="n">token_path</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="n">verbose</span><span class="p">)</span>
+        <span class="n">service</span> <span class="o">=</span> <span class="n">build</span><span class="p">(</span><span class="s2">"classroom"</span><span class="p">,</span> <span class="s2">"v1"</span><span class="p">,</span> <span class="n">credentials</span><span class="o">=</span><span class="n">creds</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">course_id</span><span class="p">:</span>
+        <span class="n">course_id</span> <span class="o">=</span> <span class="n">_select_course_interactively</span><span class="p">(</span><span class="n">credentials_path</span><span class="p">,</span> <span class="n">token_path</span><span class="p">,</span> <span class="n">verbose</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">course_id</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">"No course selected."</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">_new_report</span><span class="p">(</span><span class="s2">""</span><span class="p">,</span> <span class="n">dry_run</span><span class="p">)</span>
+
+    <span class="n">report</span> <span class="o">=</span> <span class="n">_new_report</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">course_id</span><span class="p">),</span> <span class="n">dry_run</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">db_path</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">"Inviting students requires a local database. Provide --db or run from the DB folder."</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">report</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">.data</span><span class="w"> </span><span class="kn">import</span> <span class="n">load_database</span>
+
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">students</span> <span class="o">=</span> <span class="n">load_database</span><span class="p">(</span><span class="n">db_path</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="n">verbose</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+        <span class="n">students</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="n">candidates</span> <span class="o">=</span> <span class="n">_collect_candidates</span><span class="p">(</span>
+        <span class="n">students</span> <span class="ow">or</span> <span class="p">[],</span>
+        <span class="n">report</span><span class="p">,</span>
+        <span class="n">_normalize_values</span><span class="p">(</span><span class="n">emails</span><span class="p">),</span>
+        <span class="n">_normalize_domains</span><span class="p">(</span><span class="n">domains</span><span class="p">),</span>
+        <span class="n">section</span><span class="p">,</span>
+        <span class="n">class_name</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">candidates</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">"No matching students found in the local database."</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">report</span>
+
+    <span class="n">membership</span> <span class="o">=</span> <span class="n">_read_course_membership</span><span class="p">(</span><span class="n">service</span><span class="p">,</span> <span class="n">course_id</span><span class="p">,</span> <span class="n">verbose</span><span class="p">)</span>
+    <span class="n">known_google_ids</span> <span class="o">=</span> <span class="p">{</span><span class="n">c</span><span class="o">.</span><span class="n">google_id</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">candidates</span> <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">google_id</span><span class="p">}</span>
+    <span class="n">pending_emails</span><span class="p">,</span> <span class="n">pending_user_ids</span> <span class="o">=</span> <span class="n">_read_pending_invitations</span><span class="p">(</span>
+        <span class="n">service</span><span class="p">,</span> <span class="n">course_id</span><span class="p">,</span> <span class="n">known_google_ids</span><span class="p">,</span> <span class="n">profile_lookup_limit</span><span class="p">,</span> <span class="n">verbose</span>
+    <span class="p">)</span>
+
+    <span class="n">to_invite</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">_Candidate</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">candidate</span> <span class="ow">in</span> <span class="n">candidates</span><span class="p">:</span>
+        <span class="n">email_lower</span> <span class="o">=</span> <span class="n">candidate</span><span class="o">.</span><span class="n">email</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+        <span class="n">on_course</span> <span class="o">=</span> <span class="n">email_lower</span> <span class="ow">in</span> <span class="n">membership</span><span class="o">.</span><span class="n">emails</span> <span class="ow">or</span> <span class="p">(</span>
+            <span class="n">candidate</span><span class="o">.</span><span class="n">google_id</span> <span class="ow">and</span> <span class="n">candidate</span><span class="o">.</span><span class="n">google_id</span> <span class="ow">in</span> <span class="n">membership</span><span class="o">.</span><span class="n">user_ids</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">on_course</span><span class="p">:</span>
+            <span class="n">is_teacher</span> <span class="o">=</span> <span class="n">email_lower</span> <span class="ow">in</span> <span class="n">membership</span><span class="o">.</span><span class="n">teacher_emails</span> <span class="ow">or</span> <span class="p">(</span>
+                <span class="n">candidate</span><span class="o">.</span><span class="n">google_id</span> <span class="ow">and</span> <span class="n">candidate</span><span class="o">.</span><span class="n">google_id</span> <span class="ow">in</span> <span class="n">membership</span><span class="o">.</span><span class="n">teacher_user_ids</span>
+            <span class="p">)</span>
+            <span class="n">detail</span> <span class="o">=</span> <span class="s2">"already a teacher on this course"</span> <span class="k">if</span> <span class="n">is_teacher</span> <span class="k">else</span> <span class="s2">"already enrolled"</span>
+            <span class="n">_record</span><span class="p">(</span><span class="n">report</span><span class="p">,</span> <span class="n">candidate</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">candidate</span><span class="o">.</span><span class="n">email</span><span class="p">,</span> <span class="n">STATUS_SKIPPED_ENROLLED</span><span class="p">,</span> <span class="n">detail</span><span class="p">,</span>
+                    <span class="n">user_id</span><span class="o">=</span><span class="n">candidate</span><span class="o">.</span><span class="n">google_id</span><span class="p">)</span>
+            <span class="k">continue</span>
+        <span class="k">if</span> <span class="n">email_lower</span> <span class="ow">in</span> <span class="n">pending_emails</span> <span class="ow">or</span> <span class="p">(</span><span class="n">candidate</span><span class="o">.</span><span class="n">google_id</span> <span class="ow">and</span> <span class="n">candidate</span><span class="o">.</span><span class="n">google_id</span> <span class="ow">in</span> <span class="n">pending_user_ids</span><span class="p">):</span>
+            <span class="n">_record</span><span class="p">(</span><span class="n">report</span><span class="p">,</span> <span class="n">candidate</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">candidate</span><span class="o">.</span><span class="n">email</span><span class="p">,</span> <span class="n">STATUS_SKIPPED_PENDING</span><span class="p">,</span>
+                    <span class="s2">"invitation already pending"</span><span class="p">,</span> <span class="n">user_id</span><span class="o">=</span><span class="n">candidate</span><span class="o">.</span><span class="n">google_id</span><span class="p">)</span>
+            <span class="k">continue</span>
+        <span class="n">to_invite</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">candidate</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">to_invite</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">"Everyone is already on the course: </span><span class="si">{</span><span class="n">report</span><span class="p">[</span><span class="n">STATUS_SKIPPED_ENROLLED</span><span class="p">]</span><span class="si">}</span><span class="s2"> enrolled, "</span>
+            <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">report</span><span class="p">[</span><span class="n">STATUS_SKIPPED_PENDING</span><span class="p">]</span><span class="si">}</span><span class="s2"> pending. Nothing to invite."</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">report</span>
+
+    <span class="n">to_invite</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">c</span><span class="p">:</span> <span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">email</span><span class="p">))</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">to_invite</span><span class="p">)</span><span class="si">}</span><span class="s2"> student(s) are not yet on the course:"</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="n">candidate</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">to_invite</span><span class="p">,</span> <span class="mi">1</span><span class="p">):</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">idx</span><span class="si">}</span><span class="s2">. </span><span class="si">{</span><span class="n">candidate</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> | </span><span class="si">{</span><span class="n">candidate</span><span class="o">.</span><span class="n">email</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">apply_all</span><span class="p">:</span>
+        <span class="n">selected_indices</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">to_invite</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span><span class="p">))</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+            <span class="n">sel</span> <span class="o">=</span> <span class="n">get_input_with_quit</span><span class="p">(</span><span class="s2">"Select students to invite (e.g. 1,3-5, 'a' for all, or 'q' to quit): "</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">sel</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">report</span>
+            <span class="n">selected_indices</span> <span class="o">=</span> <span class="n">parse_selection</span><span class="p">(</span><span class="n">sel</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">to_invite</span><span class="p">))</span>
+            <span class="k">if</span> <span class="n">selected_indices</span><span class="p">:</span>
+                <span class="k">break</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">"Invalid selection. Please enter valid numbers, a range, 'a' for all, or 'q' to quit."</span><span class="p">)</span>
+
+    <span class="n">confirm</span> <span class="o">=</span> <span class="n">get_input_with_quit</span><span class="p">(</span>
+        <span class="sa">f</span><span class="s2">"Invite </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">selected_indices</span><span class="p">)</span><span class="si">}</span><span class="s2"> student(s) to the course as </span><span class="si">{</span><span class="n">role</span><span class="si">}</span><span class="s2">? (y/n): "</span><span class="p">,</span>
+        <span class="n">default</span><span class="o">=</span><span class="s2">"n"</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="k">if</span> <span class="n">confirm</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">confirm</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"y"</span><span class="p">,</span> <span class="s2">"yes"</span><span class="p">):</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">"Invite canceled."</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">report</span>
+
+    <span class="n">selected</span> <span class="o">=</span> <span class="p">[</span><span class="n">to_invite</span><span class="p">[</span><span class="n">i</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">selected_indices</span><span class="p">]</span>
+
+    <span class="k">if</span> <span class="n">dry_run</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">candidate</span> <span class="ow">in</span> <span class="n">selected</span><span class="p">:</span>
+            <span class="n">_record</span><span class="p">(</span><span class="n">report</span><span class="p">,</span> <span class="n">candidate</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">candidate</span><span class="o">.</span><span class="n">email</span><span class="p">,</span> <span class="n">STATUS_INVITED</span><span class="p">,</span> <span class="s2">"dry-run: not sent"</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Dry-run: would invite </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">selected</span><span class="p">)</span><span class="si">}</span><span class="s2"> student(s)."</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">report</span>
+
+    <span class="n">invited_for_db</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="n">aborted</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="k">for</span> <span class="n">position</span><span class="p">,</span> <span class="n">candidate</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">selected</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">aborted</span><span class="p">:</span>
+            <span class="n">_record</span><span class="p">(</span><span class="n">report</span><span class="p">,</span> <span class="n">candidate</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">candidate</span><span class="o">.</span><span class="n">email</span><span class="p">,</span> <span class="n">STATUS_SKIPPED_ABORTED</span><span class="p">,</span>
+                    <span class="s2">"skipped after an authorization failure"</span><span class="p">)</span>
+            <span class="k">continue</span>
+        <span class="k">if</span> <span class="n">position</span><span class="p">:</span>
+            <span class="n">sleep_fn</span><span class="p">(</span><span class="n">_WRITE_INTERVAL</span><span class="p">)</span>
+        <span class="n">body</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"courseId"</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">course_id</span><span class="p">),</span> <span class="s2">"userId"</span><span class="p">:</span> <span class="n">candidate</span><span class="o">.</span><span class="n">email</span><span class="p">,</span> <span class="s2">"role"</span><span class="p">:</span> <span class="n">role</span><span class="p">}</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">created</span> <span class="o">=</span> <span class="n">_execute_with_retry</span><span class="p">(</span>
+                <span class="k">lambda</span><span class="p">:</span> <span class="n">service</span><span class="o">.</span><span class="n">invitations</span><span class="p">()</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">body</span><span class="o">=</span><span class="n">body</span><span class="p">),</span> <span class="n">sleep_fn</span>
+            <span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="k">except</span> <span class="n">HttpError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+            <span class="n">status</span> <span class="o">=</span> <span class="n">_http_status</span><span class="p">(</span><span class="n">exc</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">status</span> <span class="o">==</span> <span class="mi">409</span><span class="p">:</span>
+                <span class="n">_record</span><span class="p">(</span><span class="n">report</span><span class="p">,</span> <span class="n">candidate</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">candidate</span><span class="o">.</span><span class="n">email</span><span class="p">,</span> <span class="n">STATUS_SKIPPED_PENDING</span><span class="p">,</span>
+                        <span class="s2">"invitation already pending"</span><span class="p">)</span>
+                <span class="k">continue</span>
+            <span class="k">if</span> <span class="n">status</span> <span class="o">==</span> <span class="mi">400</span> <span class="ow">and</span> <span class="n">_canonical_status</span><span class="p">(</span><span class="n">exc</span><span class="p">)</span> <span class="o">==</span> <span class="s2">"FAILED_PRECONDITION"</span><span class="p">:</span>
+                <span class="c1"># Documented as "the requested user's account is disabled" or "the</span>
+                <span class="c1"># user already has this role or a role with greater permissions".</span>
+                <span class="c1"># The second is an enrolment the bulk read missed, so this is the</span>
+                <span class="c1"># backstop 409 does not provide -- 409 covers only a pending</span>
+                <span class="c1"># invitation. Neither cause is a write that failed, and neither is</span>
+                <span class="c1"># fixed by retrying, so it is reported rather than counted failed.</span>
+                <span class="c1"># The API message is passed through instead of matched on: the</span>
+                <span class="c1"># two causes are documented, their wording is not.</span>
+                <span class="n">_record</span><span class="p">(</span><span class="n">report</span><span class="p">,</span> <span class="n">candidate</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">candidate</span><span class="o">.</span><span class="n">email</span><span class="p">,</span>
+                        <span class="n">STATUS_SKIPPED_PRECONDITION</span><span class="p">,</span>
+                        <span class="n">_api_message</span><span class="p">(</span><span class="n">exc</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"precondition failed"</span><span class="p">)</span>
+                <span class="nb">print</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">"Skipped </span><span class="si">{</span><span class="n">candidate</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="n">candidate</span><span class="o">.</span><span class="n">email</span><span class="si">}</span><span class="s2">): "</span>
+                    <span class="s2">"already holds this role or greater, or the account is disabled."</span>
+                <span class="p">)</span>
+                <span class="k">continue</span>
+            <span class="k">if</span> <span class="n">status</span> <span class="o">==</span> <span class="mi">404</span><span class="p">:</span>
+                <span class="c1"># The API documents 404 as "the course or the user does not exist",</span>
+                <span class="c1"># so a wrong course id lands here too.</span>
+                <span class="n">_record</span><span class="p">(</span><span class="n">report</span><span class="p">,</span> <span class="n">candidate</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">candidate</span><span class="o">.</span><span class="n">email</span><span class="p">,</span> <span class="n">STATUS_FAILED</span><span class="p">,</span>
+                        <span class="sa">f</span><span class="s2">"no Google account for </span><span class="si">{</span><span class="n">candidate</span><span class="o">.</span><span class="n">email</span><span class="si">}</span><span class="s2">, the address is not "</span>
+                        <span class="sa">f</span><span class="s2">"visible to this Workspace domain, or course </span><span class="si">{</span><span class="n">course_id</span><span class="si">}</span><span class="s2"> does "</span>
+                        <span class="s2">"not exist"</span><span class="p">)</span>
+                <span class="nb">print</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">"Failed to invite </span><span class="si">{</span><span class="n">candidate</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="n">candidate</span><span class="o">.</span><span class="n">email</span><span class="si">}</span><span class="s2">): "</span>
+                    <span class="s2">"no such user, or no such course."</span>
+                <span class="p">)</span>
+                <span class="k">continue</span>
+            <span class="k">if</span> <span class="n">status</span> <span class="o">==</span> <span class="mi">403</span><span class="p">:</span>
+                <span class="n">_record</span><span class="p">(</span><span class="n">report</span><span class="p">,</span> <span class="n">candidate</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">candidate</span><span class="o">.</span><span class="n">email</span><span class="p">,</span> <span class="n">STATUS_FAILED</span><span class="p">,</span>
+                        <span class="s2">"not authorized to invite on this course, or domain policy blocks the invitation"</span><span class="p">)</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Failed to invite </span><span class="si">{</span><span class="n">candidate</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="n">candidate</span><span class="o">.</span><span class="n">email</span><span class="si">}</span><span class="s2">): not authorized."</span><span class="p">)</span>
+                <span class="nb">print</span><span class="p">(</span><span class="s2">"Stopping: a 403 applies to the whole course, not to one student."</span><span class="p">)</span>
+                <span class="n">aborted</span> <span class="o">=</span> <span class="kc">True</span>
+                <span class="k">continue</span>
+            <span class="n">_record</span><span class="p">(</span><span class="n">report</span><span class="p">,</span> <span class="n">candidate</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">candidate</span><span class="o">.</span><span class="n">email</span><span class="p">,</span> <span class="n">STATUS_FAILED</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">exc</span><span class="p">))</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Failed to invite </span><span class="si">{</span><span class="n">candidate</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="n">candidate</span><span class="o">.</span><span class="n">email</span><span class="si">}</span><span class="s2">)."</span><span class="p">)</span>
+            <span class="k">continue</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+            <span class="n">_record</span><span class="p">(</span><span class="n">report</span><span class="p">,</span> <span class="n">candidate</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">candidate</span><span class="o">.</span><span class="n">email</span><span class="p">,</span> <span class="n">STATUS_FAILED</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">exc</span><span class="p">))</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Failed to invite </span><span class="si">{</span><span class="n">candidate</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="n">candidate</span><span class="o">.</span><span class="n">email</span><span class="si">}</span><span class="s2">)."</span><span class="p">)</span>
+            <span class="k">continue</span>
+
+        <span class="n">user_id</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">created</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"userId"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span>
+        <span class="n">invitation_id</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">created</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span>
+        <span class="n">_record</span><span class="p">(</span><span class="n">report</span><span class="p">,</span> <span class="n">candidate</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">candidate</span><span class="o">.</span><span class="n">email</span><span class="p">,</span> <span class="n">STATUS_INVITED</span><span class="p">,</span>
+                <span class="n">user_id</span><span class="o">=</span><span class="n">user_id</span><span class="p">,</span> <span class="n">invitation_id</span><span class="o">=</span><span class="n">invitation_id</span><span class="p">)</span>
+        <span class="n">invited_for_db</span><span class="p">[</span><span class="n">candidate</span><span class="o">.</span><span class="n">email</span><span class="o">.</span><span class="n">lower</span><span class="p">()]</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">"user_id"</span><span class="p">:</span> <span class="n">user_id</span><span class="p">,</span>
+            <span class="s2">"invitation_id"</span><span class="p">:</span> <span class="n">invitation_id</span><span class="p">,</span>
+            <span class="s2">"invited_at"</span><span class="p">:</span> <span class="n">_utc_now</span><span class="p">(),</span>
+        <span class="p">}</span>
+        <span class="k">if</span> <span class="n">verbose</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"[GClassroom] Invited </span><span class="si">{</span><span class="n">candidate</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="n">candidate</span><span class="o">.</span><span class="n">email</span><span class="si">}</span><span class="s2">)."</span><span class="p">)</span>
+
+    <span class="nb">print</span><span class="p">(</span>
+        <span class="sa">f</span><span class="s2">"Invited </span><span class="si">{</span><span class="n">report</span><span class="p">[</span><span class="n">STATUS_INVITED</span><span class="p">]</span><span class="si">}</span><span class="s2"> student(s); skipped "</span>
+        <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">report</span><span class="p">[</span><span class="n">STATUS_SKIPPED_ENROLLED</span><span class="p">]</span><span class="si">}</span><span class="s2"> already enrolled, "</span>
+        <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">report</span><span class="p">[</span><span class="n">STATUS_SKIPPED_PENDING</span><span class="p">]</span><span class="si">}</span><span class="s2"> already invited."</span>
+    <span class="p">)</span>
+    <span class="k">if</span> <span class="n">report</span><span class="p">[</span><span class="n">STATUS_FAILED</span><span class="p">]:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">report</span><span class="p">[</span><span class="n">STATUS_FAILED</span><span class="p">]</span><span class="si">}</span><span class="s2"> invitation(s) failed."</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">invited_for_db</span> <span class="ow">and</span> <span class="n">update_local_db</span> <span class="ow">and</span> <span class="n">db_path</span><span class="p">:</span>
+        <span class="n">_write_back_google_ids</span><span class="p">(</span><span class="n">db_path</span><span class="p">,</span> <span class="n">invited_for_db</span><span class="p">,</span> <span class="n">verbose</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">report</span></div>
+
+</pre></div>
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="../../index.html">Course Management Toolkit</a></h1>
+
+
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../usage.html">Usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../cli_reference.html">CLI Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../api.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../changelog.html">Changelog</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../../index.html">Documentation overview</a><ul>
+  <li><a href="../index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &#169;2026, Duc A. Hoang.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 8.1.3</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+    </div>
+
+    
+
+    
+  </body>
+</html>
