@@ -521,6 +521,7 @@ def load_config(config_path=None, verbose=False):
         "MIDTERM_DATE",
         "EXAM_TYPE",
         "CANVAS_MIDTERM_ASSIGNMENT_ID",
+        "CANVAS_FINAL_ASSIGNMENT_ID",
         "CANVAS_CC_ASSIGNMENT_ID",
         "INTERNSHIP_SHEET_URL",
         "INTERNSHIP_REGISTRATION_SHEET_URL",
