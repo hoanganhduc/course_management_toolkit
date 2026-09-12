@@ -77,9 +77,8 @@ Each gate is a claim that must be checked directly, not inferred.
   that attribute yields `None` and falls through to the previous path, so the change can add
   a CK but never overwrite one. `data.py:3100` and `data.py:9886` both also need
   `CANVAS_LMS_COURSE_ID`, which is `""` in all three of those configs. All three configs
-  carry the same pair of ids (midterm `55997598`, final `55997597`), and the midterm half
-  has been loading all along, so the fix puts the final id on the footing the midterm id
-  already had.
+  carry a midterm id and a final id, and the midterm half has been loading all along, so
+  the fix puts the final id on the footing the midterm id already had.
 
 - **`CANVAS_CONFIG_PATH` crashed instead of refusing on Windows.**
   `canvas_agent._configure_canvas` guards the file with POSIX checks — `os.getuid()` for
